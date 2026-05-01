@@ -1,5 +1,5 @@
 import { SERVICE_UNITS } from "../data.js";
-import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
+import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "./branchRegions.js";
 
 const DB_KEY = "sm_admin_demo_db_v1";
 const FORM_DB_KEY = "sm_form_db_v1";
@@ -451,9 +451,9 @@ export const api = {
       outSubUnit = "";
     } else if (role === "state_super_admin") {
       if (!branchCountry) throw new Error("Country is required for state super admin.");
-      if (!branchState) throw new Error("State / region is required for state super admin.");
+      assertStateBelongsToCountry(branchCountry, branchState);
       outBranchCountry = branchCountry;
-      outBranchState = branchState;
+      outBranchState = normBranchCode(branchState);
       outServiceUnitId = null;
       outSubUnit = "";
     } else if (role === "service_unit_leader") {
@@ -565,6 +565,30 @@ export const api = {
     log(db, "Super Admin", "admin.update", "admin", admin.id, `Updated admin ${admin.username}`);
     writeDb(db);
     return { data: admin };
+  },
+  async updateRegistrationBranch(id, body) {
+    const db = readDb();
+    const row = db.registrations.find((r) => String(r.id) === String(id));
+    if (!row) throw new Error("Registration not found.");
+    if (body.viewer?.role !== "super_admin") {
+      throw new Error("Only a super admin can change country and state on a registration.");
+    }
+    const bc = normBranchCode(body.branch_country);
+    const bs = normBranchCode(body.branch_state);
+    if (!bc) throw new Error("Country is required.");
+    assertStateBelongsToCountry(bc, bs);
+    row.branch_country = bc;
+    row.branch_state = bs;
+    log(
+      db,
+      body.viewer?.full_name || "Super Admin",
+      "registration.branch.update",
+      "registration",
+      row.id,
+      `Branch set to ${bc} / ${bs || "—"}`
+    );
+    writeDb(db);
+    return { ok: true };
   },
   async deleteAdmin(id) {
     const db = readDb();

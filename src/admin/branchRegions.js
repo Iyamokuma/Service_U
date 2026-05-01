@@ -65,21 +65,39 @@ export const BRANCH_COUNTRIES = [
   },
 ];
 
+function normCode(v) {
+  return String(v ?? "").trim().toUpperCase();
+}
+
 export function branchStatesForCountry(countryCode) {
-  const c = BRANCH_COUNTRIES.find((x) => x.code === countryCode);
+  const c = BRANCH_COUNTRIES.find((x) => x.code === normCode(countryCode));
   const states = c?.states || [];
   return [...states].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** True if stateCode exists for country (codes compared uppercase). */
+export function isStateValidForCountry(countryCode, stateCode) {
+  const sc = normCode(stateCode);
+  if (!normCode(countryCode) || !sc) return false;
+  return branchStatesForCountry(countryCode).some((s) => s.code === sc);
+}
+
+/** Keep state only if it belongs to country; otherwise "". */
+export function coerceStateForCountry(countryCode, stateCode) {
+  const sc = normCode(stateCode);
+  if (!sc) return "";
+  return isStateValidForCountry(countryCode, sc) ? sc : "";
+}
+
 export function branchCountryLabel(code) {
   if (!code) return "—";
-  return BRANCH_COUNTRIES.find((c) => c.code === code)?.name || code;
+  return BRANCH_COUNTRIES.find((c) => c.code === normCode(code))?.name || code;
 }
 
 export function branchStateLabel(countryCode, stateCode) {
   if (!countryCode || !stateCode) return "—";
-  const st = (BRANCH_COUNTRIES.find((x) => x.code === countryCode)?.states || []).find(
-    (s) => s.code === stateCode
-  );
+  const cc = normCode(countryCode);
+  const sc = normCode(stateCode);
+  const st = (BRANCH_COUNTRIES.find((x) => x.code === cc)?.states || []).find((s) => s.code === sc);
   return st?.name || stateCode;
 }

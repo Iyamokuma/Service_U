@@ -1,7 +1,13 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { MONTHS as MONTHS_LONG } from "../../data.js";
 import { api } from "../api.js";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import {
+  BRANCH_COUNTRIES,
+  branchCountryLabel,
+  branchStateLabel,
+  branchStatesForCountry,
+  coerceStateForCountry,
+} from "../branchRegions.js";
 import { Modal, ConfirmModal } from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
@@ -97,6 +103,7 @@ export function Queue({ units }) {
   const [expanded, setExpanded] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null);
+  const [branchModal, setBranchModal] = useState(null);
   const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
   const [subUnitTab, setSubUnitTab] = useState("all");
   const debounce = useRef(null);
@@ -150,6 +157,17 @@ export function Queue({ units }) {
       setDeleteModal(null);
       load({ ...filters, page: pag.page, sub_unit: subUnitTab === "all" ? "" : subUnitTab });
     } catch (e) { toast(e.message, "error"); }
+  }
+
+  async function saveRegistrationBranch(id, branch_country, branch_state) {
+    try {
+      await api.updateRegistrationBranch(id, { branch_country, branch_state, viewer: admin });
+      toast("Country and state updated.", "success");
+      setBranchModal(null);
+      load({ ...filters, page: pag.page, sub_unit: subUnitTab === "all" ? "" : subUnitTab });
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   const unitOpts = units?.data ?? [];
@@ -213,7 +231,18 @@ export function Queue({ units }) {
                       <td className="sa-truncate">{r.email || "—"}</td>
                       <td><span className={`sa-badge ${r.status}`}>{r.status}</span></td>
                       <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
-                      <td><div className="sa-table-actions"><button className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"}</button><button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>{canDelete && <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDeleteModal(r.id)}>Delete</button>}</div></td>
+                      <td>
+                        <div className="sa-table-actions">
+                          <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"}</button>
+                          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>
+                          {canEditBranch && (
+                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setBranchModal({ id: r.id, branch_country: r.branch_country || "", branch_state: r.branch_state || "" })}>
+                              Country / state
+                            </button>
+                          )}
+                          {canDelete && <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDeleteModal(r.id)}>Delete</button>}
+                        </div>
+                      </td>
                     </tr>
                     {expanded === r.id && (
                       <tr className="sa-detail-row">
@@ -256,8 +285,84 @@ export function Queue({ units }) {
       )}
 
       <StatusModal open={!!statusModal} data={statusModal} onClose={() => setStatusModal(null)} onSave={updateStatus} allowedStatus={allowedStatus} />
+      <BranchGeoModal open={!!branchModal} data={branchModal} onClose={() => setBranchModal(null)} onSave={saveRegistrationBranch} />
       <ConfirmModal open={!!deleteModal} onClose={() => setDeleteModal(null)} onConfirm={() => deleteReg(deleteModal)} title="Delete Registration" message="Are you sure you want to permanently delete this registration? This cannot be undone." danger />
     </>
+  );
+}
+
+function BranchGeoModal({ open, data, onClose, onSave }) {
+  const [country, setCountry] = useState("");
+  const [state, setState] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open || !data) return;
+    const c = data.branch_country || "";
+    setCountry(c);
+    setState(coerceStateForCountry(c, data.branch_state || ""));
+  }, [open, data?.id, data?.branch_country, data?.branch_state]);
+
+  async function save() {
+    if (!country || (branchStatesForCountry(country).length > 0 && !state)) return;
+    setSaving(true);
+    try {
+      await onSave(data.id, country, state);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit country & state"
+      size="sm"
+      footer={
+        <>
+          <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="sa-btn sa-btn-primary" onClick={save} disabled={saving || !country || (branchStatesForCountry(country).length > 0 && !state)}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </>
+      }
+    >
+      <p className="sa-text-muted sa-text-sm" style={{ marginBottom: 12 }}>
+        Applies to this registration only. The detail panel updates after save.
+      </p>
+      <div className="sa-field">
+        <label className="sa-label">Country</label>
+        <select
+          className="sa-field-select"
+          value={country}
+          onChange={(e) => {
+            const c = e.target.value;
+            setCountry(c);
+            setState("");
+          }}
+        >
+          <option value="">Select country</option>
+          {BRANCH_COUNTRIES.map((c) => (
+            <option key={c.code} value={c.code}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="sa-field">
+        <label className="sa-label">State / region</label>
+        <select
+          className="sa-field-select"
+          value={state}
+          onChange={(e) => setState(e.target.value)}
+          disabled={!country}
+        >
+          <option value="">{country ? "Select state" : "Select country first"}</option>
+          {branchStatesForCountry(country).map((s) => (
+            <option key={s.code} value={s.code}>{s.name}</option>
+          ))}
+        </select>
+      </div>
+    </Modal>
   );
 }
 
