@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { SERVICE_UNITS } from "../../data.js";
-import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
+import { BRANCH_COUNTRIES, branchStatesForCountry, coerceStateForCountry } from "../branchRegions.js";
 
 const ROLES = [
   { value: "super_admin", label: "Super Admin", desc: "Full global access." },
@@ -139,7 +139,7 @@ export function AdminUsers({ data, units, reload }) {
                     <td className="sa-text-muted">{a.username}</td>
                     <td>{a.email}</td>
                     <td><span className={`sa-badge ${a.role}`}>{a.role.replace(/_/g, " ")}</span></td>
-                    <td className="sa-text-muted sa-text-sm">{a.role === "super_admin" ? "Global" : `${a.service_unit_name || "—"}${a.sub_unit_name ? ` / ${a.sub_unit_name}` : ""}`}</td>
+                    <td className="sa-text-muted sa-text-sm">{formatAdminScope(a)}</td>
                     <td><span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>{a.is_active ? "Active" : "Inactive"}</span></td>
                     <td className="sa-text-muted">{fmtDate(a.last_login)}</td>
                     <td>
@@ -170,37 +170,59 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
   const isSuper = me?.role === "super_admin";
   const isServiceLeader = me?.role === "service_unit_leader";
   const isEdit = !!data?.id;
-  const emptyForm = () => ({
-    full_name: "",
-    username: "",
-    email: "",
-    password: "",
-    role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader",
-    service_unit_id: isServiceLeader ? me.service_unit_id : "",
-    sub_unit_name: "",
-    branch_country: "",
-    branch_state: "",
-    is_active: 1,
-  });
-  const [form, setForm] = useState(emptyForm);
+  const emptyForm = useCallback(
+    () => ({
+      full_name: "",
+      username: "",
+      email: "",
+      password: "",
+      role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader",
+      service_unit_id: isServiceLeader ? me?.service_unit_id : "",
+      sub_unit_name: "",
+      branch_country: "",
+      branch_state: "",
+      is_active: 1,
+    }),
+    [isServiceLeader, me?.service_unit_id]
+  );
+  const [form, setForm] = useState(() => emptyForm());
 
-  if (open && data && form._id !== data.id) {
-    setForm({
-      _id: data.id,
-      full_name: data.full_name || "",
-      username:  data.username  || "",
-      email:     data.email     || "",
-      password:  "",
-      role:      data.role      || (isServiceLeader ? "sub_unit_leader" : "service_unit_leader"),
-      service_unit_id: data.service_unit_id || (isServiceLeader ? me.service_unit_id : ""),
-      sub_unit_name: data.sub_unit_name || "",
-      branch_country: data.branch_country || "",
-      branch_state: data.branch_state || "",
-      is_active: data.is_active ?? 1,
-      id: data.id,
-    });
-  }
-  if (!open && form._id !== undefined) setForm(emptyForm());
+  useEffect(() => {
+    if (!open) {
+      setForm(emptyForm());
+      return;
+    }
+    if (!data) {
+      setForm(emptyForm());
+      return;
+    }
+    if (data.id) {
+      const country = data.branch_country || "";
+      setForm({
+        id: data.id,
+        full_name: data.full_name || "",
+        username: data.username || "",
+        email: data.email || "",
+        password: "",
+        role: data.role || (isServiceLeader ? "sub_unit_leader" : "service_unit_leader"),
+        service_unit_id: data.service_unit_id || (isServiceLeader ? me?.service_unit_id : ""),
+        sub_unit_name: data.sub_unit_name || "",
+        branch_country: country,
+        branch_state: coerceStateForCountry(country, data.branch_state || ""),
+        is_active: data.is_active ?? 1,
+      });
+    } else {
+      const country = data.branch_country || "";
+      setForm({
+        ...emptyForm(),
+        role: data.role ?? emptyForm().role,
+        service_unit_id: data.service_unit_id ?? emptyForm().service_unit_id,
+        sub_unit_name: data.sub_unit_name ?? "",
+        branch_country: country,
+        branch_state: coerceStateForCountry(country, data.branch_state || ""),
+      });
+    }
+  }, [open, data, emptyForm, isServiceLeader, me?.service_unit_id]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const selectedUnit = unitList.find((u) => Number(u.id) === Number(form.service_unit_id));
