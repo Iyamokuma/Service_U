@@ -53,11 +53,42 @@ const NAV_SUB_UNIT = [
   },
 ];
 
+/** Same breadth as service unit leader (no global Service Units / Admin Accounts). */
+const NAV_BRANCH_SUPER = [
+  {
+    section: "Dashboard",
+    items: [
+      { id: "overview", label: "Dashboard", icon: <GridIcon /> },
+      { id: "queue", label: "Intake Queue", icon: <ListIcon /> },
+      { id: "members", label: "Members List", icon: <UsersIcon /> },
+      { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
+      { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
+    ],
+  },
+];
+
+const ROLE_LABELS = {
+  super_admin: "Super Admin",
+  country_super_admin: "Country Super Admin",
+  state_super_admin: "State Super Admin",
+  service_unit_leader: "Service Unit Leader",
+  sub_unit_leader: "Sub-Unit Leader",
+};
+
 export function Sidebar({ page, setPage, pendingCount }) {
   const { admin, logout } = useAdminAuth();
   const [logoError, setLogoError] = useState(false);
   const initials = admin?.full_name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "SA";
-  const nav = admin?.role === "super_admin" ? NAV_SUPER : admin?.role === "sub_unit_leader" ? NAV_SUB_UNIT : NAV_LEADER;
+  const nav =
+    admin?.role === "super_admin"
+      ? NAV_SUPER
+      : admin?.role === "sub_unit_leader"
+        ? NAV_SUB_UNIT
+        : admin?.role === "service_unit_leader"
+          ? NAV_LEADER
+          : admin?.role === "country_super_admin" || admin?.role === "state_super_admin"
+            ? NAV_BRANCH_SUPER
+            : NAV_LEADER;
 
   return (
     <aside className="sa-sidebar">
@@ -69,7 +100,7 @@ export function Sidebar({ page, setPage, pendingCount }) {
         )}
         <div>
           <div className="sa-brand-name">Salvation Ministries</div>
-          <div className="sa-brand-sub">{admin?.role === "super_admin" ? "Super Admin" : admin?.role === "service_unit_leader" ? "Service Unit Leader" : "Sub-Unit Leader"}</div>
+          <div className="sa-brand-sub">{ROLE_LABELS[admin?.role] || String(admin?.role || "").replace(/_/g, " ")}</div>
         </div>
       </div>
 

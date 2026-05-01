@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { MONTHS as MONTHS_LONG } from "../../data.js";
 import { api } from "../api.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { Modal, ConfirmModal } from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
@@ -13,6 +15,73 @@ function fmtDate(str) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 function fullName(r) { return [r.first_name, r.surname].filter(Boolean).join(" "); }
+
+function fmtMonthName(m) {
+  if (m === undefined || m === null || m === "") return "";
+  const n = Number(m);
+  if (!Number.isFinite(n) || n < 1 || n > 12) return String(m);
+  return MONTHS_LONG[n - 1] || String(m);
+}
+function fmtMdY(month, day, year) {
+  const mo = fmtMonthName(month);
+  const parts = [mo, day || "", year || ""].filter((x) => x !== "" && x !== undefined && x !== null);
+  return parts.length ? parts.join(" ") : "—";
+}
+function fmtMy(month, year) {
+  const mo = fmtMonthName(month);
+  if (!mo && !year) return "—";
+  return [mo, year || ""].filter(Boolean).join(" ");
+}
+
+function wolbiDetail(r) {
+  if (!r.wolbi || r.wolbi === "No") return r.wolbi || "—";
+  if (r.wolbi !== "Yes") return r.wolbi;
+  const when = fmtMy(r.wolbi_month, r.wolbi_year);
+  const level = r.wolbi_level || "";
+  const parts = [when !== "—" ? when : "", level].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Yes";
+}
+
+function RegistrationDetails({ r }) {
+  const ba = r.born_again === "Yes";
+  return (
+    <div className="sa-detail-inner">
+      {r.photo_path && (
+        <div className="sa-detail-field" style={{ gridColumn: "1 / -1" }}>
+          <div className="sa-detail-label">Photo</div>
+          <img src={r.photo_path} alt="" className="sa-photo" style={{ maxWidth: 140, maxHeight: 140, objectFit: "cover", borderRadius: 8 }} />
+        </div>
+      )}
+      <Field label="Registration ref" value={String(r.id)} />
+      <Field label="Other names" value={r.other_names || "—"} />
+      <Field label="Date of birth" value={fmtMdY(r.dob_month, r.dob_day, r.dob_year)} />
+      <Field label="Sex" value={r.sex || "—"} />
+      <Field label="Marital status" value={r.marital_status || "—"} />
+      <Field label="Nationality" value={r.nationality || "—"} />
+      <Field label="Country (residence)" value={branchCountryLabel(r.branch_country)} />
+      <Field label="State / region" value={branchStateLabel(r.branch_country, r.branch_state)} />
+      <Field label="Residential address" value={r.address || "—"} />
+      <Field label="Nearest bus stop" value={r.bus_stop || "—"} />
+      <Field label="Primary phone" value={r.phone1 || "—"} />
+      <Field label="Secondary phone" value={r.phone2 || "—"} />
+      <Field label="Email" value={r.email || "—"} />
+      <Field label="Workplace" value={r.workplace || "—"} />
+      <Field label="Tithe card" value={r.tithe_card || "—"} />
+      <Field label="Homecell" value={r.homecell || "—"} />
+      <Field label="Service unit" value={r.unit_name || "—"} />
+      <Field label="Sub-unit" value={r.sub_unit || "—"} />
+      <Field label="Joined church" value={fmtMy(r.joined_church_month, r.joined_church_year)} />
+      <Field label="Born again" value={r.born_again || "—"} />
+      {ba && <Field label="Year born again" value={r.born_again_year || "—"} />}
+      <Field label="Foundation class" value={ba ? r.foundation || "—" : "—"} />
+      {ba && <Field label="Foundation class (when)" value={r.foundation === "Yes" ? fmtMy(r.foundation_month, r.foundation_year) : "—"} />}
+      <Field label="Water baptised" value={ba ? r.baptised || "—" : "—"} />
+      {ba && <Field label="Baptism (when)" value={r.baptised === "Yes" ? fmtMy(r.baptised_month, r.baptised_year) : "—"} />}
+      <Field label="WOLBI" value={ba ? wolbiDetail(r) : "—"} />
+      {r.notes ? <Field label="Internal notes" value={r.notes} /> : <Field label="Internal notes" value="—" />}
+    </div>
+  );
+}
 
 export function Queue({ units }) {
   const toast = useToast();
@@ -146,7 +215,13 @@ export function Queue({ units }) {
                       <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
                       <td><div className="sa-table-actions"><button className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"}</button><button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>{canDelete && <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDeleteModal(r.id)}>Delete</button>}</div></td>
                     </tr>
-                    {expanded === r.id && <tr className="sa-detail-row"><td colSpan={9}><div className="sa-detail-inner"><Field label="Date of Birth" value={[r.dob_month, r.dob_day, r.dob_year].filter(Boolean).join(" / ") || "—"} /><Field label="Sex" value={r.sex || "—"} /><Field label="Marital Status" value={r.marital_status || "—"} /><Field label="Nationality" value={r.nationality || "—"} /><Field label="Address" value={r.address} /><Field label="Bus Stop" value={r.bus_stop} /><Field label="Workplace" value={r.workplace || "—"} /><Field label="Tithe Card" value={r.tithe_card || "—"} /><Field label="Homecell" value={r.homecell || "—"} /><Field label="Born Again" value={r.born_again || "—"} /><Field label="Baptised" value={r.baptised || "—"} /><Field label="WOLBI" value={r.wolbi ? `${r.wolbi} — ${r.wolbi_level || ""}` : "—"} /><Field label="Joined Church" value={[r.joined_church_month, r.joined_church_year].filter(Boolean).join(" / ") || "—"} />{r.notes && <Field label="Notes" value={r.notes} />}</div></td></tr>}
+                    {expanded === r.id && (
+                      <tr className="sa-detail-row">
+                        <td colSpan={9}>
+                          <RegistrationDetails r={r} />
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 ))}
               </tbody>

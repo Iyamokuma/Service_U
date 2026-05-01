@@ -6,6 +6,15 @@ import { PhotoSection } from "./sections/PhotoSection.jsx";
 import { FaithSection } from "./sections/FaithSection.jsx";
 import { ServiceUnitSection } from "./sections/ServiceUnitSection.jsx";
 import { SERVICE_UNITS, isEmail, isPhone } from "./data.js";
+import { shrinkPhotoDataUrl } from "./photoCompress.js";
+
+function firstValidationErrorEl() {
+  return (
+    document.querySelector('[data-state="error"]') ||
+    document.querySelector(".error-msg") ||
+    document.querySelector('[data-error="true"]')
+  );
+}
 
 const FORM_DB_KEY = "sm_form_db_v1";
 
@@ -20,6 +29,8 @@ const INITIAL = {
 
   address: "",
   busStop: "",
+  branchCountry: "NG",
+  branchState: "RI",
   phone1: "",
   phone2: "",
   email: "",
@@ -50,6 +61,8 @@ function validate(form) {
   if (!form.firstName.trim()) e.firstName = "First name is required.";
   if (!form.address.trim()) e.address = "Residential address is required.";
   if (!form.busStop.trim()) e.busStop = "Nearest bus stop is required.";
+  if (!form.branchCountry) e.branchCountry = "Select your country of residence.";
+  if (!form.branchState) e.branchState = "Select your state or region.";
   if (!form.phone1.trim()) e.phone1 = "Primary phone is required.";
   else if (!isPhone(form.phone1)) e.phone1 = "Enter a valid phone number.";
   if (form.phone2 && !isPhone(form.phone2))
@@ -104,6 +117,8 @@ export default function App() {
   const [touched, setTouched] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [done, setDone] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const set = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -145,46 +160,99 @@ export default function App() {
     return Math.round((filled / total) * 100);
   }, [form]);
 
-  function onSubmit(e) {
+  async function onSubmit(e) {
     e.preventDefault();
+    setSaveError("");
+    const validationErrors = validate(form);
     setSubmitted(true);
-    if (isValid) {
+    if (Object.keys(validationErrors).length > 0) {
+      requestAnimationFrame(() => {
+        firstValidationErrorEl()?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      });
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    try {
+      let photo_path = "";
+      try {
+        if (form.photo?.dataUrl) {
+          photo_path = await shrinkPhotoDataUrl(form.photo.dataUrl);
+        }
+      } catch {
+        photo_path = form.photo?.dataUrl || "";
+      }
       const unit = SERVICE_UNITS.find((u) => Number(u.id) === Number(form.unitId));
+      const ba = form.bornAgain === "Yes";
       const payload = {
         id: `FORM-${Date.now()}`,
         first_name: form.firstName,
         surname: form.surname,
         other_names: form.otherNames,
+        dob_month: form.dob?.month || "",
+        dob_day: form.dob?.day || "",
+        dob_year: form.dob?.year || "",
         sex: form.sex,
         marital_status: form.maritalStatus,
         nationality: form.nationality,
         address: form.address,
         bus_stop: form.busStop,
+        branch_country: form.branchCountry,
+        branch_state: form.branchState,
         phone1: form.phone1,
         phone2: form.phone2,
         email: form.email,
         workplace: form.workplace,
         tithe_card: form.titheCard,
         homecell: form.homecell,
+        joined_church_month: form.joinedChurch?.month || "",
+        joined_church_year: form.joinedChurch?.year || "",
+        born_again: form.bornAgain || "",
+        born_again_year: ba ? form.bornAgainYear || "" : "",
+        foundation: ba ? form.foundation || "" : "",
+        foundation_month: ba && form.foundation === "Yes" ? form.foundationDate?.month || "" : "",
+        foundation_year: ba && form.foundation === "Yes" ? form.foundationDate?.year || "" : "",
+        baptised: ba ? form.baptised || "" : "",
+        baptised_month: ba && form.baptised === "Yes" ? form.baptisedDate?.month || "" : "",
+        baptised_year: ba && form.baptised === "Yes" ? form.baptisedDate?.year || "" : "",
+        wolbi: ba ? form.wolbi || "" : "",
+        wolbi_month: ba && form.wolbi === "Yes" ? form.wolbiDate?.month || "" : "",
+        wolbi_year: ba && form.wolbi === "Yes" ? form.wolbiDate?.year || "" : "",
+        wolbi_level: ba && form.wolbi === "Yes" ? form.wolbiDate?.level || "" : "",
         unit_id: Number(form.unitId),
         unit_name: unit?.name || "",
         sub_unit: form.subUnit || "",
         status: "new",
         notes: "",
         submitted_at: new Date().toISOString(),
-        photo_path: form.photo?.dataUrl || "",
+        photo_path,
       };
-      const existing = JSON.parse(localStorage.getItem(FORM_DB_KEY) || "{\"registrations\":[]}");
-      existing.registrations = [payload, ...(existing.registrations || [])];
-      localStorage.setItem(FORM_DB_KEY, JSON.stringify(existing));
+      let existing;
+      try {
+        existing = JSON.parse(localStorage.getItem(FORM_DB_KEY) || '{"registrations":[]}');
+      } catch {
+        existing = { registrations: [] };
+      }
+      if (!Array.isArray(existing.registrations)) existing.registrations = [];
+      existing.registrations = [payload, ...existing.registrations];
+      try {
+        localStorage.setItem(FORM_DB_KEY, JSON.stringify(existing));
+      } catch (err) {
+        const q =
+          err?.name === "QuotaExceededError" ||
+          err?.code === 22 ||
+          err?.code === 1014;
+        setSaveError(
+          q
+            ? "Could not save: browser storage is full. Try a smaller photo or clear site data for this page."
+            : "Could not save your registration. Check browser settings (storage / private mode) and try again."
+        );
+        return;
+      }
       setDone(true);
-      setTimeout(
-        () => window.scrollTo({ top: 0, behavior: "smooth" }),
-        50
-      );
-    } else {
-      const el = document.querySelector(`[data-state="error"]`);
-      el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 50);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -253,18 +321,25 @@ export default function App() {
         <ServiceUnitSection form={form} set={set} errors={errors} />
 
         <div className="submit-bar">
+          {saveError && (
+            <div className="error-msg" style={{ width: "100%", marginBottom: 8 }} role="alert">
+              {saveError}
+            </div>
+          )}
           <div className="submit-meta" data-ready={isValid}>
             <span className="dot" />
             <span>
-              {isValid
-                ? "Ready to submit"
-                : `${filledPct}% complete — ${Object.keys(allErrors).length} field${
-                    Object.keys(allErrors).length === 1 ? "" : "s"
-                  } remaining`}
+              {saving
+                ? "Saving…"
+                : isValid
+                  ? "Ready to submit"
+                  : `${filledPct}% complete — ${Object.keys(allErrors).length} field${
+                      Object.keys(allErrors).length === 1 ? "" : "s"
+                    } remaining`}
             </span>
           </div>
-          <button type="submit" className="btn-primary">
-            Submit registration
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {saving ? "Saving…" : "Submit registration"}
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path
                 d="M3 7H11M11 7L7.5 3.5M11 7L7.5 10.5"
