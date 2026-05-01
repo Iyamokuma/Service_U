@@ -46,10 +46,11 @@ export function AdminLayout() {
 
   // Fetch pending count for sidebar badge
   useEffect(() => {
-    api.queue({ status: "pending", per_page: 1 })
+    if (!admin) return;
+    api.queue({ status: "pending", per_page: 1, viewer: admin })
       .then((r) => setPendingCount(r.pagination?.total ?? 0))
       .catch(() => {});
-  }, [page]);
+  }, [page, admin]);
 
   useEffect(() => {
     try { localStorage.setItem("sm_admin_theme", theme); } catch { /* ignore */ }

@@ -35,13 +35,14 @@ export function TextArea({ value, onChange, placeholder, state }) {
   );
 }
 
-export function Select({ value, onChange, options, placeholder, state }) {
+export function Select({ value, onChange, options, placeholder, state, disabled }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       data-state={state}
       className="select"
+      disabled={disabled}
     >
       <option value="">{placeholder || "Select…"}</option>
       {options.map((opt) => {

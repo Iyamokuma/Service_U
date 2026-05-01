@@ -358,6 +358,8 @@
 .sa-badge.super_admin{ background: #ede9fe; color: #5b21b6; }
 .sa-badge.service_unit_leader { background: #e0f2fe; color: #075985; }
 .sa-badge.sub_unit_leader { background: #fff7ed; color: #9a3412; }
+.sa-badge.country_super_admin { background: #ede9fe; color: #5b21b6; }
+.sa-badge.state_super_admin { background: #fce7f3; color: #9d174d; }
 .sa-badge.viewer     { background: #f1f5f9; color: #475569; }
 .sa-badge.active     { background: #dcfce7; color: #166534; }
 .sa-badge.inactive   { background: #f1f5f9; color: #64748b; }
@@ -653,10 +655,31 @@
 .sa-root[data-theme="dark"] .sa-table tr:hover td,
 .sa-root[data-theme="dark"] .sa-filters,
 .sa-root[data-theme="dark"] .sa-modal-close:hover,
-.sa-root[data-theme="dark"] .sa-unit-header:hover,
 .sa-root[data-theme="dark"] .sa-sub-row:hover,
 .sa-root[data-theme="dark"] .sa-detail-row td {
   background: #0f172a !important;
+}
+/* Service unit tree: base styles use light gray/white — must match dark surfaces */
+.sa-root[data-theme="dark"] .sa-unit-header {
+  background: var(--sa-surface);
+  color: var(--sa-text);
+}
+.sa-root[data-theme="dark"] .sa-unit-header:hover {
+  background: #1f2937 !important;
+}
+.sa-root[data-theme="dark"] .sa-unit-name,
+.sa-root[data-theme="dark"] .sa-unit-chevron {
+  color: var(--sa-text);
+}
+.sa-root[data-theme="dark"] .sa-unit-subs {
+  background: #0f172a;
+  color: var(--sa-text-2);
+}
+.sa-root[data-theme="dark"] .sa-sub-row {
+  background: transparent;
+}
+.sa-root[data-theme="dark"] .sa-sub-row:hover {
+  background: #1f2937 !important;
 }
 .sa-root[data-theme="dark"] .sa-card-head {
   background: #111827;

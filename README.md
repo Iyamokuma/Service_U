@@ -1,62 +1,35 @@
-# Service Unit Registration — React 19 App
+# Access Note
 
-Drop-in React 19 + Vite project.
+## URLs
+- Public form: `http://localhost:5173/`
+- Admin portal: `http://localhost:5173/admin`
 
-## Setup
+## Admin Login Credentials
+
+### Super Admin
+- `superadmin` or `superadmin@smhos.org` / `Admin@1234`
+
+### Service Unit Leader (Media & Service)
+- `chuks` or `chuks@smhos.org` / `Ibiyeomie@58`
+
+### Sub-Unit Leader (Media & Service — Audio)
+- `inatimi` or `inatimi@smhos.org` / `Ibiyeomie@58`
+
+### Country Super Admin (Nigeria)
+- `country.admin` or `country.admin@smhos.org` / `Ibiyeomie@58`
+
+### State Super Admin (Rivers, Nigeria)
+- `rivers.state` or `rivers.state@smhos.org` / `Ibiyeomie@58`
+
+## Local dev & Netlify
 
 ```bash
-cd react-app
 npm install
-npm run dev
+npm run dev    # http://localhost:5173
+npm run build  # output in dist/ — Netlify uses this (see netlify.toml)
 ```
 
-Opens at http://localhost:5173.
-
-## Build for production
-
-```bash
-npm run build
-```
-
-Outputs to `react-app/dist/`.
-
-## Structure
-
-```
-react-app/
-├── index.html              # Vite entry (loads src/main.jsx)
-├── package.json            # React 19 + Vite 6
-├── vite.config.js
-└── src/
-    ├── main.jsx            # ReactDOM.createRoot
-    ├── App.jsx             # Main form, state, validation
-    ├── styles.css          # All design tokens + component styles
-    ├── data.js             # Constants, validators, SERVICE_UNITS, NATIONALITIES, etc.
-    ├── components/         # Reusable primitives
-    │   ├── Field.jsx
-    │   ├── Inputs.jsx      # TextInput, TextArea, Select
-    │   ├── RadioGroup.jsx
-    │   ├── Collapse.jsx
-    │   ├── DateSplit.jsx
-    │   └── Dropzone.jsx
-    └── sections/           # Form sections
-        ├── SectionHead.jsx
-        ├── PersonalSection.jsx
-        ├── ContactSection.jsx
-        ├── WorkSection.jsx
-        ├── PhotoSection.jsx
-        ├── FaithSection.jsx
-        └── ServiceUnitSection.jsx
-```
-
-## Notes
-
-- Every file uses standard ES-module `import`/`export`. No globals, no Babel-in-browser.
-- React 19 + hooks only. No class components.
-- The single source of truth for layout and colors is `src/styles.css`.
-- To hook up the submit action, edit `onSubmit` in `src/App.jsx` (currently just shows a success screen).
-- Fonts come from Google Fonts via `<link>` in `index.html` — no font files to ship.
-
-## Embedding into an existing project
-
-If you already have a React app, copy `src/components/`, `src/sections/`, `src/data.js`, `src/App.jsx`, and `src/styles.css` into your project. Make sure your project supports JSX and has `react` + `react-dom` ≥ 19 installed.
+## LocalStorage Note
+- Admin accounts are stored in browser localStorage (`sm_admin_demo_db_v1`).
+- The app may reset the admin list when the roster version in code changes (`sm_admin_roster_rev`).
+- If login data gets out of sync, clear localStorage for this site and refresh.

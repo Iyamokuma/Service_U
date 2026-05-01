@@ -4,12 +4,22 @@ import { Modal } from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { SERVICE_UNITS } from "../../data.js";
+import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
 
 const ROLES = [
   { value: "super_admin", label: "Super Admin", desc: "Full global access." },
+  { value: "country_super_admin", label: "Country Super Admin", desc: "Dashboard scoped to one country (all states)." },
+  { value: "state_super_admin", label: "State Super Admin", desc: "Dashboard scoped to one state/region within a country." },
   { value: "service_unit_leader", label: "Service Unit Leader", desc: "Can manage assigned service unit." },
   { value: "sub_unit_leader", label: "Sub-unit Leader", desc: "Can manage assigned sub-unit only." },
 ];
+
+function formatAdminScope(a) {
+  if (a.role === "super_admin") return "Global";
+  if (a.role === "country_super_admin") return `${a.branch_country_label || a.branch_country || "—"} (country)`;
+  if (a.role === "state_super_admin") return `${a.branch_country_label || "—"} · ${a.branch_state_label || "—"}`;
+  return `${a.service_unit_name || "—"}${a.sub_unit_name ? ` / ${a.sub_unit_name}` : ""}`;
+}
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function fmtDate(str) {
@@ -128,7 +138,7 @@ export function AdminUsers({ data, units, reload }) {
                     </td>
                     <td className="sa-text-muted">{a.username}</td>
                     <td>{a.email}</td>
-                    <td><span className={`sa-badge ${a.role}`}>{a.role.replace("_", " ")}</span></td>
+                    <td><span className={`sa-badge ${a.role}`}>{a.role.replace(/_/g, " ")}</span></td>
                     <td className="sa-text-muted sa-text-sm">{a.role === "super_admin" ? "Global" : `${a.service_unit_name || "—"}${a.sub_unit_name ? ` / ${a.sub_unit_name}` : ""}`}</td>
                     <td><span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>{a.is_active ? "Active" : "Inactive"}</span></td>
                     <td className="sa-text-muted">{fmtDate(a.last_login)}</td>
@@ -160,7 +170,19 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
   const isSuper = me?.role === "super_admin";
   const isServiceLeader = me?.role === "service_unit_leader";
   const isEdit = !!data?.id;
-  const [form, setForm] = useState({ full_name: "", username: "", email: "", password: "", role: "service_unit_leader", service_unit_id: "", sub_unit_name: "", is_active: 1 });
+  const emptyForm = () => ({
+    full_name: "",
+    username: "",
+    email: "",
+    password: "",
+    role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader",
+    service_unit_id: isServiceLeader ? me.service_unit_id : "",
+    sub_unit_name: "",
+    branch_country: "",
+    branch_state: "",
+    is_active: 1,
+  });
+  const [form, setForm] = useState(emptyForm);
 
   if (open && data && form._id !== data.id) {
     setForm({
@@ -172,11 +194,13 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
       role:      data.role      || (isServiceLeader ? "sub_unit_leader" : "service_unit_leader"),
       service_unit_id: data.service_unit_id || (isServiceLeader ? me.service_unit_id : ""),
       sub_unit_name: data.sub_unit_name || "",
+      branch_country: data.branch_country || "",
+      branch_state: data.branch_state || "",
       is_active: data.is_active ?? 1,
       id: data.id,
     });
   }
-  if (!open && form._id !== undefined) setForm({ full_name: "", username: "", email: "", password: "", role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader", service_unit_id: isServiceLeader ? me.service_unit_id : "", sub_unit_name: "", is_active: 1 });
+  if (!open && form._id !== undefined) setForm(emptyForm());
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const selectedUnit = unitList.find((u) => Number(u.id) === Number(form.service_unit_id));
@@ -214,7 +238,21 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">Role</label>
-          <select className="sa-field-select" value={form.role} onChange={set("role")}>
+          <select
+            className="sa-field-select"
+            value={form.role}
+            onChange={(e) => {
+              const role = e.target.value;
+              setForm((f) => ({
+                ...f,
+                role,
+                service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? f.service_unit_id : "",
+                sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
+                branch_country: ["country_super_admin", "state_super_admin"].includes(role) ? f.branch_country : "",
+                branch_state: role === "state_super_admin" ? f.branch_state : "",
+              }));
+            }}
+          >
             {(isSuper ? ROLES : ROLES.filter((r) => r.value === "sub_unit_leader")).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
           <div className="sa-field-hint">{ROLES.find((r) => r.value === form.role)?.desc}</div>
@@ -228,7 +266,41 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
         </div>
       </div>
 
-      {form.role !== "super_admin" && (
+      {["country_super_admin", "state_super_admin"].includes(form.role) && (
+        <div className="sa-form-row">
+          <div className="sa-field">
+            <label className="sa-label">Country <span className="sa-required">*</span></label>
+            <select
+              className="sa-field-select"
+              value={form.branch_country}
+              onChange={(e) => setForm((f) => ({ ...f, branch_country: e.target.value, branch_state: "" }))}
+            >
+              <option value="">Select country</option>
+              {BRANCH_COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {form.role === "state_super_admin" && (
+            <div className="sa-field">
+              <label className="sa-label">State / region <span className="sa-required">*</span></label>
+              <select
+                className="sa-field-select"
+                value={form.branch_state}
+                onChange={(e) => setForm((f) => ({ ...f, branch_state: e.target.value }))}
+                disabled={!form.branch_country}
+              >
+                <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
+                {branchStatesForCountry(form.branch_country).map((s) => (
+                  <option key={s.code} value={s.code}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+
+      {["service_unit_leader", "sub_unit_leader"].includes(form.role) && (
         <div className="sa-form-row">
           <div className="sa-field">
             <label className="sa-label">Service Unit <span className="sa-required">*</span></label>

@@ -1,4 +1,5 @@
 import { SERVICE_UNITS } from "../data.js";
+import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 
 const DB_KEY = "sm_admin_demo_db_v1";
 const FORM_DB_KEY = "sm_form_db_v1";
@@ -18,18 +19,23 @@ const mediaUnitId = SERVICE_UNITS.find((u) => u.name === "Media & Service")?.id 
 const choirUnitId = SERVICE_UNITS.find((u) => u.name === "Choir")?.id || SERVICE_UNITS[1]?.id || mediaUnitId;
 const usheringUnitId = SERVICE_UNITS.find((u) => u.name === "Ushering")?.id || SERVICE_UNITS[2]?.id || mediaUnitId;
 
+/** Bump this string to reset the admin roster in localStorage (replaces entire `admins` array). */
+const ADMIN_ROSTER_REVISION = "2026-02-10-ng-36states-branch-admins";
+
 const seed = {
   admins: [
-    { id: 1, full_name: "Super Admin", username: "superadmin", email: "superadmin@smhos.org", role: "super_admin", service_unit_id: null, sub_unit_name: "", is_active: 1, last_login: null, password: "Admin@1234" },
-    { id: 2, full_name: "Media Leader", username: "media.leader", email: "media.leader@smhos.org", role: "service_unit_leader", service_unit_id: mediaUnitId, sub_unit_name: "", is_active: 1, last_login: null, password: "Leader@1234" },
-    { id: 3, full_name: "Audio Lead", username: "audio.lead", email: "audio.lead@smhos.org", role: "sub_unit_leader", service_unit_id: mediaUnitId, sub_unit_name: "Audio", is_active: 1, last_login: null, password: "Subunit@1234" },
+    { id: 1, full_name: "Super Admin", username: "superadmin", email: "superadmin@smhos.org", role: "super_admin", service_unit_id: null, sub_unit_name: "", branch_country: "", branch_state: "", is_active: 1, last_login: null, password: "Admin@1234" },
+    { id: 2, full_name: "Chuks", username: "chuks", email: "chuks@smhos.org", role: "service_unit_leader", service_unit_id: mediaUnitId, sub_unit_name: "", branch_country: "", branch_state: "", is_active: 1, last_login: null, password: "Ibiyeomie@58" },
+    { id: 3, full_name: "Inatimi", username: "inatimi", email: "inatimi@smhos.org", role: "sub_unit_leader", service_unit_id: mediaUnitId, sub_unit_name: "Audio", branch_country: "", branch_state: "", is_active: 1, last_login: null, password: "Ibiyeomie@58" },
+    { id: 4, full_name: "Nigeria Country Super Admin", username: "country.admin", email: "country.admin@smhos.org", role: "country_super_admin", service_unit_id: null, sub_unit_name: "", branch_country: "NG", branch_state: "", is_active: 1, last_login: null, password: "Ibiyeomie@58" },
+    { id: 5, full_name: "Rivers State Super Admin", username: "rivers.state", email: "rivers.state@smhos.org", role: "state_super_admin", service_unit_id: null, sub_unit_name: "", branch_country: "NG", branch_state: "RI", is_active: 1, last_login: null, password: "Ibiyeomie@58" },
   ],
   units: mappedUnits,
   sub_units: mappedSubs,
   registrations: [
-    { id: 1, first_name: "Chinwe", surname: "Okafor", other_names: "", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "Port Harcourt", bus_stop: "Rumuokoro", phone1: "+2348031112222", email: "chinwe@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Audio", status: "new", notes: "", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(), photo_path: "" },
-    { id: 2, first_name: "Daniel", surname: "Eze", other_names: "", sex: "Male", marital_status: "Married", nationality: "Nigerian", address: "Abuja", bus_stop: "Wuse", phone1: "+2348033334444", email: "daniel@example.com", unit_id: 1, unit_name: "Choir", sub_unit: "", status: "accepted", notes: "", submitted_at: new Date().toISOString(), photo_path: "" },
-    { id: 3, first_name: "Peace", surname: "Udo", other_names: "", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "Lagos", bus_stop: "CMS", phone1: "+2348090001111", email: "peace@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Video", status: "in_progress", notes: "", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(), photo_path: "" },
+    { id: 1, first_name: "Chinwe", surname: "Okafor", other_names: "", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "Port Harcourt", bus_stop: "Rumuokoro", phone1: "+2348031112222", email: "chinwe@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Audio", branch_country: "NG", branch_state: "RI", status: "new", notes: "", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(), photo_path: "" },
+    { id: 2, first_name: "Daniel", surname: "Eze", other_names: "", sex: "Male", marital_status: "Married", nationality: "Nigerian", address: "Abuja", bus_stop: "Wuse", phone1: "+2348033334444", email: "daniel@example.com", unit_id: 1, unit_name: "Choir", sub_unit: "", branch_country: "NG", branch_state: "FCT", status: "accepted", notes: "", submitted_at: new Date().toISOString(), photo_path: "" },
+    { id: 3, first_name: "Peace", surname: "Udo", other_names: "", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "Lagos", bus_stop: "CMS", phone1: "+2348090001111", email: "peace@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Video", branch_country: "NG", branch_state: "LA", status: "in_progress", notes: "", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(), photo_path: "" },
   ],
   requests: [
     { id: 1, from_admin_id: 1, from_name: "Super Admin", from_role: "super_admin", message: "Welcome to the platform.", status: "resolved", created_at: new Date().toISOString() },
@@ -48,7 +54,7 @@ const seed = {
     },
   },
   activity: [],
-  nextIds: { admin: 4, unit: mappedUnits.length + 1, sub: 1000, reg: 4, act: 1, req: 2 },
+  nextIds: { admin: 6, unit: mappedUnits.length + 1, sub: 1000, reg: 4, act: 1, req: 2 },
 };
 
 function recomputeNextIds(db) {
@@ -64,38 +70,35 @@ function recomputeNextIds(db) {
   };
 }
 
+function applyCanonicalAdminRoster(db) {
+  try {
+    if (localStorage.getItem("sm_admin_roster_rev") === ADMIN_ROSTER_REVISION) return false;
+  } catch {
+    return false;
+  }
+  db.admins = structuredClone(seed.admins).map((a) => ({
+    ...a,
+    branch_country: a.branch_country ?? "",
+    branch_state: a.branch_state ?? "",
+  }));
+  recomputeNextIds(db);
+  try {
+    localStorage.setItem("sm_admin_roster_rev", ADMIN_ROSTER_REVISION);
+  } catch { /* ignore */ }
+  log(db, "System", "admin.roster.reset", "settings", 1, "Admin roster replaced with canonical accounts");
+  return true;
+}
+
 function ensureDemoData(db) {
   let changed = false;
-  const byUsername = new Set(db.admins.map((a) => String(a.username || "").toLowerCase()));
-  const byEmail = new Set(db.admins.map((a) => String(a.email || "").toLowerCase()));
-
-  const demoAdmins = [
-    { full_name: "Operations Admin", username: "ops.admin", email: "ops.admin@smhos.org", role: "super_admin", service_unit_id: null, sub_unit_name: "", password: "Admin@1234" },
-    { full_name: "Choir Leader", username: "choir.leader", email: "choir.leader@smhos.org", role: "service_unit_leader", service_unit_id: choirUnitId, sub_unit_name: "", password: "Leader@1234" },
-    { full_name: "Ushering Leader", username: "ushering.leader", email: "ushering.leader@smhos.org", role: "service_unit_leader", service_unit_id: usheringUnitId, sub_unit_name: "", password: "Leader@1234" },
-    { full_name: "Video Sub-unit Lead", username: "video.lead", email: "video.lead@smhos.org", role: "sub_unit_leader", service_unit_id: mediaUnitId, sub_unit_name: "Video", password: "Subunit@1234" },
-    { full_name: "Graphics Sub-unit Lead", username: "graphics.lead", email: "graphics.lead@smhos.org", role: "sub_unit_leader", service_unit_id: mediaUnitId, sub_unit_name: "Graphics", password: "Subunit@1234" },
-    { full_name: "Tenor Coordinator", username: "tenor.lead", email: "tenor.lead@smhos.org", role: "sub_unit_leader", service_unit_id: choirUnitId, sub_unit_name: "Tenor", password: "Subunit@1234" },
-  ];
-
-  demoAdmins.forEach((entry) => {
-    if (byUsername.has(entry.username.toLowerCase()) || byEmail.has(entry.email.toLowerCase())) return;
-    db.admins.push({
-      id: db.nextIds.admin++,
-      is_active: 1,
-      last_login: null,
-      ...entry,
-    });
-    changed = true;
-  });
 
   const demoRegs = [
-    { first_name: "Favour", surname: "Okon", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "GRA, Port Harcourt", bus_stop: "Garrison", phone1: "+2348021010001", email: "favour.okon@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Graphics", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString() },
-    { first_name: "Elijah", surname: "Bassey", sex: "Male", marital_status: "Single", nationality: "Nigerian", address: "Aba Road", bus_stop: "Artillery", phone1: "+2348021010002", email: "elijah.bassey@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Video", status: "in_progress", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString() },
-    { first_name: "Joy", surname: "Amadi", sex: "Female", marital_status: "Married", nationality: "Nigerian", address: "Woji", bus_stop: "Slaughter", phone1: "+2348021010003", email: "joy.amadi@example.com", unit_id: choirUnitId, unit_name: "Choir", sub_unit: "Soprano", status: "accepted", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 44).toISOString() },
-    { first_name: "Michael", surname: "Edet", sex: "Male", marital_status: "Single", nationality: "Nigerian", address: "Rumuola", bus_stop: "Rumuola", phone1: "+2348021010004", email: "michael.edet@example.com", unit_id: choirUnitId, unit_name: "Choir", sub_unit: "Tenor", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString() },
-    { first_name: "Blessing", surname: "Nwankwo", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "Mile 3", bus_stop: "Mile 3", phone1: "+2348021010005", email: "blessing.nwankwo@example.com", unit_id: usheringUnitId, unit_name: "Ushering", sub_unit: "Main Auditorium", status: "accepted", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 58).toISOString() },
-    { first_name: "Samuel", surname: "John", sex: "Male", marital_status: "Married", nationality: "Nigerian", address: "Ada George", bus_stop: "Agip", phone1: "+2348021010006", email: "samuel.john@example.com", unit_id: usheringUnitId, unit_name: "Ushering", sub_unit: "Overflow", status: "in_progress", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 14).toISOString() },
+    { first_name: "Favour", surname: "Okon", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "GRA, Port Harcourt", bus_stop: "Garrison", phone1: "+2348021010001", email: "favour.okon@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Graphics", branch_country: "NG", branch_state: "RI", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString() },
+    { first_name: "Elijah", surname: "Bassey", sex: "Male", marital_status: "Single", nationality: "Nigerian", address: "Aba Road", bus_stop: "Artillery", phone1: "+2348021010002", email: "elijah.bassey@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Video", branch_country: "NG", branch_state: "RI", status: "in_progress", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString() },
+    { first_name: "Joy", surname: "Amadi", sex: "Female", marital_status: "Married", nationality: "Nigerian", address: "Woji", bus_stop: "Slaughter", phone1: "+2348021010003", email: "joy.amadi@example.com", unit_id: choirUnitId, unit_name: "Choir", sub_unit: "Soprano", branch_country: "NG", branch_state: "RI", status: "accepted", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 44).toISOString() },
+    { first_name: "Michael", surname: "Edet", sex: "Male", marital_status: "Single", nationality: "Nigerian", address: "Rumuola", bus_stop: "Rumuola", phone1: "+2348021010004", email: "michael.edet@example.com", unit_id: choirUnitId, unit_name: "Choir", sub_unit: "Tenor", branch_country: "NG", branch_state: "LA", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString() },
+    { first_name: "Blessing", surname: "Nwankwo", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "Mile 3", bus_stop: "Mile 3", phone1: "+2348021010005", email: "blessing.nwankwo@example.com", unit_id: usheringUnitId, unit_name: "Ushering", sub_unit: "Main Auditorium", branch_country: "NG", branch_state: "DE", status: "accepted", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 58).toISOString() },
+    { first_name: "Samuel", surname: "John", sex: "Male", marital_status: "Married", nationality: "Nigerian", address: "Ada George", bus_stop: "Agip", phone1: "+2348021010006", email: "samuel.john@example.com", unit_id: usheringUnitId, unit_name: "Ushering", sub_unit: "Overflow", branch_country: "GH", branch_state: "GA", status: "in_progress", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 14).toISOString() },
   ];
 
   const byRegEmail = new Set(db.registrations.map((r) => String(r.email || "").toLowerCase()));
@@ -112,7 +115,7 @@ function ensureDemoData(db) {
   });
 
   if (changed) {
-    log(db, "System Seeder", "seed.populate", "settings", 1, "Added sample admins and queue data");
+    log(db, "System Seeder", "seed.populate", "settings", 1, "Added sample queue data");
   }
   recomputeNextIds(db);
   return changed;
@@ -127,16 +130,27 @@ function readDb() {
       const existingIds = new Set(db.registrations.map((r) => String(r.id)));
       formDb.registrations.forEach((r) => {
         if (existingIds.has(String(r.id))) return;
-        db.registrations.push({ ...r, status: normalizeStatus(r.status || "new") });
+        db.registrations.push({
+          ...r,
+          status: normalizeStatus(r.status || "new"),
+          branch_country: normBranchCode(r.branch_country) || "NG",
+          branch_state: normBranchCode(r.branch_state) || "",
+        });
       });
     }
     const missingUnits = mappedUnits.filter((u) => !db.units.some((x) => Number(x.id) === Number(u.id)));
     if (missingUnits.length) db.units.push(...missingUnits);
     const missingSubs = mappedSubs.filter((s) => !db.sub_units.some((x) => Number(x.unit_id) === Number(s.unit_id) && String(x.name) === String(s.name)));
     if (missingSubs.length) db.sub_units.push(...missingSubs);
-    db.registrations = db.registrations.map((r) => ({ ...r, status: normalizeStatus(r.status) }));
+    db.registrations = db.registrations.map((r) => ({
+      ...r,
+      status: normalizeStatus(r.status),
+      branch_country: normBranchCode(r.branch_country) || "NG",
+      branch_state: normBranchCode(r.branch_state) || "",
+    }));
+    const rosterChanged = applyCanonicalAdminRoster(db);
     const changed = ensureDemoData(db);
-    if (changed) writeDb(db);
+    if (rosterChanged || changed) writeDb(db);
     return db;
   } catch {
     return structuredClone(seed);
@@ -146,12 +160,29 @@ function writeDb(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
 function normText(v) {
   return String(v ?? "").trim();
 }
+function normBranchCode(v) {
+  return normText(v).toUpperCase();
+}
 function normalizeStatus(s) {
   const map = { pending: "new", approved: "accepted", waitlisted: "in_progress" };
   return map[s] || s || "new";
 }
 function canAccessRegistration(admin, row) {
   if (!admin || admin.role === "super_admin") return true;
+  if (admin.role === "country_super_admin") {
+    const rc = normBranchCode(row.branch_country);
+    const ac = normBranchCode(admin.branch_country);
+    if (!rc || !ac) return false;
+    return rc === ac;
+  }
+  if (admin.role === "state_super_admin") {
+    const rc = normBranchCode(row.branch_country);
+    const rs = normBranchCode(row.branch_state);
+    const ac = normBranchCode(admin.branch_country);
+    const ast = normBranchCode(admin.branch_state);
+    if (!rc || !rs || !ac || !ast) return false;
+    return rc === ac && rs === ast;
+  }
   if (admin.role === "service_unit_leader") return Number(row.unit_id) === Number(admin.service_unit_id);
   if (admin.role === "sub_unit_leader") return Number(row.unit_id) === Number(admin.service_unit_id) && String(row.sub_unit || "").toLowerCase() === String(admin.sub_unit_name || "").toLowerCase();
   return false;
@@ -218,6 +249,8 @@ export const api = {
         role: admin.role,
         service_unit_id: admin.service_unit_id,
         sub_unit_name: admin.sub_unit_name,
+        branch_country: admin.branch_country ?? "",
+        branch_state: admin.branch_state ?? "",
       },
     };
   },
@@ -233,7 +266,12 @@ export const api = {
       approved: regs.filter((r) => normalizeStatus(r.status) === "accepted").length,
       rejected: regs.filter((r) => r.status === "rejected").length,
       waitlisted: regs.filter((r) => normalizeStatus(r.status) === "in_progress").length,
-      active_units: params.viewer?.role === "service_unit_leader" ? 1 : db.units.filter((u) => u.is_active === 1).length,
+      active_units:
+        params.viewer?.role === "service_unit_leader"
+          ? 1
+          : ["country_super_admin", "state_super_admin"].includes(params.viewer?.role)
+            ? new Set(regs.map((r) => r.unit_id)).size || 0
+            : db.units.filter((u) => u.is_active === 1).length,
       this_week: regs.length,
     };
     const byUnitMap = {};
@@ -263,7 +301,9 @@ export const api = {
     if (params.sex) rows = rows.filter((r) => (r.sex || "") === params.sex);
     if (params.search) {
       const q = String(params.search).toLowerCase();
-      rows = rows.filter((r) => `${r.first_name} ${r.surname} ${r.email} ${r.phone1}`.toLowerCase().includes(q));
+      rows = rows.filter((r) =>
+        `${r.first_name} ${r.surname} ${r.other_names || ""} ${r.email} ${r.phone1} ${r.phone2 || ""}`.toLowerCase().includes(q)
+      );
     }
     if (params.from) rows = rows.filter((r) => String(r.submitted_at).slice(0, 10) >= params.from);
     if (params.to) rows = rows.filter((r) => String(r.submitted_at).slice(0, 10) <= params.to);
@@ -271,7 +311,7 @@ export const api = {
   },
   async updateStatus(id, body) {
     const db = readDb();
-    const row = db.registrations.find((r) => Number(r.id) === Number(id));
+    const row = db.registrations.find((r) => String(r.id) === String(id));
     if (!row) throw new Error("Registration not found.");
     const viewer = body.viewer || null;
     if (viewer && !canAccessRegistration(viewer, row)) throw new Error("Not allowed for this queue item.");
@@ -294,7 +334,7 @@ export const api = {
   },
   async deleteReg(id) {
     const db = readDb();
-    db.registrations = db.registrations.filter((r) => Number(r.id) !== Number(id));
+    db.registrations = db.registrations.filter((r) => String(r.id) !== String(id));
     log(db, "Super Admin", "queue.delete", "registration", id, "Registration deleted");
     writeDb(db);
     return { ok: true };
@@ -365,6 +405,10 @@ export const api = {
         service_unit_name: db.units.find((u) => Number(u.id) === Number(a.service_unit_id))?.name || "",
         service_unit_id: a.service_unit_id ?? null,
         sub_unit_name: a.sub_unit_name || "",
+        branch_country: a.branch_country ?? "",
+        branch_state: a.branch_state ?? "",
+        branch_country_label: branchCountryLabel(a.branch_country),
+        branch_state_label: branchStateLabel(a.branch_country, a.branch_state),
         is_active: a.is_active,
         last_login: a.last_login,
       })),
@@ -376,8 +420,10 @@ export const api = {
     const email = normText(body.email);
     const fullName = normText(body.full_name);
     const role = body.role || "viewer";
-    const serviceUnitId = body.service_unit_id ? Number(body.service_unit_id) : null;
+    let serviceUnitId = body.service_unit_id ? Number(body.service_unit_id) : null;
     const subUnitName = normText(body.sub_unit_name);
+    const branchCountry = normBranchCode(body.branch_country);
+    const branchState = normBranchCode(body.branch_state);
     const password = String(body.password ?? "");
     if (!username) throw new Error("Username is required.");
     if (!email) throw new Error("Email is required.");
@@ -389,8 +435,39 @@ export const api = {
     }
     const existing = existingByUsername || existingByEmail;
 
-    if (role !== "super_admin" && !serviceUnitId) throw new Error("Service unit is required for leaders.");
-    if (role === "sub_unit_leader" && !subUnitName) throw new Error("Sub-unit is required for sub-unit leaders.");
+    let outBranchCountry = "";
+    let outBranchState = "";
+    let outSubUnit = "";
+    let outServiceUnitId = null;
+
+    if (role === "super_admin") {
+      outServiceUnitId = null;
+      outSubUnit = "";
+    } else if (role === "country_super_admin") {
+      if (!branchCountry) throw new Error("Country is required for country super admin.");
+      outBranchCountry = branchCountry;
+      outBranchState = "";
+      outServiceUnitId = null;
+      outSubUnit = "";
+    } else if (role === "state_super_admin") {
+      if (!branchCountry) throw new Error("Country is required for state super admin.");
+      if (!branchState) throw new Error("State / region is required for state super admin.");
+      outBranchCountry = branchCountry;
+      outBranchState = branchState;
+      outServiceUnitId = null;
+      outSubUnit = "";
+    } else if (role === "service_unit_leader") {
+      if (!serviceUnitId) throw new Error("Service unit is required for service unit leaders.");
+      outServiceUnitId = serviceUnitId;
+      outSubUnit = "";
+    } else if (role === "sub_unit_leader") {
+      if (!serviceUnitId) throw new Error("Service unit is required for sub-unit leaders.");
+      if (!subUnitName) throw new Error("Sub-unit is required for sub-unit leaders.");
+      outServiceUnitId = serviceUnitId;
+      outSubUnit = subUnitName;
+    } else {
+      throw new Error("Unsupported role.");
+    }
 
     // If an account with same username/email exists but is inactive, revive it safely.
     if (existing) {
@@ -402,8 +479,10 @@ export const api = {
       existing.username = username;
       existing.email = email;
       existing.role = role;
-      existing.service_unit_id = serviceUnitId;
-      existing.sub_unit_name = subUnitName;
+      existing.service_unit_id = outServiceUnitId;
+      existing.sub_unit_name = outSubUnit;
+      existing.branch_country = outBranchCountry;
+      existing.branch_state = outBranchState;
       existing.is_active = Number(body.is_active ?? 1);
       if (password.trim()) existing.password = password;
       else if (!normText(existing.password)) existing.password = "Admin@1234";
@@ -412,22 +491,24 @@ export const api = {
       return { data: existing };
     }
 
-    const admin = {
+    const adminRow = {
       id: db.nextIds.admin++,
       full_name: fullName,
       username,
       email,
       password: password.trim() ? password : "Admin@1234",
       role,
-      service_unit_id: serviceUnitId,
-      sub_unit_name: subUnitName,
+      service_unit_id: outServiceUnitId,
+      sub_unit_name: outSubUnit,
+      branch_country: outBranchCountry,
+      branch_state: outBranchState,
       is_active: Number(body.is_active ?? 1),
       last_login: null,
     };
-    db.admins.push(admin);
-    log(db, "Super Admin", "admin.create", "admin", admin.id, `Created admin ${admin.username}`);
+    db.admins.push(adminRow);
+    log(db, "Super Admin", "admin.create", "admin", adminRow.id, `Created admin ${adminRow.username}`);
     writeDb(db);
-    return { data: admin };
+    return { data: adminRow };
   },
   async updateAdmin(id, body) {
     const db = readDb();
@@ -435,16 +516,52 @@ export const api = {
     if (!admin) throw new Error("Admin not found.");
     const nextRole = body.role ?? admin.role;
     const nextServiceUnitId = body.service_unit_id !== undefined ? (body.service_unit_id ? Number(body.service_unit_id) : null) : admin.service_unit_id;
-    const nextSubUnitName = body.sub_unit_name !== undefined ? body.sub_unit_name : admin.sub_unit_name;
-    if (nextRole !== "super_admin" && !nextServiceUnitId) throw new Error("Service unit is required for leaders.");
-    if (nextRole === "sub_unit_leader" && !nextSubUnitName) throw new Error("Sub-unit is required for sub-unit leaders.");
+    const nextSubUnitName = body.sub_unit_name !== undefined ? normText(body.sub_unit_name) : admin.sub_unit_name;
+    const nextBranchCountry = body.branch_country !== undefined ? normBranchCode(body.branch_country) : normBranchCode(admin.branch_country);
+    const nextBranchState = body.branch_state !== undefined ? normBranchCode(body.branch_state) : normBranchCode(admin.branch_state);
+
+    if (nextRole === "super_admin") {
+      /* ok */
+    } else if (nextRole === "country_super_admin") {
+      if (!nextBranchCountry) throw new Error("Country is required for country super admin.");
+    } else if (nextRole === "state_super_admin") {
+      if (!nextBranchCountry) throw new Error("Country is required for state super admin.");
+      if (!nextBranchState) throw new Error("State / region is required for state super admin.");
+    } else if (nextRole === "service_unit_leader") {
+      if (!nextServiceUnitId) throw new Error("Service unit is required for service unit leaders.");
+    } else if (nextRole === "sub_unit_leader") {
+      if (!nextServiceUnitId) throw new Error("Service unit is required for sub-unit leaders.");
+      if (!normText(nextSubUnitName)) throw new Error("Sub-unit is required for sub-unit leaders.");
+    }
+
     admin.full_name = body.full_name ?? admin.full_name;
     admin.email = body.email ?? admin.email;
     admin.role = body.role ?? admin.role;
-    admin.service_unit_id = body.service_unit_id !== undefined ? (body.service_unit_id ? Number(body.service_unit_id) : null) : admin.service_unit_id;
-    admin.sub_unit_name = body.sub_unit_name !== undefined ? body.sub_unit_name : admin.sub_unit_name;
     admin.is_active = Number(body.is_active ?? admin.is_active);
     if (body.password) admin.password = body.password;
+
+    if (nextRole === "super_admin") {
+      admin.service_unit_id = null;
+      admin.sub_unit_name = "";
+      admin.branch_country = "";
+      admin.branch_state = "";
+    } else if (nextRole === "country_super_admin") {
+      admin.service_unit_id = null;
+      admin.sub_unit_name = "";
+      admin.branch_country = nextBranchCountry;
+      admin.branch_state = "";
+    } else if (nextRole === "state_super_admin") {
+      admin.service_unit_id = null;
+      admin.sub_unit_name = "";
+      admin.branch_country = nextBranchCountry;
+      admin.branch_state = nextBranchState;
+    } else {
+      admin.service_unit_id = body.service_unit_id !== undefined ? (body.service_unit_id ? Number(body.service_unit_id) : null) : admin.service_unit_id;
+      admin.sub_unit_name = body.sub_unit_name !== undefined ? normText(body.sub_unit_name) : admin.sub_unit_name;
+      admin.branch_country = "";
+      admin.branch_state = "";
+    }
+
     log(db, "Super Admin", "admin.update", "admin", admin.id, `Updated admin ${admin.username}`);
     writeDb(db);
     return { data: admin };
@@ -464,7 +581,9 @@ export const api = {
     if (params.unit_id) rows = rows.filter((r) => Number(r.unit_id) === Number(params.unit_id));
     if (params.search) {
       const q = String(params.search).toLowerCase();
-      rows = rows.filter((r) => `${r.first_name} ${r.surname} ${r.email} ${r.phone1}`.toLowerCase().includes(q));
+      rows = rows.filter((r) =>
+        `${r.first_name} ${r.surname} ${r.other_names || ""} ${r.email} ${r.phone1} ${r.phone2 || ""}`.toLowerCase().includes(q)
+      );
     }
     rows.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
     return paginate(rows, params.page, params.per_page || 25);
@@ -522,27 +641,15 @@ export const api = {
   async activity(params = {}) {
     const db = readDb();
     let rows = db.activity.slice();
-    if (params.viewer?.role === "service_unit_leader") {
+    if (params.viewer && params.viewer.role !== "super_admin") {
       const allowedRegs = new Set(
         db.registrations
           .filter((r) => canAccessRegistration(params.viewer, r))
-          .map((r) => Number(r.id))
+          .map((r) => String(r.id))
       );
       rows = rows.filter(
         (r) =>
-          (r.entity_type === "registration" && allowedRegs.has(Number(r.entity_id))) ||
-          r.admin_name === params.viewer.full_name
-      );
-    }
-    if (params.viewer?.role === "sub_unit_leader") {
-      const allowedRegs = new Set(
-        db.registrations
-          .filter((r) => canAccessRegistration(params.viewer, r))
-          .map((r) => Number(r.id))
-      );
-      rows = rows.filter(
-        (r) =>
-          (r.entity_type === "registration" && allowedRegs.has(Number(r.entity_id))) ||
+          (r.entity_type === "registration" && allowedRegs.has(String(r.entity_id))) ||
           r.admin_name === params.viewer.full_name
       );
     }
