@@ -95,6 +95,7 @@ export function Queue({ units }) {
   const isServiceLeader = admin?.role === "service_unit_leader";
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
   const canDelete = admin?.role === "super_admin";
+  const canEditBranch = admin?.role === "super_admin";
   const [rows, setRows] = useState([]);
   const [sideBySide, setSideBySide] = useState([]);
   const [overdue, setOverdue] = useState([]);
@@ -116,7 +117,7 @@ export function Queue({ units }) {
       setPag(res.pagination);
     } catch (e) { toast(e.message, "error"); }
     finally { setLoading(false); }
-  }, [toast]);
+  }, [toast, admin]);
 
   useEffect(() => {
     clearTimeout(debounce.current);
