@@ -357,21 +357,7 @@ function UnitModal({ open, data, onClose, onSave, saving }) {
             <label className="sa-label">
               Unit Name <span className="sa-required">*</span>
             </label>
-            <input className="sa-input" value={form.name} onChange={set("name")} placeholder="e.g. Choir" />
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">Description</label>
-            <textarea className="sa-textarea" value={form.description} onChange={set("description")} placeholder="Brief description…" />
-          </div>
-          <div className="sa-form-row">
-            <div className="sa-field">
-              <label className="sa-label">Coordinator Name</label>
-              <input className="sa-input" value={form.coordinator} onChange={set("coordinator")} placeholder="Full name" />
-            </div>
-            <div className="sa-field">
-              <label className="sa-label">Sort Order</label>
-              <input className="sa-input" type="number" value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: +e.target.value }))} min="0" />
-            </div>
+            <input className="sa-input" value={form.name} onChange={set("name")} placeholder="e.g. Choir" autoFocus />
           </div>
           <div className="sa-field">
             <label className="sa-label">Status</label>

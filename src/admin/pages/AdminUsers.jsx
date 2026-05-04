@@ -124,11 +124,20 @@ export function AdminUsers({ data, units, reload }) {
             {admins.length} visible / {scopedAdmins.length} total administrator{scopedAdmins.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {!isServiceLeader && (
-            <button className="sa-btn sa-btn-outline" onClick={() => setShowInactive((v) => !v)}>
-              {showInactive ? "Hide Inactive" : "Show Inactive"}
-            </button>
+            <label className="sa-field-toggle">
+              <span className="sa-field-toggle-label">Show inactive</span>
+              <span className="sa-switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={showInactive}
+                  onChange={(e) => setShowInactive(e.target.checked)}
+                />
+                <span className="sa-switch-ui" aria-hidden />
+              </span>
+            </label>
           )}
           {(isSuper || isServiceLeader) && <button className="sa-btn sa-btn-primary" onClick={() => setModal({ role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader", service_unit_id: isServiceLeader ? me.service_unit_id : "" })}>+ New Admin</button>}
         </div>
