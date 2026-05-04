@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
@@ -7,31 +7,44 @@ export function UnitMembers({ units }) {
   const toast = useToast();
   const { admin } = useAdminAuth();
   const isLeader = ["service_unit_leader", "sub_unit_leader"].includes(admin?.role);
+  const isServiceUnitLeader = admin?.role === "service_unit_leader";
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ search: "", unit_id: "" });
+  const [filters, setFilters] = useState({ search: "", unit_id: "", sub_unit: "" });
 
-  const load = async (page = 1) => {
-    setLoading(true);
-    try {
-      const res = await api.members({
-        ...filters,
-        page,
-        per_page: 25,
-        viewer: admin,
-        unit_id: isLeader ? admin?.service_unit_id : filters.unit_id,
-      });
-      setRows(res.data || []);
-      setPag(res.pagination || { page: 1, pages: 1, total: 0 });
-    } catch (e) {
-      toast(e.message, "error");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const subUnitChoices = useMemo(() => {
+    const u = (units?.data || []).find((x) => Number(x.id) === Number(admin?.service_unit_id));
+    return (u?.sub_units || []).map((s) => s.name).filter(Boolean);
+  }, [units?.data, admin?.service_unit_id]);
 
-  useEffect(() => { load(1); }, [filters.search, filters.unit_id]);
+  const load = useCallback(
+    async (page = 1) => {
+      setLoading(true);
+      try {
+        const body = {
+          search: filters.search,
+          page,
+          per_page: 25,
+          viewer: admin,
+          unit_id: isLeader ? admin?.service_unit_id : filters.unit_id,
+        };
+        if (isServiceUnitLeader && filters.sub_unit) body.sub_unit = filters.sub_unit;
+        const res = await api.members(body);
+        setRows(res.data || []);
+        setPag(res.pagination || { page: 1, pages: 1, total: 0 });
+      } catch (e) {
+        toast(e.message, "error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [filters.search, filters.unit_id, filters.sub_unit, admin, isLeader, isServiceUnitLeader, toast]
+  );
+
+  useEffect(() => {
+    load(1);
+  }, [load]);
 
   return (
     <div className="sa-card">
@@ -41,6 +54,16 @@ export function UnitMembers({ units }) {
           <option value="">All Units</option>
           {(units?.data || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
+        {isServiceUnitLeader && (
+          <select className="sa-select" value={filters.sub_unit} onChange={(e) => setFilters((f) => ({ ...f, sub_unit: e.target.value }))}>
+            <option value="">All sub-units</option>
+            {subUnitChoices.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="sa-table-wrap">

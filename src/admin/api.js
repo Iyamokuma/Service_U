@@ -20,7 +20,7 @@ const choirUnitId = SERVICE_UNITS.find((u) => u.name === "Choir")?.id || SERVICE
 const usheringUnitId = SERVICE_UNITS.find((u) => u.name === "Ushering")?.id || SERVICE_UNITS[2]?.id || mediaUnitId;
 
 /** Bump this string to reset the admin roster in localStorage (replaces entire `admins` array). */
-const ADMIN_ROSTER_REVISION = "2026-02-10-ng-36states-branch-admins";
+const ADMIN_ROSTER_REVISION = "2026-05-01-merge-seed-preserve-custom-admins";
 
 const seed = {
   admins: [
@@ -76,16 +76,19 @@ function applyCanonicalAdminRoster(db) {
   } catch {
     return false;
   }
-  db.admins = structuredClone(seed.admins).map((a) => ({
+  const seedIds = new Set(seed.admins.map((a) => Number(a.id)));
+  const customAdmins = (db.admins || []).filter((a) => !seedIds.has(Number(a.id)));
+  const canonical = structuredClone(seed.admins).map((a) => ({
     ...a,
     branch_country: a.branch_country ?? "",
     branch_state: a.branch_state ?? "",
   }));
+  db.admins = [...canonical, ...customAdmins];
   recomputeNextIds(db);
   try {
     localStorage.setItem("sm_admin_roster_rev", ADMIN_ROSTER_REVISION);
   } catch { /* ignore */ }
-  log(db, "System", "admin.roster.reset", "settings", 1, "Admin roster replaced with canonical accounts");
+  log(db, "System", "admin.roster.reset", "settings", 1, "Canonical seed admins merged; custom admins preserved");
   return true;
 }
 
@@ -93,7 +96,7 @@ function ensureDemoData(db) {
   let changed = false;
 
   const demoRegs = [
-    { first_name: "Favour", surname: "Okon", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "GRA, Port Harcourt", bus_stop: "Garrison", phone1: "+2348021010001", email: "favour.okon@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Graphics", branch_country: "NG", branch_state: "RI", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString() },
+    { first_name: "Favour", surname: "Okon", sex: "Female", marital_status: "Single", nationality: "Nigerian", address: "GRA, Port Harcourt", bus_stop: "Garrison", phone1: "+2348021010001", email: "favour.okon@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Electrical", branch_country: "NG", branch_state: "RI", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString() },
     { first_name: "Elijah", surname: "Bassey", sex: "Male", marital_status: "Single", nationality: "Nigerian", address: "Aba Road", bus_stop: "Artillery", phone1: "+2348021010002", email: "elijah.bassey@example.com", unit_id: mediaUnitId, unit_name: "Media & Service", sub_unit: "Video", branch_country: "NG", branch_state: "RI", status: "in_progress", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString() },
     { first_name: "Joy", surname: "Amadi", sex: "Female", marital_status: "Married", nationality: "Nigerian", address: "Woji", bus_stop: "Slaughter", phone1: "+2348021010003", email: "joy.amadi@example.com", unit_id: choirUnitId, unit_name: "Choir", sub_unit: "Soprano", branch_country: "NG", branch_state: "RI", status: "accepted", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 44).toISOString() },
     { first_name: "Michael", surname: "Edet", sex: "Male", marital_status: "Single", nationality: "Nigerian", address: "Rumuola", bus_stop: "Rumuola", phone1: "+2348021010004", email: "michael.edet@example.com", unit_id: choirUnitId, unit_name: "Choir", sub_unit: "Tenor", branch_country: "NG", branch_state: "LA", status: "new", submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString() },
@@ -118,6 +121,32 @@ function ensureDemoData(db) {
     log(db, "System Seeder", "seed.populate", "settings", 1, "Added sample queue data");
   }
   recomputeNextIds(db);
+  return changed;
+}
+
+/** Media & Service only has Audio, Video, Electrical — strip legacy "Graphics" from persisted DBs. */
+function removeLegacyMediaGraphics(db) {
+  let changed = false;
+  const mid = mediaUnitId;
+  const isGraphics = (s) => String(s || "").toLowerCase() === "graphics";
+  db.sub_units = (db.sub_units || []).filter((s) => {
+    if (Number(s.unit_id) !== Number(mid)) return true;
+    if (isGraphics(s.name)) {
+      changed = true;
+      return false;
+    }
+    return true;
+  });
+  (db.registrations || []).forEach((r) => {
+    if (Number(r.unit_id) !== Number(mid) || !isGraphics(r.sub_unit)) return;
+    r.sub_unit = "Electrical";
+    changed = true;
+  });
+  (db.admins || []).forEach((a) => {
+    if (Number(a.service_unit_id) !== Number(mid) || !isGraphics(a.sub_unit_name)) return;
+    a.sub_unit_name = "Electrical";
+    changed = true;
+  });
   return changed;
 }
 
@@ -148,9 +177,10 @@ function readDb() {
       branch_country: normBranchCode(r.branch_country) || "NG",
       branch_state: normBranchCode(r.branch_state) || "",
     }));
+    const graphicsPurge = removeLegacyMediaGraphics(db);
     const rosterChanged = applyCanonicalAdminRoster(db);
     const changed = ensureDemoData(db);
-    if (rosterChanged || changed) writeDb(db);
+    if (rosterChanged || changed || graphicsPurge) writeDb(db);
     return db;
   } catch {
     return structuredClone(seed);
@@ -162,6 +192,16 @@ function normText(v) {
 }
 function normBranchCode(v) {
   return normText(v).toUpperCase();
+}
+/** YYYY-MM-DD in local timezone — aligns <input type="date"> with submission timestamps. */
+function submittedLocalDateKey(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 function normalizeStatus(s) {
   const map = { pending: "new", approved: "accepted", waitlisted: "in_progress" };
@@ -206,6 +246,27 @@ function paginate(rows, page = 1, per_page = 25) {
   const pages = Math.max(1, Math.ceil(total / pp));
   return { data: rows.slice((p - 1) * pp, (p - 1) * pp + pp), pagination: { page: p, per_page: pp, total, pages } };
 }
+function serviceUnitNameFromDb(db, serviceUnitId) {
+  if (serviceUnitId == null || serviceUnitId === "") return "";
+  return db.units.find((u) => Number(u.id) === Number(serviceUnitId))?.name || "";
+}
+
+/** Client-safe admin object (no password); includes resolved service_unit_name for UI. */
+function shapeAdminClient(row, db) {
+  return {
+    id: row.id,
+    full_name: row.full_name,
+    username: row.username,
+    email: row.email,
+    role: row.role,
+    service_unit_id: row.service_unit_id,
+    sub_unit_name: row.sub_unit_name || "",
+    branch_country: row.branch_country ?? "",
+    branch_state: row.branch_state ?? "",
+    service_unit_name: serviceUnitNameFromDb(db, row.service_unit_id),
+  };
+}
+
 function withUnits(db) {
   return db.units
     .slice()
@@ -241,18 +302,15 @@ export const api = {
     writeDb(db);
     return {
       token: `local-${Date.now()}`,
-      admin: {
-        id: admin.id,
-        full_name: admin.full_name,
-        username: admin.username,
-        email: admin.email,
-        role: admin.role,
-        service_unit_id: admin.service_unit_id,
-        sub_unit_name: admin.sub_unit_name,
-        branch_country: admin.branch_country ?? "",
-        branch_state: admin.branch_state ?? "",
-      },
+      admin: shapeAdminClient(admin, db),
     };
+  },
+  /** Merge latest DB fields (incl. renamed units) into a stored client admin. */
+  async refreshSession(stored) {
+    const db = readDb();
+    const row = db.admins.find((a) => Number(a.id) === Number(stored?.id));
+    if (!row || Number(row.is_active ?? 1) !== 1) return stored || null;
+    return { ...stored, ...shapeAdminClient(row, db) };
   },
   async logout() { return { ok: true }; },
 
@@ -260,6 +318,10 @@ export const api = {
     const db = readDb();
     let regs = db.registrations;
     if (params.viewer) regs = regs.filter((r) => canAccessRegistration(params.viewer, r));
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekStartMs = weekAgo.getTime();
     const totals = {
       registrations: regs.length,
       pending: regs.filter((r) => normalizeStatus(r.status) === "new").length,
@@ -272,7 +334,7 @@ export const api = {
           : ["country_super_admin", "state_super_admin"].includes(params.viewer?.role)
             ? new Set(regs.map((r) => r.unit_id)).size || 0
             : db.units.filter((u) => u.is_active === 1).length,
-      this_week: regs.length,
+      this_week: regs.filter((r) => new Date(r.submitted_at).getTime() >= weekStartMs).length,
     };
     const byUnitMap = {};
     regs.forEach((r) => { byUnitMap[r.unit_name || "Unknown"] = (byUnitMap[r.unit_name || "Unknown"] || 0) + 1; });
@@ -280,12 +342,12 @@ export const api = {
     const bySexMap = {};
     regs.forEach((r) => { bySexMap[r.sex || "Unknown"] = (bySexMap[r.sex || "Unknown"] || 0) + 1; });
     const by_sex = Object.entries(bySexMap).map(([sex, cnt]) => ({ sex, cnt }));
-    const today = new Date();
-    const trend = Array.from({ length: 14 }, (_, i) => {
+    const trendDays = Math.min(365, Math.max(7, Number(params.trend_days) || 14));
+    const trend = Array.from({ length: trendDays }, (_, i) => {
       const d = new Date(today);
-      d.setDate(today.getDate() - (13 - i));
-      const day = d.toISOString().slice(0, 10);
-      const cnt = regs.filter((r) => String(r.submitted_at || "").slice(0, 10) === day).length;
+      d.setDate(today.getDate() - (trendDays - 1 - i));
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const cnt = regs.filter((r) => submittedLocalDateKey(r.submitted_at) === day).length;
       return { day, cnt };
     });
     return { totals, by_unit, by_sex, trend, recent_activity: db.activity.slice(0, 10) };
@@ -295,7 +357,18 @@ export const api = {
     const db = readDb();
     let rows = db.registrations.map((r) => ({ ...r, status: normalizeStatus(r.status) })).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
     if (params.viewer) rows = rows.filter((r) => canAccessRegistration(params.viewer, r));
-    if (params.status) rows = rows.filter((r) => normalizeStatus(r.status) === normalizeStatus(params.status));
+    if (params.overdue_only) {
+      const threshold = Number(db.settings?.overdue_threshold_hours || 72);
+      const now = Date.now();
+      rows = rows.filter((r) => {
+        const st = normalizeStatus(r.status);
+        if (!["new", "in_progress"].includes(st)) return false;
+        const hours = (now - new Date(r.submitted_at).getTime()) / (1000 * 60 * 60);
+        return hours >= threshold;
+      });
+    } else if (params.status) {
+      rows = rows.filter((r) => normalizeStatus(r.status) === normalizeStatus(params.status));
+    }
     if (params.unit_id) rows = rows.filter((r) => Number(r.unit_id) === Number(params.unit_id));
     if (params.sub_unit) rows = rows.filter((r) => String(r.sub_unit || "").toLowerCase() === String(params.sub_unit || "").toLowerCase());
     if (params.sex) rows = rows.filter((r) => (r.sex || "") === params.sex);
@@ -305,8 +378,8 @@ export const api = {
         `${r.first_name} ${r.surname} ${r.other_names || ""} ${r.email} ${r.phone1} ${r.phone2 || ""}`.toLowerCase().includes(q)
       );
     }
-    if (params.from) rows = rows.filter((r) => String(r.submitted_at).slice(0, 10) >= params.from);
-    if (params.to) rows = rows.filter((r) => String(r.submitted_at).slice(0, 10) <= params.to);
+    if (params.from) rows = rows.filter((r) => submittedLocalDateKey(r.submitted_at) >= String(params.from));
+    if (params.to) rows = rows.filter((r) => submittedLocalDateKey(r.submitted_at) <= String(params.to));
     return paginate(rows, params.page, params.per_page);
   },
   async updateStatus(id, body) {
@@ -318,10 +391,11 @@ export const api = {
     const current = normalizeStatus(row.status);
     const target = normalizeStatus(body.status || current);
     const allowedTransitions = {
-      new: ["in_progress", "accepted", "rejected"],
-      in_progress: ["accepted", "rejected", "new"],
-      accepted: ["accepted"],
-      rejected: ["rejected"],
+      new: ["in_progress", "accepted", "rejected", "archived"],
+      in_progress: ["accepted", "rejected", "new", "archived"],
+      accepted: ["accepted", "archived"],
+      rejected: ["rejected", "archived"],
+      archived: ["archived"],
     };
     if (viewer?.role !== "super_admin" && !(allowedTransitions[current] || []).includes(target)) {
       throw new Error("Invalid status transition.");
@@ -395,23 +469,26 @@ export const api = {
   async admins() {
     const db = readDb();
     return {
-      data: db.admins.map((a) => ({
-        ...(a),
-        id: a.id,
-        full_name: a.full_name,
-        username: a.username,
-        email: a.email,
-        role: a.role,
-        service_unit_name: db.units.find((u) => Number(u.id) === Number(a.service_unit_id))?.name || "",
-        service_unit_id: a.service_unit_id ?? null,
-        sub_unit_name: a.sub_unit_name || "",
-        branch_country: a.branch_country ?? "",
-        branch_state: a.branch_state ?? "",
-        branch_country_label: branchCountryLabel(a.branch_country),
-        branch_state_label: branchStateLabel(a.branch_country, a.branch_state),
-        is_active: a.is_active,
-        last_login: a.last_login,
-      })),
+      data: db.admins.map((a) => {
+        const { password: _omit, ...rest } = a;
+        return {
+          ...rest,
+          id: a.id,
+          full_name: a.full_name,
+          username: a.username,
+          email: a.email,
+          role: a.role,
+          service_unit_name: db.units.find((u) => Number(u.id) === Number(a.service_unit_id))?.name || "",
+          service_unit_id: a.service_unit_id ?? null,
+          sub_unit_name: a.sub_unit_name || "",
+          branch_country: a.branch_country ?? "",
+          branch_state: a.branch_state ?? "",
+          branch_country_label: branchCountryLabel(a.branch_country),
+          branch_state_label: branchStateLabel(a.branch_country, a.branch_state),
+          is_active: a.is_active,
+          last_login: a.last_login,
+        };
+      }),
     };
   },
   async createAdmin(body) {
@@ -603,6 +680,9 @@ export const api = {
     let rows = db.registrations.map((r) => ({ ...r, status: normalizeStatus(r.status) })).filter((r) => r.status === "accepted");
     if (params.viewer) rows = rows.filter((r) => canAccessRegistration(params.viewer, r));
     if (params.unit_id) rows = rows.filter((r) => Number(r.unit_id) === Number(params.unit_id));
+    if (params.sub_unit) {
+      rows = rows.filter((r) => String(r.sub_unit || "").toLowerCase() === String(params.sub_unit || "").toLowerCase());
+    }
     if (params.search) {
       const q = String(params.search).toLowerCase();
       rows = rows.filter((r) =>

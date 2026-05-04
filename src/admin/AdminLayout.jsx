@@ -11,6 +11,7 @@ import { Settings } from "./pages/Settings.jsx";
 import { ProfileSettings } from "./pages/ProfileSettings.jsx";
 import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
+import { leaderScopeLabel } from "./leaderScope.js";
 
 const PAGE_TITLES = {
   overview: "Dashboard Overview",
@@ -61,13 +62,20 @@ export function AdminLayout() {
     hour: "2-digit", minute: "2-digit",
   });
 
+  const leaderScope = leaderScopeLabel(admin);
+  const showLeaderScope =
+    leaderScope && (admin?.role === "service_unit_leader" || admin?.role === "sub_unit_leader");
+
   return (
     <div className="sa-root" data-theme={theme}>
       <Sidebar page={page} setPage={setPage} pendingCount={pendingCount} />
 
       <div className="sa-main">
         <div className="sa-topbar">
-          <div className="sa-page-title">{PAGE_TITLES[page]}</div>
+          <div className="sa-page-title-block">
+            <div className="sa-page-title">{PAGE_TITLES[page]}</div>
+            {showLeaderScope ? <div className="sa-page-scope">{leaderScope}</div> : null}
+          </div>
           <div className="sa-topbar-right">
             <button
               type="button"
@@ -85,7 +93,7 @@ export function AdminLayout() {
         <div className="sa-content">
           {page === "overview"  && <Overview />}
           {page === "queue"     && <Queue     units={units} />}
-          {page === "units"     && <ServiceUnits data={units}  reload={loadUnits} />}
+          {page === "units"     && <ServiceUnits data={units}  reload={() => { loadUnits(); loadAdmins(); }} />}
           {page === "members"   && <UnitMembers units={units} />}
           {page === "admins"    && <AdminUsers   data={admins} units={units} reload={loadAdmins} />}
           {page === "requests"  && <Requests />}

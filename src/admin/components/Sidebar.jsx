@@ -1,5 +1,6 @@
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useState } from "react";
+import { leaderScopeLabel } from "../leaderScope.js";
 
 const NAV_SUPER = [
   {
@@ -79,6 +80,7 @@ export function Sidebar({ page, setPage, pendingCount }) {
   const { admin, logout } = useAdminAuth();
   const [logoError, setLogoError] = useState(false);
   const initials = admin?.full_name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "SA";
+  const scope = leaderScopeLabel(admin);
   const nav =
     admin?.role === "super_admin"
       ? NAV_SUPER
@@ -130,7 +132,8 @@ export function Sidebar({ page, setPage, pendingCount }) {
           <div className="sa-avatar">{initials}</div>
           <div>
             <div className="sa-user-name">{admin?.full_name}</div>
-            <div className="sa-user-role">{admin?.role?.replace("_", " ")}</div>
+            <div className="sa-user-role">{ROLE_LABELS[admin?.role] || String(admin?.role || "").replace(/_/g, " ")}</div>
+            {scope ? <div className="sa-user-unit">{scope}</div> : null}
           </div>
         </div>
         <button className="sa-logout-btn" onClick={logout}>
