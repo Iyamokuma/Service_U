@@ -14,6 +14,29 @@ const ROLES = [
   { value: "sub_unit_leader", label: "Sub-unit Leader", desc: "Can manage assigned sub-unit only." },
 ];
 
+function roleDisplayLabel(role) {
+  if (!role) return "—";
+  if (role === "super_admin") return "General Admin";
+  return String(role)
+    .split("_")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ""))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function adminInitials(fullName) {
+  const parts = String(fullName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 function formatAdminScope(a) {
   if (a.role === "super_admin") return "Global";
   if (a.role === "country_super_admin") return `${a.branch_country_label || a.branch_country || "—"} (country)`;
@@ -135,7 +158,7 @@ export function AdminUsers({ data, units, reload }) {
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <div className="sa-avatar" style={{ width: 30, height: 30, fontSize: 12 }}>
-                          {a.full_name.split(" ").map((w) => w[0]).join("").slice(0,2).toUpperCase()}
+                          {adminInitials(a.full_name)}
                         </div>
                         <div className="sa-fw-600">{a.full_name}</div>
                         {a.id === +me.id && <span className="sa-badge viewer">You</span>}
@@ -143,7 +166,7 @@ export function AdminUsers({ data, units, reload }) {
                     </td>
                     <td className="sa-text-muted">{a.username}</td>
                     <td>{a.email}</td>
-                    <td><span className={`sa-badge ${a.role}`}>{a.role.replace(/_/g, " ")}</span></td>
+                    <td><span className={`sa-badge ${a.role}`}>{roleDisplayLabel(a.role)}</span></td>
                     <td className="sa-text-muted sa-text-sm">{formatAdminScope(a)}</td>
                     <td><span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>{a.is_active ? "Active" : "Inactive"}</span></td>
                     <td className="sa-text-muted">{fmtDate(a.last_login)}</td>
@@ -280,7 +303,11 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
               }));
             }}
           >
-            {(isSuper ? ROLES : ROLES.filter((r) => r.value === "sub_unit_leader")).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            {(isSuper ? ROLES : ROLES.filter((r) => r.value === "sub_unit_leader")).map((r) => (
+              <option key={r.value} value={r.value}>
+                {!isEdit && r.value === "super_admin" ? "General Admin" : r.label}
+              </option>
+            ))}
           </select>
           <div className="sa-field-hint">{ROLES.find((r) => r.value === form.role)?.desc}</div>
         </div>

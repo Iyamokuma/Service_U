@@ -1,14 +1,8 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { MONTHS as MONTHS_LONG } from "../../data.js";
 import { api } from "../api.js";
-import {
-  BRANCH_COUNTRIES,
-  branchCountryLabel,
-  branchStateLabel,
-  branchStatesForCountry,
-  coerceStateForCountry,
-} from "../branchRegions.js";
-import { Modal, ConfirmModal } from "../components/Modal.jsx";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { Modal } from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 
@@ -103,8 +97,6 @@ export function Queue({ units }) {
   const { admin } = useAdminAuth();
   const isServiceLeader = admin?.role === "service_unit_leader";
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
-  const canDelete = admin?.role === "super_admin";
-  const canEditBranch = admin?.role === "super_admin";
   const isLeader = isServiceLeader || isSubUnitLeader;
   const [rows, setRows] = useState([]);
   const [overdue, setOverdue] = useState([]);
@@ -114,8 +106,6 @@ export function Queue({ units }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
-  const [deleteModal, setDeleteModal] = useState(null);
-  const [branchModal, setBranchModal] = useState(null);
   const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
   const [subUnitTab, setSubUnitTab] = useState("all");
   const [intakeStatusTab, setIntakeStatusTab] = useState("all");
@@ -194,26 +184,6 @@ export function Queue({ units }) {
     } catch (e) { toast(e.message, "error"); }
   }
 
-  async function deleteReg(id) {
-    try {
-      await api.deleteReg(id);
-      toast("Registration deleted.", "success");
-      setDeleteModal(null);
-      load(mergedQueueParams(pag.page));
-    } catch (e) { toast(e.message, "error"); }
-  }
-
-  async function saveRegistrationBranch(id, branch_country, branch_state) {
-    try {
-      await api.updateRegistrationBranch(id, { branch_country, branch_state, viewer: admin });
-      toast("Country and state updated.", "success");
-      setBranchModal(null);
-      load(mergedQueueParams(pag.page));
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  }
-
   async function quickLeaderStatus(id, status) {
     try {
       await api.updateStatus(id, { status, notes: "", viewer: admin });
@@ -281,7 +251,7 @@ export function Queue({ units }) {
             </span>
           </div>
         )}
-        {isLeader && showIntakeFilters && (
+        {isSubUnitLeader && showIntakeFilters && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             {INTAKE_STATUS_TABS.map((t) => (
               <button key={t.id} type="button" className={`sa-btn sa-btn-sm ${intakeStatusTab === t.id ? "sa-btn-primary" : "sa-btn-outline"}`} style={{ width: "auto" }} onClick={() => setIntakeStatusTab(t.id)}>
@@ -310,12 +280,34 @@ export function Queue({ units }) {
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
               </select>
             )}
+            {isServiceLeader && svcTab === "intake" && (
+              <select className="sa-select" value={intakeStatusTab} onChange={(e) => setIntakeStatusTab(e.target.value)} aria-label="Application status filter">
+                {INTAKE_STATUS_TABS.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            )}
             <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
               <option value="">All Genders</option><option value="Male">Male</option><option value="Female">Female</option>
             </select>
-            <input className="sa-date-input" type="date" value={filters.from} onChange={setFilter("from")} />
-            <input className="sa-date-input" type="date" value={filters.to} onChange={setFilter("to")} />
-            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setFilters({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" })}>Clear</button>
+            <div className="sa-filter-date">
+              <label className="sa-filter-date-label" htmlFor="queue-filter-from">Start date</label>
+              <input id="queue-filter-from" className="sa-date-input" type="date" value={filters.from} onChange={setFilter("from")} />
+            </div>
+            <div className="sa-filter-date">
+              <label className="sa-filter-date-label" htmlFor="queue-filter-to">End date</label>
+              <input id="queue-filter-to" className="sa-date-input" type="date" value={filters.to} onChange={setFilter("to")} />
+            </div>
+            <button
+              type="button"
+              className="sa-btn sa-btn-outline sa-btn-sm"
+              onClick={() => {
+                setFilters({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
+                setIntakeStatusTab("all");
+              }}
+            >
+              Clear
+            </button>
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
               {pag.total} result{pag.total !== 1 ? "s" : ""}
             </span>
@@ -388,12 +380,6 @@ export function Queue({ units }) {
                           ) : (
                             <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>
                           )}
-                          {canEditBranch && (
-                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setBranchModal({ id: r.id, branch_country: r.branch_country || "", branch_state: r.branch_state || "" })}>
-                              Country / state
-                            </button>
-                          )}
-                          {canDelete && <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDeleteModal(r.id)}>Delete</button>}
                         </div>
                       </td>
                     </tr>
@@ -413,84 +399,7 @@ export function Queue({ units }) {
       </div>
 
       <StatusModal open={!!statusModal} data={statusModal} onClose={() => setStatusModal(null)} onSave={updateStatus} allowedStatus={allowedStatus} />
-      <BranchGeoModal open={!!branchModal} data={branchModal} onClose={() => setBranchModal(null)} onSave={saveRegistrationBranch} />
-      <ConfirmModal open={!!deleteModal} onClose={() => setDeleteModal(null)} onConfirm={() => deleteReg(deleteModal)} title="Delete Registration" message="Are you sure you want to permanently delete this registration? This cannot be undone." danger />
     </>
-  );
-}
-
-function BranchGeoModal({ open, data, onClose, onSave }) {
-  const [country, setCountry] = useState("");
-  const [state, setState] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open || !data) return;
-    const c = data.branch_country || "";
-    setCountry(c);
-    setState(coerceStateForCountry(c, data.branch_state || ""));
-  }, [open, data?.id, data?.branch_country, data?.branch_state]);
-
-  async function save() {
-    if (!country || (branchStatesForCountry(country).length > 0 && !state)) return;
-    setSaving(true);
-    try {
-      await onSave(data.id, country, state);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Edit country & state"
-      size="sm"
-      footer={
-        <>
-          <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
-          <button type="button" className="sa-btn sa-btn-primary" onClick={save} disabled={saving || !country || (branchStatesForCountry(country).length > 0 && !state)}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </>
-      }
-    >
-      <p className="sa-text-muted sa-text-sm" style={{ marginBottom: 12 }}>
-        Applies to this registration only. The detail panel updates after save.
-      </p>
-      <div className="sa-field">
-        <label className="sa-label">Country</label>
-        <select
-          className="sa-field-select"
-          value={country}
-          onChange={(e) => {
-            const c = e.target.value;
-            setCountry(c);
-            setState("");
-          }}
-        >
-          <option value="">Select country</option>
-          {BRANCH_COUNTRIES.map((c) => (
-            <option key={c.code} value={c.code}>{c.name}</option>
-          ))}
-        </select>
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">State / region</label>
-        <select
-          className="sa-field-select"
-          value={state}
-          onChange={(e) => setState(e.target.value)}
-          disabled={!country}
-        >
-          <option value="">{country ? "Select state" : "Select country first"}</option>
-          {branchStatesForCountry(country).map((s) => (
-            <option key={s.code} value={s.code}>{s.name}</option>
-          ))}
-        </select>
-      </div>
-    </Modal>
   );
 }
 
