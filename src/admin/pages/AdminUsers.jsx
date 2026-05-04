@@ -39,7 +39,10 @@ export function AdminUsers({ data, units, reload }) {
     if (isServiceLeader) return a.role === "sub_unit_leader" && Number(a.service_unit_id) === Number(me.service_unit_id);
     return false;
   });
-  const admins = scopedAdmins.filter((a) => showInactive || Number(a.is_active) === 1);
+  const admins = scopedAdmins.filter((a) => {
+    if (isServiceLeader) return Number(a.is_active) === 1;
+    return showInactive || Number(a.is_active) === 1;
+  });
   const fallbackUnits = SERVICE_UNITS.map((u, idx) => ({
     id: u.id,
     name: u.name,
@@ -99,9 +102,11 @@ export function AdminUsers({ data, units, reload }) {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="sa-btn sa-btn-outline" onClick={() => setShowInactive((v) => !v)}>
-            {showInactive ? "Hide Inactive" : "Show Inactive"}
-          </button>
+          {!isServiceLeader && (
+            <button className="sa-btn sa-btn-outline" onClick={() => setShowInactive((v) => !v)}>
+              {showInactive ? "Hide Inactive" : "Show Inactive"}
+            </button>
+          )}
           {(isSuper || isServiceLeader) && <button className="sa-btn sa-btn-primary" onClick={() => setModal({ role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader", service_unit_id: isServiceLeader ? me.service_unit_id : "" })}>+ New Admin</button>}
         </div>
       </div>

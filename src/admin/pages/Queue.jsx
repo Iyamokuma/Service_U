@@ -12,7 +12,16 @@ import { Modal, ConfirmModal } from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 
-const STATUSES = ["new", "in_progress", "accepted", "rejected"];
+const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
+const INTAKE_STATUS_TABS = [
+  { id: "all", label: "All" },
+  { id: "new", label: "Active" },
+  { id: "in_progress", label: "In progress" },
+  { id: "accepted", label: "Accepted" },
+  { id: "rejected", label: "Rejected" },
+  { id: "archived", label: "Archived" },
+  { id: "overdue", label: "Overdue" },
+];
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function fmtDate(str) {
@@ -96,9 +105,11 @@ export function Queue({ units }) {
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
   const canDelete = admin?.role === "super_admin";
   const canEditBranch = admin?.role === "super_admin";
+  const isLeader = isServiceLeader || isSubUnitLeader;
   const [rows, setRows] = useState([]);
-  const [sideBySide, setSideBySide] = useState([]);
   const [overdue, setOverdue] = useState([]);
+  /** service_unit_leader only: "intake" = main queue / filters; "overdue" = overdue across all sub-units */
+  const [svcTab, setSvcTab] = useState("intake");
   const [pag, setPag] = useState({ page: 1, per_page: 25, total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -107,7 +118,42 @@ export function Queue({ units }) {
   const [branchModal, setBranchModal] = useState(null);
   const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
   const [subUnitTab, setSubUnitTab] = useState("all");
+  const [intakeStatusTab, setIntakeStatusTab] = useState("all");
+  const [leaderSubUnitLabels, setLeaderSubUnitLabels] = useState([]);
   const debounce = useRef(null);
+
+  const mergedQueueParams = useCallback(
+    (page = 1) => {
+      const scoped = {
+        ...filters,
+        page,
+        per_page: 25,
+        viewer: admin,
+        unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
+        sub_unit: isSubUnitLeader ? admin?.sub_unit_name || admin?.sub_unit : subUnitTab === "all" ? "" : subUnitTab,
+      };
+      const onLeaderIntake = isLeader && (!isServiceLeader || svcTab === "intake");
+      if (onLeaderIntake) {
+        delete scoped.overdue_only;
+        scoped.status = "";
+        if (intakeStatusTab === "overdue") scoped.overdue_only = true;
+        else if (intakeStatusTab !== "all") scoped.status = intakeStatusTab;
+      }
+      return scoped;
+    },
+    [filters, admin, isServiceLeader, isSubUnitLeader, isLeader, subUnitTab, svcTab, intakeStatusTab]
+  );
+
+  useEffect(() => {
+    if (!isServiceLeader || !admin) return;
+    api.subUnitQueuesByUnit(admin)
+      .then((r) => setLeaderSubUnitLabels((r.data || []).map((b) => b.sub_unit).filter(Boolean)))
+      .catch(() => setLeaderSubUnitLabels([]));
+  }, [isServiceLeader, admin]);
+
+  useEffect(() => {
+    setExpanded(null);
+  }, [svcTab]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -121,33 +167,30 @@ export function Queue({ units }) {
 
   useEffect(() => {
     clearTimeout(debounce.current);
+    if (isServiceLeader && svcTab === "overdue") return;
     debounce.current = setTimeout(() => {
-      const scoped = {
-        ...filters,
-        page: 1,
-        viewer: admin,
-        unit_id: isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
-        sub_unit: isSubUnitLeader ? admin?.sub_unit_name || admin?.sub_unit : subUnitTab === "all" ? "" : subUnitTab,
-      };
-      load(scoped);
+      load(mergedQueueParams(1));
     }, 300);
-  }, [filters, subUnitTab, load, admin, isSubUnitLeader]);
+  }, [filters, subUnitTab, load, mergedQueueParams, isServiceLeader, svcTab]);
 
   useEffect(() => {
-    if (!isServiceLeader) return;
-    api.subUnitQueuesByUnit(admin).then((r) => setSideBySide(r.data || [])).catch(() => {});
-    api.overdueAlerts(admin).then((r) => setOverdue(r.data || [])).catch(() => {});
-  }, [isServiceLeader, admin, rows.length]);
+    if (!isServiceLeader || svcTab !== "overdue") return;
+    setLoading(true);
+    api.overdueAlerts(admin)
+      .then((r) => setOverdue(r.data || []))
+      .catch(() => setOverdue([]))
+      .finally(() => setLoading(false));
+  }, [isServiceLeader, svcTab, admin]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
-  const gotoPage = (p) => load({ ...filters, page: p, sub_unit: subUnitTab === "all" ? "" : subUnitTab });
+  const gotoPage = (p) => load(mergedQueueParams(p));
 
   async function updateStatus(id, status, notes) {
     try {
       await api.updateStatus(id, { status, notes, viewer: admin });
       toast("Status updated.", "success");
       setStatusModal(null);
-      load({ ...filters, page: pag.page, sub_unit: subUnitTab === "all" ? "" : subUnitTab });
+      load(mergedQueueParams(pag.page));
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -156,7 +199,7 @@ export function Queue({ units }) {
       await api.deleteReg(id);
       toast("Registration deleted.", "success");
       setDeleteModal(null);
-      load({ ...filters, page: pag.page, sub_unit: subUnitTab === "all" ? "" : subUnitTab });
+      load(mergedQueueParams(pag.page));
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -165,7 +208,20 @@ export function Queue({ units }) {
       await api.updateRegistrationBranch(id, { branch_country, branch_state, viewer: admin });
       toast("Country and state updated.", "success");
       setBranchModal(null);
-      load({ ...filters, page: pag.page, sub_unit: subUnitTab === "all" ? "" : subUnitTab });
+      load(mergedQueueParams(pag.page));
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function quickLeaderStatus(id, status) {
+    try {
+      await api.updateStatus(id, { status, notes: "", viewer: admin });
+      toast(`Status set to ${status.replace(/_/g, " ")}.`, "success");
+      load(mergedQueueParams(pag.page));
+      if (isServiceLeader) {
+        api.overdueAlerts(admin).then((r) => setOverdue(r.data || [])).catch(() => {});
+      }
     } catch (e) {
       toast(e.message, "error");
     }
@@ -175,49 +231,136 @@ export function Queue({ units }) {
   const allowedStatus = (current) => {
     const c = current || "new";
     if (!["service_unit_leader", "sub_unit_leader"].includes(admin?.role)) return STATUSES;
-    if (c === "new") return ["new", "in_progress", "accepted", "rejected"];
-    if (c === "in_progress") return ["in_progress", "accepted", "rejected", "new"];
+    if (c === "new") return ["new", "in_progress", "accepted", "rejected", "archived"];
+    if (c === "in_progress") return ["in_progress", "accepted", "rejected", "new", "archived"];
+    if (c === "accepted" || c === "rejected") return [c, "archived"];
+    if (c === "archived") return ["archived"];
     return [c];
   };
+
+  const leaderActionDisabled = (row, target) => {
+    if (row.status === "archived") return true;
+    if (target === "archived") {
+      return !["new", "in_progress", "accepted", "rejected"].includes(row.status);
+    }
+    if ((row.status === "accepted" || row.status === "rejected") && target !== "archived") return true;
+    return !allowedStatus(row.status).includes(target);
+  };
+
+  const intakeSubTabs = isServiceLeader && svcTab === "intake" ? ["all", ...new Set(leaderSubUnitLabels)] : [];
+  const showIntakeFilters = !isServiceLeader || svcTab === "intake";
+  const showMainTable = !isServiceLeader || svcTab === "intake";
+  const overdueRows = isServiceLeader && svcTab === "overdue" ? overdue : [];
 
   return (
     <>
       <div className="sa-card">
         {isServiceLeader && (
+          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" className={`sa-btn sa-btn-sm ${svcTab === "intake" ? "sa-btn-primary" : "sa-btn-outline"}`} onClick={() => setSvcTab("intake")}>
+              Intake queue
+            </button>
+            <button type="button" className={`sa-btn sa-btn-sm ${svcTab === "overdue" ? "sa-btn-primary" : "sa-btn-outline"}`} onClick={() => setSvcTab("overdue")}>
+              Overdue (all sub-units)
+            </button>
+          </div>
+        )}
+        {isServiceLeader && svcTab === "intake" && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["all", ...new Set(sideBySide.map((b) => b.sub_unit).filter(Boolean))].map((sub) => (
-              <button key={sub} className={`sa-btn sa-btn-sm ${subUnitTab === sub ? "sa-btn-primary" : "sa-btn-outline"}`} style={{ width: "auto" }} onClick={() => setSubUnitTab(sub)}>
-                {sub === "all" ? "All" : sub}
+            {intakeSubTabs.map((sub) => (
+              <button key={sub} type="button" className={`sa-btn sa-btn-sm ${subUnitTab === sub ? "sa-btn-primary" : "sa-btn-outline"}`} style={{ width: "auto" }} onClick={() => setSubUnitTab(sub)}>
+                {sub === "all" ? "All sub-units" : sub}
               </button>
             ))}
           </div>
         )}
-        <div className="sa-filters">
-          <div className="sa-search" style={{ minWidth: 240 }}>
-            <span className="sa-search-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-            <input placeholder="Search name, email, phone…" value={filters.search} onChange={setFilter("search")} />
+        {isServiceLeader && svcTab === "overdue" && (
+          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)" }}>
+            <span className="sa-text-muted sa-text-sm">
+              {overdueRows.length} overdue record{overdueRows.length !== 1 ? "s" : ""} across all sub-units (older than threshold in Settings).
+            </span>
           </div>
-          <select className="sa-select" value={isServiceLeader || isSubUnitLeader ? admin?.service_unit_id || "" : filters.unit_id} onChange={setFilter("unit_id")} disabled={isServiceLeader || isSubUnitLeader}>
-            <option value="">All Units</option>
-            {unitOpts.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <select className="sa-select" value={filters.status} onChange={setFilter("status")}>
-            <option value="">All Statuses</option>
-            {STATUSES.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
-          </select>
-          <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
-            <option value="">All Genders</option><option value="Male">Male</option><option value="Female">Female</option>
-          </select>
-          <input className="sa-date-input" type="date" value={filters.from} onChange={setFilter("from")} />
-          <input className="sa-date-input" type="date" value={filters.to} onChange={setFilter("to")} />
-          <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setFilters({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" })}>Clear</button>
-          <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{pag.total} result{pag.total !== 1 ? "s" : ""}</span>
-        </div>
+        )}
+        {isLeader && showIntakeFilters && (
+          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {INTAKE_STATUS_TABS.map((t) => (
+              <button key={t.id} type="button" className={`sa-btn sa-btn-sm ${intakeStatusTab === t.id ? "sa-btn-primary" : "sa-btn-outline"}`} style={{ width: "auto" }} onClick={() => setIntakeStatusTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {showIntakeFilters && (
+          <div className="sa-filters">
+            {!isLeader && (
+              <div className="sa-search" style={{ minWidth: 240 }}>
+                <span className="sa-search-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                <input placeholder="Search name, email, phone…" value={filters.search} onChange={setFilter("search")} />
+              </div>
+            )}
+            {!isLeader && (
+              <select className="sa-select" value={filters.unit_id} onChange={setFilter("unit_id")}>
+                <option value="">All Units</option>
+                {unitOpts.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            )}
+            {!isLeader && (
+              <select className="sa-select" value={filters.status} onChange={setFilter("status")}>
+                <option value="">All Statuses</option>
+                {STATUSES.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
+              </select>
+            )}
+            <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
+              <option value="">All Genders</option><option value="Male">Male</option><option value="Female">Female</option>
+            </select>
+            <input className="sa-date-input" type="date" value={filters.from} onChange={setFilter("from")} />
+            <input className="sa-date-input" type="date" value={filters.to} onChange={setFilter("to")} />
+            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setFilters({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" })}>Clear</button>
+            <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
+              {pag.total} result{pag.total !== 1 ? "s" : ""}
+            </span>
+          </div>
+        )}
 
         <div className="sa-table-wrap">
-          {loading ? <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div> : rows.length === 0 ? (
+          {loading ? (
+            <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div>
+          ) : isServiceLeader && svcTab === "overdue" ? (
+            overdueRows.length === 0 ? (
+              <div className="sa-empty"><div className="sa-empty-icon">✓</div><div className="sa-empty-text">No overdue applications for your unit.</div></div>
+            ) : (
+              <table className="sa-table">
+                <thead><tr><th>#</th><th>Name</th><th>Sub-unit</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {overdueRows.map((r) => (
+                    <Fragment key={r.id}>
+                      <tr>
+                        <td className="sa-text-muted">{r.id}</td>
+                        <td><div className="sa-fw-600">{fullName(r)}</div></td>
+                        <td>{r.sub_unit || "—"}</td>
+                        <td><span className={`sa-badge ${r.status}`}>{r.status.replace("_", " ")}</span></td>
+                        <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
+                        <td>
+                          <div className="sa-table-actions">
+                            <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"} Details</button>
+                            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => quickLeaderStatus(r.id, "accepted")}>Accept</button>
+                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
+                            <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
+                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expanded === r.id && (
+                        <tr className="sa-detail-row"><td colSpan={6}><RegistrationDetails r={r} /></td></tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            )
+          ) : showMainTable && rows.length === 0 ? (
             <div className="sa-empty"><div className="sa-empty-icon">📋</div><div className="sa-empty-text">No registrations found.</div></div>
-          ) : (
+          ) : showMainTable ? (
             <table className="sa-table">
               <thead><tr><th>#</th><th>Photo</th><th>Name</th><th>Unit</th><th>Phone</th><th>Email</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
               <tbody>
@@ -235,7 +378,16 @@ export function Queue({ units }) {
                       <td>
                         <div className="sa-table-actions">
                           <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"}</button>
-                          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>
+                          {isLeader ? (
+                            <>
+                              <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => quickLeaderStatus(r.id, "accepted")}>Accept</button>
+                              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
+                              <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
+                              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
+                            </>
+                          ) : (
+                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>
+                          )}
                           {canEditBranch && (
                             <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setBranchModal({ id: r.id, branch_country: r.branch_country || "", branch_state: r.branch_state || "" })}>
                               Country / state
@@ -256,34 +408,9 @@ export function Queue({ units }) {
                 ))}
               </tbody>
             </table>
-          )}
+          ) : null}
         </div>
       </div>
-
-      {isServiceLeader && (
-        <>
-          <div className="sa-card sa-gap-top">
-            <div className="sa-card-head"><span className="sa-card-title">Sub-unit Queues (Side by Side)</span></div>
-            <div className="sa-card-body" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 14 }}>
-              {sideBySide.map((block) => (
-                <div key={block.sub_unit} className="sa-unit-node"><div className="sa-unit-header"><div className="sa-unit-name">{block.sub_unit}</div></div><div className="sa-unit-subs">{block.items.slice(0, 8).map((i) => <div key={i.id} className="sa-sub-row"><span>{i.first_name} {i.surname}</span><span className={`sa-badge ${i.status}`}>{i.status.replace("_", " ")}</span></div>)}{block.items.length === 0 && <div className="sa-text-muted sa-text-sm">No queue items.</div>}</div></div>
-              ))}
-              {sideBySide.length === 0 && <div className="sa-text-muted">No sub-unit queues found.</div>}
-            </div>
-          </div>
-          <div className="sa-card sa-gap-top">
-            <div className="sa-card-head"><span className="sa-card-title">Overdue Alerts</span></div>
-            <div className="sa-card-body">
-              {overdue.length === 0 ? <div className="sa-text-muted">No overdue alerts right now.</div> : (
-                <table className="sa-table"><thead><tr><th>Ref</th><th>Name</th><th>Sub-unit</th><th>Status</th><th>Submitted</th></tr></thead><tbody>
-                  {overdue.map((o) => <tr key={o.id}><td>{o.id}</td><td>{o.first_name} {o.surname}</td><td>{o.sub_unit || "—"}</td><td><span className={`sa-badge ${o.status}`}>{o.status.replace("_", " ")}</span></td><td>{fmtDate(o.submitted_at)}</td></tr>)}
-                </tbody></table>
-              )}
-              <div className="sa-field-hint" style={{ marginTop: 10 }}>Email notifications are simulated in this demo via this alert panel.</div>
-            </div>
-          </div>
-        </>
-      )}
 
       <StatusModal open={!!statusModal} data={statusModal} onClose={() => setStatusModal(null)} onSave={updateStatus} allowedStatus={allowedStatus} />
       <BranchGeoModal open={!!branchModal} data={branchModal} onClose={() => setBranchModal(null)} onSave={saveRegistrationBranch} />

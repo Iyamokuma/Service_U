@@ -9,9 +9,7 @@ export const NATIONALITIES = [
   "Ivorian", "Senegalese", "British", "American", "Canadian", "Other",
 ];
 
-export const WOLBI_LEVELS = [
-  "Level 100", "Level 200", "Level 300", "Level 400", "Graduate",
-];
+export const WOLBI_LEVELS = ["Basic", "Advance", "Diploma"];
 
 export const SERVICE_UNITS = [
   { id: 1, name: "Choir" },

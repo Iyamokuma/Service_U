@@ -4,7 +4,7 @@ import { useToast } from "../components/Toast.jsx";
 import { api } from "../api.js";
 
 export function ProfileSettings() {
-  const { admin } = useAdminAuth();
+  const { admin, refreshAdmin } = useAdminAuth();
   const toast = useToast();
   const [form, setForm] = useState({
     full_name: admin?.full_name || "",
@@ -17,8 +17,7 @@ export function ProfileSettings() {
     setSaving(true);
     try {
       await api.updateAdmin(admin.id, { full_name: form.full_name, email: form.email, ...(form.password ? { password: form.password } : {}) });
-      const current = JSON.parse(localStorage.getItem("admin_user") || "{}");
-      localStorage.setItem("admin_user", JSON.stringify({ ...current, full_name: form.full_name, email: form.email }));
+      await refreshAdmin();
       toast("Profile updated.", "success");
       setForm((f) => ({ ...f, password: "" }));
     } catch (e) {

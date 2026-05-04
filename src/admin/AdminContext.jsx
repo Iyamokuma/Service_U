@@ -10,6 +10,43 @@ export function AdminAuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    const raw = localStorage.getItem("admin_user");
+    if (!raw) return undefined;
+    let stored;
+    try {
+      stored = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+    if (!stored?.id) return undefined;
+    api.refreshSession(stored).then((next) => {
+      if (cancelled || !next) return;
+      setAdmin(next);
+      localStorage.setItem("admin_user", JSON.stringify(next));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshAdmin = useCallback(async () => {
+    const raw = localStorage.getItem("admin_user");
+    if (!raw) return;
+    let stored;
+    try {
+      stored = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const next = await api.refreshSession(stored);
+    if (next) {
+      setAdmin(next);
+      localStorage.setItem("admin_user", JSON.stringify(next));
+    }
+  }, []);
+
   const login = useCallback(async (username, password) => {
     setLoading(true);
     setError(null);
@@ -35,7 +72,7 @@ export function AdminAuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ admin, loading, error, login, logout }}>
+    <AuthCtx.Provider value={{ admin, loading, error, login, logout, refreshAdmin }}>
       {children}
     </AuthCtx.Provider>
   );
