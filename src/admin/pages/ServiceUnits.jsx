@@ -7,14 +7,13 @@ export function ServiceUnits({ data, reload }) {
   const toast = useToast();
   const units = data?.data ?? [];
 
-  const [expanded,   setExpanded]   = useState(null);
-  const [unitModal,  setUnitModal]  = useState(null);   // null | {} (create) | unit (edit)
-  const [subModal,   setSubModal]   = useState(null);   // null | { unit_id } (create) | sub (edit)
-  const [delUnit,    setDelUnit]    = useState(null);
-  const [delSub,     setDelSub]     = useState(null);
-  const [saving,     setSaving]     = useState(false);
+  const [expanded, setExpanded] = useState(null);
+  const [unitModal, setUnitModal] = useState(null);
+  const [subModal, setSubModal] = useState(null);
+  const [delUnit, setDelUnit] = useState(null);
+  const [delSub, setDelSub] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  /* ── Unit CRUD ──────────────────────────────────────────── */
   async function saveUnit(form) {
     setSaving(true);
     try {
@@ -22,37 +21,33 @@ export function ServiceUnits({ data, reload }) {
         await api.updateUnit(form.id, form);
         toast("Unit updated.", "success");
       } else {
-        if (form.create_leader) {
-          const fn = String(form.leader_full_name || "").trim();
-          const un = String(form.leader_username || "").trim();
-          const em = String(form.leader_email || "").trim();
-          const pw = String(form.leader_password || "");
-          if (!fn || !un || !em || !pw) {
-            toast("Fill all service unit leader fields, or turn off “Create unit leader”.", "error");
-            setSaving(false);
-            return;
-          }
+        const fn = String(form.leader_full_name || "").trim();
+        const un = String(form.leader_username || "").trim();
+        const em = String(form.leader_email || "").trim();
+        const pw = String(form.leader_password || "");
+        if (!fn || !un || !em || !pw) {
+          toast("Fill all service unit leader fields.", "error");
+          setSaving(false);
+          return;
         }
-        const { data: unit } = await api.createUnit(form);
-        if (form.create_leader) {
-          const fn = String(form.leader_full_name || "").trim();
-          const un = String(form.leader_username || "").trim();
-          const em = String(form.leader_email || "").trim();
-          const pw = String(form.leader_password || "");
-          await api.createAdmin({
-            full_name: fn,
-            username: un,
-            email: em,
-            password: pw,
-            role: "service_unit_leader",
-            service_unit_id: unit.id,
-            sub_unit_name: "",
-            is_active: 1,
-          });
-          toast(`Unit created. Leader is saved to Admin Accounts and can sign in as “${un}” with the password you set.`, "success");
-        } else {
-          toast("Unit created.", "success");
-        }
+        const { data: unit } = await api.createUnit({
+          name: form.name,
+          description: "",
+          coordinator: "",
+          sort_order: 0,
+          is_active: form.is_active,
+        });
+        await api.createAdmin({
+          full_name: fn,
+          username: un,
+          email: em,
+          password: pw,
+          role: "service_unit_leader",
+          service_unit_id: unit.id,
+          sub_unit_name: "",
+          is_active: 1,
+        });
+        toast(`Unit created. Leader is saved to Admin Accounts and can sign in as “${un}” with the password you set.`, "success");
       }
       setUnitModal(null);
       reload();
@@ -69,20 +64,24 @@ export function ServiceUnits({ data, reload }) {
       toast("Unit deleted.", "success");
       setDelUnit(null);
       reload();
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
-  /* ── Sub-unit CRUD ──────────────────────────────────────── */
   async function saveSub(form) {
     setSaving(true);
     try {
       if (form.id) await api.updateSub(form.id, form);
-      else         await api.createSub(form);
+      else await api.createSub(form);
       toast(form.id ? "Sub-unit updated." : "Sub-unit created.", "success");
       setSubModal(null);
       reload();
-    } catch (e) { toast(e.message, "error"); }
-    finally { setSaving(false); }
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function confirmDeleteSub() {
@@ -91,7 +90,9 @@ export function ServiceUnits({ data, reload }) {
       toast("Sub-unit deleted.", "success");
       setDelSub(null);
       reload();
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   return (
@@ -108,7 +109,10 @@ export function ServiceUnits({ data, reload }) {
 
       <div className="sa-unit-tree">
         {units.length === 0 && (
-          <div className="sa-empty"><div className="sa-empty-icon">🏷</div><div className="sa-empty-text">No service units yet.</div></div>
+          <div className="sa-empty">
+            <div className="sa-empty-icon">🏷</div>
+            <div className="sa-empty-text">No service units yet.</div>
+          </div>
         )}
         {units.map((unit) => (
           <div className="sa-unit-node" key={unit.id}>
@@ -120,13 +124,19 @@ export function ServiceUnits({ data, reload }) {
                   {unit.is_active ? "Active" : "Inactive"}
                 </span>
                 {unit.sub_units?.length > 0 && (
-                  <span className="sa-text-muted sa-text-sm">· {unit.sub_units.length} sub-unit{unit.sub_units.length !== 1 ? "s" : ""}</span>
+                  <span className="sa-text-muted sa-text-sm">
+                    · {unit.sub_units.length} sub-unit{unit.sub_units.length !== 1 ? "s" : ""}
+                  </span>
                 )}
               </div>
               <div className="sa-table-actions" onClick={(e) => e.stopPropagation()}>
                 {unit.coordinator && <span className="sa-text-muted sa-text-sm">{unit.coordinator}</span>}
-                <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setUnitModal(unit)}>Edit</button>
-                <button className="sa-btn sa-btn-danger  sa-btn-sm" onClick={() => setDelUnit(unit)}>Delete</button>
+                <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setUnitModal(unit)}>
+                  Edit
+                </button>
+                <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDelUnit(unit)}>
+                  Delete
+                </button>
               </div>
             </div>
 
@@ -136,11 +146,19 @@ export function ServiceUnits({ data, reload }) {
                   <div className="sa-sub-row" key={sub.id}>
                     <div className="sa-sub-name">
                       · {sub.name}
-                      {!sub.is_active && <span className="sa-badge inactive" style={{ marginLeft: 6 }}>Inactive</span>}
+                      {!sub.is_active && (
+                        <span className="sa-badge inactive" style={{ marginLeft: 6 }}>
+                          Inactive
+                        </span>
+                      )}
                     </div>
                     <div className="sa-table-actions">
-                      <button className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setSubModal({ ...sub })}>Edit</button>
-                      <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDelSub(sub)}>✕</button>
+                      <button className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setSubModal({ ...sub })}>
+                        Edit
+                      </button>
+                      <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDelSub(sub)}>
+                        ✕
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -153,13 +171,10 @@ export function ServiceUnits({ data, reload }) {
         ))}
       </div>
 
-      {/* Unit modal */}
       <UnitModal open={!!unitModal} data={unitModal} onClose={() => setUnitModal(null)} onSave={saveUnit} saving={saving} />
 
-      {/* Sub-unit modal */}
       <SubModal open={!!subModal} data={subModal} onClose={() => setSubModal(null)} onSave={saveSub} saving={saving} />
 
-      {/* Confirm delete unit */}
       <ConfirmModal
         open={!!delUnit}
         onClose={() => setDelUnit(null)}
@@ -169,7 +184,6 @@ export function ServiceUnits({ data, reload }) {
         danger
       />
 
-      {/* Confirm delete sub */}
       <ConfirmModal
         open={!!delSub}
         onClose={() => setDelSub(null)}
@@ -182,16 +196,11 @@ export function ServiceUnits({ data, reload }) {
   );
 }
 
-/* ── Unit form modal ──────────────────────────────────────── */
 function UnitModal({ open, data, onClose, onSave, saving }) {
-  const emptyForm = useCallback(
+  const emptyCreateForm = useCallback(
     () => ({
       name: "",
-      description: "",
-      coordinator: "",
-      sort_order: 0,
       is_active: 1,
-      create_leader: false,
       leader_full_name: "",
       leader_username: "",
       leader_email: "",
@@ -199,126 +208,184 @@ function UnitModal({ open, data, onClose, onSave, saving }) {
     }),
     []
   );
-  const [form, setForm] = useState(() => emptyForm());
+  const [form, setForm] = useState(() => emptyCreateForm());
+  const [wizardStep, setWizardStep] = useState(0);
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm());
+      setForm(emptyCreateForm());
+      setWizardStep(0);
       return;
     }
     if (data?.id) {
+      setWizardStep(0);
       setForm({
-        ...emptyForm(),
         id: data.id,
         name: data.name || "",
         description: data.description || "",
         coordinator: data.coordinator || "",
         sort_order: data.sort_order ?? 0,
         is_active: data.is_active ?? 1,
+        leader_full_name: "",
+        leader_username: "",
+        leader_email: "",
+        leader_password: "",
       });
     } else {
-      setForm(emptyForm());
+      setWizardStep(0);
+      setForm(emptyCreateForm());
     }
-  }, [open, data?.id, emptyForm]);
+  }, [open, data?.id, emptyCreateForm]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
   const isCreate = !form.id;
+
+  function goNext() {
+    if (!String(form.name || "").trim()) return;
+    setWizardStep(1);
+  }
+
+  function goBack() {
+    setWizardStep(0);
+  }
+
+  const editFooter = (
+    <>
+      <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>
+        Cancel
+      </button>
+      <button type="button" className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving || !form.name.trim()}>
+        {saving ? "Saving…" : "Save Changes"}
+      </button>
+    </>
+  );
+
+  const createFooterStep0 = (
+    <>
+      <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>
+        Cancel
+      </button>
+      <button type="button" className="sa-btn sa-btn-primary" onClick={goNext} disabled={!String(form.name || "").trim()}>
+        Next
+      </button>
+    </>
+  );
+
+  const createFooterStep1 = (
+    <>
+      <button type="button" className="sa-btn sa-btn-outline" onClick={goBack}>
+        Back
+      </button>
+      <button type="button" className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving}>
+        {saving ? "Saving…" : "Create unit & leader"}
+      </button>
+    </>
+  );
 
   return (
     <Modal
-      open={open} onClose={onClose}
+      open={open}
+      onClose={onClose}
       title={form.id ? "Edit Service Unit" : "New Service Unit"}
       size="md"
-      footer={<>
-        <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
-        <button type="button" className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving || !form.name.trim()}>
-          {saving ? "Saving…" : (form.id ? "Save Changes" : "Create Unit")}
-        </button>
-      </>}
+      footer={isCreate ? (wizardStep === 0 ? createFooterStep0 : createFooterStep1) : editFooter}
     >
-      <div className="sa-field">
-        <label className="sa-label">Unit Name <span className="sa-required">*</span></label>
-        <input className="sa-input" value={form.name} onChange={set("name")} placeholder="e.g. Choir" />
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">Description</label>
-        <textarea className="sa-textarea" value={form.description} onChange={set("description")} placeholder="Brief description…" />
-      </div>
-      <div className="sa-form-row">
-        <div className="sa-field">
-          <label className="sa-label">Coordinator Name</label>
-          <input className="sa-input" value={form.coordinator} onChange={set("coordinator")} placeholder="Full name" />
-        </div>
-        <div className="sa-field">
-          <label className="sa-label">Sort Order</label>
-          <input className="sa-input" type="number" value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: +e.target.value }))} min="0" />
-        </div>
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">Status</label>
-        <select className="sa-field-select" value={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: +e.target.value }))}>
-          <option value={1}>Active</option>
-          <option value={0}>Inactive</option>
-        </select>
-      </div>
-
-      {isCreate && (
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--sa-border)" }}>
-          <label className="sa-label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={!!form.create_leader}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  create_leader: e.target.checked,
-                  ...(!e.target.checked
-                    ? { leader_full_name: "", leader_username: "", leader_email: "", leader_password: "" }
-                    : {}),
-                }))
-              }
-            />
-            Create service unit leader for this unit
-          </label>
-          <p className="sa-field-hint" style={{ marginTop: 6 }}>
-            Optional. Creates an admin account scoped to this unit so they can manage the queue after the unit is saved.
+      {isCreate ? (
+        <>
+          <p className="sa-text-muted sa-text-sm" style={{ marginBottom: 12 }}>
+            {wizardStep === 0
+              ? "Step 1 of 2 — Enter unit details first. You will add the service unit leader on the next screen."
+              : "Step 2 of 2 — Service unit leader (required). This account can sign in and manage the queue for this unit."}
           </p>
-          {form.create_leader && (
-            <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+          {wizardStep === 0 ? (
+            <div className="sa-wizard-step">
               <div className="sa-field">
-                <label className="sa-label">Leader full name <span className="sa-required">*</span></label>
+                <label className="sa-label">
+                  Unit Name <span className="sa-required">*</span>
+                </label>
+                <input className="sa-input" value={form.name} onChange={set("name")} placeholder="e.g. Choir" autoFocus />
+              </div>
+              <div className="sa-field">
+                <label className="sa-label">Status</label>
+                <select className="sa-field-select" value={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: +e.target.value }))}>
+                  <option value={1}>Active</option>
+                  <option value={0}>Inactive</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="sa-wizard-step">
+              <div className="sa-field">
+                <label className="sa-label">
+                  Leader full name <span className="sa-required">*</span>
+                </label>
                 <input
                   className="sa-input"
                   value={form.leader_full_name}
                   onChange={set("leader_full_name")}
                   placeholder="e.g. Jane Doe"
                   autoComplete="name"
+                  autoFocus
                 />
               </div>
               <div className="sa-form-row">
                 <div className="sa-field">
-                  <label className="sa-label">Username <span className="sa-required">*</span></label>
-                  <input className="sa-input" value={form.leader_username} onChange={set("leader_username")} placeholder="login id" autoComplete="username" />
+                  <label className="sa-label">
+                    Username <span className="sa-required">*</span>
+                  </label>
+                  <input className="sa-input" value={form.leader_username} onChange={set("leader_username")} placeholder="Login id" autoComplete="username" />
                 </div>
                 <div className="sa-field">
-                  <label className="sa-label">Email <span className="sa-required">*</span></label>
+                  <label className="sa-label">
+                    Email <span className="sa-required">*</span>
+                  </label>
                   <input className="sa-input" type="email" value={form.leader_email} onChange={set("leader_email")} placeholder="leader@example.com" autoComplete="email" />
                 </div>
               </div>
               <div className="sa-field">
-                <label className="sa-label">Password <span className="sa-required">*</span></label>
+                <label className="sa-label">
+                  Password <span className="sa-required">*</span>
+                </label>
                 <input className="sa-input" type="password" value={form.leader_password} onChange={set("leader_password")} placeholder="Initial password" autoComplete="new-password" />
               </div>
             </div>
           )}
-        </div>
+        </>
+      ) : (
+        <>
+          <div className="sa-field">
+            <label className="sa-label">
+              Unit Name <span className="sa-required">*</span>
+            </label>
+            <input className="sa-input" value={form.name} onChange={set("name")} placeholder="e.g. Choir" />
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">Description</label>
+            <textarea className="sa-textarea" value={form.description} onChange={set("description")} placeholder="Brief description…" />
+          </div>
+          <div className="sa-form-row">
+            <div className="sa-field">
+              <label className="sa-label">Coordinator Name</label>
+              <input className="sa-input" value={form.coordinator} onChange={set("coordinator")} placeholder="Full name" />
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">Sort Order</label>
+              <input className="sa-input" type="number" value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: +e.target.value }))} min="0" />
+            </div>
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">Status</label>
+            <select className="sa-field-select" value={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: +e.target.value }))}>
+              <option value={1}>Active</option>
+              <option value={0}>Inactive</option>
+            </select>
+          </div>
+        </>
       )}
     </Modal>
   );
 }
 
-/* ── Sub-unit form modal ──────────────────────────────────── */
 function SubModal({ open, data, onClose, onSave, saving }) {
   const [form, setForm] = useState({ name: "", sort_order: 0, is_active: 1 });
 
@@ -329,18 +396,25 @@ function SubModal({ open, data, onClose, onSave, saving }) {
 
   return (
     <Modal
-      open={open} onClose={onClose}
+      open={open}
+      onClose={onClose}
       title={form.id ? "Edit Sub-unit" : "Add Sub-unit"}
       size="sm"
-      footer={<>
-        <button className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
-        <button className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving || !form.name.trim()}>
-          {saving ? "Saving…" : (form.id ? "Save" : "Add")}
-        </button>
-      </>}
+      footer={
+        <>
+          <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving || !form.name.trim()}>
+            {saving ? "Saving…" : form.id ? "Save" : "Add"}
+          </button>
+        </>
+      }
     >
       <div className="sa-field">
-        <label className="sa-label">Sub-unit Name <span className="sa-required">*</span></label>
+        <label className="sa-label">
+          Sub-unit Name <span className="sa-required">*</span>
+        </label>
         <input className="sa-input" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Lessons & teaching" autoFocus />
       </div>
       <div className="sa-form-row">
