@@ -506,6 +506,67 @@
   color: #f87171;
 }
 
+/* ── Toggle switch (e.g. admin list: show inactive) ───────── */
+.sa-field-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.sa-field-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sa-text-2);
+}
+.sa-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.sa-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.sa-switch-ui {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #e2e8f0;
+  pointer-events: none;
+  transition: background 0.2s ease;
+}
+.sa-switch-ui::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  top: 3px;
+  left: 3px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  transition: transform 0.2s ease;
+}
+.sa-switch input:focus-visible ~ .sa-switch-ui {
+  outline: 2px solid var(--sa-accent);
+  outline-offset: 2px;
+}
+.sa-switch input:checked ~ .sa-switch-ui {
+  background: var(--sa-accent);
+}
+.sa-switch input:checked ~ .sa-switch-ui::after {
+  transform: translateX(20px);
+}
+
 /* ── Buttons ──────────────────────────────────────────────── */
 .sa-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -859,6 +920,12 @@
 .sa-root[data-theme="dark"] .sa-theme-toggle {
   background: #0f172a;
   color: var(--sa-text-2);
+}
+.sa-root[data-theme="dark"] .sa-switch-ui {
+  background: #334155;
+}
+.sa-root[data-theme="dark"] .sa-switch input:checked ~ .sa-switch-ui {
+  background: var(--sa-accent);
 }
 .sa-root[data-theme="dark"] .sa-login-mark-logo,
 .sa-root[data-theme="dark"] .sa-brand-logo {
