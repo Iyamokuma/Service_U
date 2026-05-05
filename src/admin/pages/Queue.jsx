@@ -16,14 +16,17 @@ const INTAKE_STATUS_TABS = [
   { id: "archived", label: "Archived" },
   { id: "overdue", label: "Overdue" },
 ];
+
+/** Service unit leader: sub-unit tab row includes this sentinel for the overdue (all sub-units) view */
+const SVC_LEADER_OVERDUE_TAB = "__overdue__";
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-function fmtDate(str) {
+export function fmtDate(str) {
   if (!str) return "—";
   const d = new Date(str);
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
-function fullName(r) { return [r.first_name, r.surname].filter(Boolean).join(" "); }
+export function fullName(r) { return [r.first_name, r.surname].filter(Boolean).join(" "); }
 
 function fmtMonthName(m) {
   if (m === undefined || m === null || m === "") return "";
@@ -51,7 +54,7 @@ function wolbiDetail(r) {
   return parts.length ? parts.join(" · ") : "Yes";
 }
 
-function RegistrationDetails({ r }) {
+export function RegistrationDetails({ r }) {
   const ba = r.born_again === "Yes";
   return (
     <div className="sa-detail-inner">
@@ -100,8 +103,6 @@ export function Queue({ units }) {
   const isLeader = isServiceLeader || isSubUnitLeader;
   const [rows, setRows] = useState([]);
   const [overdue, setOverdue] = useState([]);
-  /** service_unit_leader only: "intake" = main queue / filters; "overdue" = overdue across all sub-units */
-  const [svcTab, setSvcTab] = useState("intake");
   const [pag, setPag] = useState({ page: 1, per_page: 25, total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -114,15 +115,23 @@ export function Queue({ units }) {
 
   const mergedQueueParams = useCallback(
     (page = 1) => {
+      const subUnitForQueue = (() => {
+        if (isSubUnitLeader) return admin?.sub_unit_name || admin?.sub_unit || "";
+        if (isServiceLeader) {
+          if (subUnitTab === "all" || subUnitTab === SVC_LEADER_OVERDUE_TAB) return "";
+          return subUnitTab;
+        }
+        return subUnitTab === "all" ? "" : subUnitTab;
+      })();
       const scoped = {
         ...filters,
         page,
         per_page: 25,
         viewer: admin,
         unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
-        sub_unit: isSubUnitLeader ? admin?.sub_unit_name || admin?.sub_unit : subUnitTab === "all" ? "" : subUnitTab,
+        sub_unit: subUnitForQueue,
       };
-      const onLeaderIntake = isLeader && (!isServiceLeader || svcTab === "intake");
+      const onLeaderIntake = isLeader && (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB);
       if (onLeaderIntake) {
         delete scoped.overdue_only;
         scoped.status = "";
@@ -131,7 +140,7 @@ export function Queue({ units }) {
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, isLeader, subUnitTab, svcTab, intakeStatusTab]
+    [filters, admin, isServiceLeader, isSubUnitLeader, isLeader, subUnitTab, intakeStatusTab]
   );
 
   useEffect(() => {
@@ -143,7 +152,7 @@ export function Queue({ units }) {
 
   useEffect(() => {
     setExpanded(null);
-  }, [svcTab]);
+  }, [subUnitTab]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -157,30 +166,46 @@ export function Queue({ units }) {
 
   useEffect(() => {
     clearTimeout(debounce.current);
-    if (isServiceLeader && svcTab === "overdue") return;
+    if (isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) return;
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
-  }, [filters, subUnitTab, load, mergedQueueParams, isServiceLeader, svcTab]);
+  }, [filters, subUnitTab, load, mergedQueueParams, isServiceLeader]);
 
   useEffect(() => {
-    if (!isServiceLeader || svcTab !== "overdue") return;
+    if (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB) return;
     setLoading(true);
     api.overdueAlerts(admin)
       .then((r) => setOverdue(r.data || []))
       .catch(() => setOverdue([]))
       .finally(() => setLoading(false));
-  }, [isServiceLeader, svcTab, admin]);
+  }, [isServiceLeader, subUnitTab, admin]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const gotoPage = (p) => load(mergedQueueParams(p));
+
+  async function refreshAfterQueueAction(page = 1) {
+    if (isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) {
+      setLoading(true);
+      try {
+        const r = await api.overdueAlerts(admin);
+        setOverdue(r.data || []);
+      } catch {
+        setOverdue([]);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      load(mergedQueueParams(page));
+    }
+  }
 
   async function updateStatus(id, status, notes) {
     try {
       await api.updateStatus(id, { status, notes, viewer: admin });
       toast("Status updated.", "success");
       setStatusModal(null);
-      load(mergedQueueParams(pag.page));
+      await refreshAfterQueueAction(pag.page);
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -188,10 +213,7 @@ export function Queue({ units }) {
     try {
       await api.updateStatus(id, { status, notes: "", viewer: admin });
       toast(`Status set to ${status.replace(/_/g, " ")}.`, "success");
-      load(mergedQueueParams(pag.page));
-      if (isServiceLeader) {
-        api.overdueAlerts(admin).then((r) => setOverdue(r.data || [])).catch(() => {});
-      }
+      await refreshAfterQueueAction(pag.page);
     } catch (e) {
       toast(e.message, "error");
     }
@@ -217,47 +239,34 @@ export function Queue({ units }) {
     return !allowedStatus(row.status).includes(target);
   };
 
-  const intakeSubTabs = isServiceLeader && svcTab === "intake" ? ["all", ...new Set(leaderSubUnitLabels)] : [];
-  const showIntakeFilters = !isServiceLeader || svcTab === "intake";
-  const showMainTable = !isServiceLeader || svcTab === "intake";
-  const overdueRows = isServiceLeader && svcTab === "overdue" ? overdue : [];
+  const svcLeaderSubTabs = isServiceLeader ? ["all", ...new Set(leaderSubUnitLabels), SVC_LEADER_OVERDUE_TAB] : [];
+  const showIntakeFilters = !isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB;
+  const showMainTable = !isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB;
+  const overdueRows = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB ? overdue : [];
 
   return (
     <>
       <div className="sa-card">
         {isServiceLeader && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <button type="button" className={`sa-btn sa-btn-sm ${svcTab === "intake" ? "sa-btn-primary" : "sa-btn-outline"}`} onClick={() => setSvcTab("intake")}>
-              Intake queue
-            </button>
-            <button type="button" className={`sa-btn sa-btn-sm ${svcTab === "overdue" ? "sa-btn-primary" : "sa-btn-outline"}`} onClick={() => setSvcTab("overdue")}>
-              Overdue (all sub-units)
-            </button>
-          </div>
-        )}
-        {isServiceLeader && svcTab === "intake" && (
-          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {intakeSubTabs.map((sub) => (
-              <button key={sub} type="button" className={`sa-btn sa-btn-sm ${subUnitTab === sub ? "sa-btn-primary" : "sa-btn-outline"}`} style={{ width: "auto" }} onClick={() => setSubUnitTab(sub)}>
-                {sub === "all" ? "All sub-units" : sub}
+            {svcLeaderSubTabs.map((sub) => (
+              <button
+                key={sub}
+                type="button"
+                className={`sa-btn sa-btn-sm ${subUnitTab === sub ? "sa-btn-primary" : "sa-btn-outline"}`}
+                style={{ width: "auto" }}
+                onClick={() => setSubUnitTab(sub)}
+              >
+                {sub === "all" ? "All sub-units" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
               </button>
             ))}
           </div>
         )}
-        {isServiceLeader && svcTab === "overdue" && (
-          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)" }}>
+        {isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB && (
+          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
             <span className="sa-text-muted sa-text-sm">
-              {overdueRows.length} overdue record{overdueRows.length !== 1 ? "s" : ""} across all sub-units (older than threshold in Settings).
+              All sub-units · older than the overdue threshold in Settings
             </span>
-          </div>
-        )}
-        {isSubUnitLeader && showIntakeFilters && (
-          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            {INTAKE_STATUS_TABS.map((t) => (
-              <button key={t.id} type="button" className={`sa-btn sa-btn-sm ${intakeStatusTab === t.id ? "sa-btn-primary" : "sa-btn-outline"}`} style={{ width: "auto" }} onClick={() => setIntakeStatusTab(t.id)}>
-                {t.label}
-              </button>
-            ))}
           </div>
         )}
         {showIntakeFilters && (
@@ -280,8 +289,14 @@ export function Queue({ units }) {
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
               </select>
             )}
-            {isServiceLeader && svcTab === "intake" && (
-              <select className="sa-select" value={intakeStatusTab} onChange={(e) => setIntakeStatusTab(e.target.value)} aria-label="Application status filter">
+            {isLeader && (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB) && (
+              <select
+                className="sa-select"
+                value={intakeStatusTab}
+                onChange={(e) => setIntakeStatusTab(e.target.value)}
+                aria-label="Application status"
+                title="Filter by application status"
+              >
                 {INTAKE_STATUS_TABS.map((t) => (
                   <option key={t.id} value={t.id}>{t.label}</option>
                 ))}
@@ -290,13 +305,25 @@ export function Queue({ units }) {
             <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
               <option value="">All Genders</option><option value="Male">Male</option><option value="Female">Female</option>
             </select>
-            <div className="sa-filter-date">
-              <label className="sa-filter-date-label" htmlFor="queue-filter-from">Start date</label>
-              <input id="queue-filter-from" className="sa-date-input" type="date" value={filters.from} onChange={setFilter("from")} />
+            <div className="sa-date-field">
+              <label className="sa-date-field-label" htmlFor="queue-filter-from">Start date</label>
+              <input
+                id="queue-filter-from"
+                className={`sa-date-field-input${!filters.from ? " sa-date-empty" : ""}`}
+                type="date"
+                value={filters.from}
+                onChange={setFilter("from")}
+              />
             </div>
-            <div className="sa-filter-date">
-              <label className="sa-filter-date-label" htmlFor="queue-filter-to">End date</label>
-              <input id="queue-filter-to" className="sa-date-input" type="date" value={filters.to} onChange={setFilter("to")} />
+            <div className="sa-date-field">
+              <label className="sa-date-field-label" htmlFor="queue-filter-to">End date</label>
+              <input
+                id="queue-filter-to"
+                className={`sa-date-field-input${!filters.to ? " sa-date-empty" : ""}`}
+                type="date"
+                value={filters.to}
+                onChange={setFilter("to")}
+              />
             </div>
             <button
               type="button"
@@ -309,7 +336,9 @@ export function Queue({ units }) {
               Clear
             </button>
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
-              {pag.total} result{pag.total !== 1 ? "s" : ""}
+              {isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB
+                ? `${overdueRows.length} overdue`
+                : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
             </span>
           </div>
         )}
@@ -317,7 +346,7 @@ export function Queue({ units }) {
         <div className="sa-table-wrap">
           {loading ? (
             <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div>
-          ) : isServiceLeader && svcTab === "overdue" ? (
+          ) : isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB ? (
             overdueRows.length === 0 ? (
               <div className="sa-empty"><div className="sa-empty-icon">✓</div><div className="sa-empty-text">No overdue applications for your unit.</div></div>
             ) : (
@@ -417,7 +446,7 @@ function StatusModal({ open, data, onClose, onSave, allowedStatus }) {
   );
 }
 
-function Field({ label, value }) {
+export function Field({ label, value }) {
   return (
     <div className="sa-detail-field">
       <div className="sa-detail-label">{label}</div>

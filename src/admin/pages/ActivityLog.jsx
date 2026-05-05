@@ -43,8 +43,26 @@ export function ActivityLog() {
           <select className="sa-select" value={filters.action} onChange={setFilter("action")}><option value="">All Actions</option>{ACTION_TYPES.map((a) => <option key={a} value={a}>{a}</option>)}</select>
           <select className="sa-select" value={filters.admin_id} onChange={setFilter("admin_id")}><option value="">All Admins</option>{admins.map((a) => <option key={a.admin_id} value={a.admin_id}>{a.admin_name}</option>)}</select>
           <select className="sa-select" value={filters.entity} onChange={setFilter("entity")}><option value="">All Entities</option><option value="registration">Registration</option><option value="unit">Unit</option><option value="admin">Admin</option></select>
-          <input className="sa-date-input" type="date" value={filters.from} onChange={setFilter("from")} />
-          <input className="sa-date-input" type="date" value={filters.to} onChange={setFilter("to")} />
+          <div className="sa-date-field">
+            <label className="sa-date-field-label" htmlFor="activity-filter-from">Start date</label>
+            <input
+              id="activity-filter-from"
+              className={`sa-date-field-input${!filters.from ? " sa-date-empty" : ""}`}
+              type="date"
+              value={filters.from}
+              onChange={setFilter("from")}
+            />
+          </div>
+          <div className="sa-date-field">
+            <label className="sa-date-field-label" htmlFor="activity-filter-to">End date</label>
+            <input
+              id="activity-filter-to"
+              className={`sa-date-field-input${!filters.to ? " sa-date-empty" : ""}`}
+              type="date"
+              value={filters.to}
+              onChange={setFilter("to")}
+            />
+          </div>
           <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setFilters({ search: "", action: "", admin_id: "", entity: "", from: "", to: "" })}>Clear</button>
           <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{pag.total} event{pag.total !== 1 ? "s" : ""}</span>
         </div>

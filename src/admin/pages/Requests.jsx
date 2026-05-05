@@ -6,7 +6,7 @@ import { useAdminAuth } from "../AdminContext.jsx";
 export function Requests() {
   const toast = useToast();
   const { admin } = useAdminAuth();
-  const isSuper = admin?.role === "super_admin";
+  const isSuper = admin?.role === "super_admin" || admin?.role === "general_admin";
   const [rows, setRows] = useState([]);
   const [message, setMessage] = useState("");
 

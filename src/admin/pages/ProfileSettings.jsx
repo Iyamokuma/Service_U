@@ -16,7 +16,12 @@ export function ProfileSettings() {
   const save = async () => {
     setSaving(true);
     try {
-      await api.updateAdmin(admin.id, { full_name: form.full_name, email: form.email, ...(form.password ? { password: form.password } : {}) });
+      await api.updateAdmin(admin.id, {
+        full_name: form.full_name,
+        email: form.email,
+        ...(form.password ? { password: form.password } : {}),
+        viewer: admin,
+      });
       await refreshAdmin();
       toast("Profile updated.", "success");
       setForm((f) => ({ ...f, password: "" }));

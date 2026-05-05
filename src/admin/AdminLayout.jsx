@@ -9,9 +9,11 @@ import { UnitMembers } from "./pages/UnitMembers.jsx";
 import { Requests } from "./pages/Requests.jsx";
 import { Settings } from "./pages/Settings.jsx";
 import { ProfileSettings } from "./pages/ProfileSettings.jsx";
+import { BranchOversight } from "./pages/BranchOversight.jsx";
 import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
+import { isGlobalAdminRole, isSupervisoryBranchRole } from "./roles.js";
 
 const PAGE_TITLES = {
   overview: "Dashboard Overview",
@@ -23,11 +25,12 @@ const PAGE_TITLES = {
   activity: "Activity Log",
   settings: "Settings",
   profile: "Profile / Settings",
+  oversight: "Branch registrations & filters",
 };
 
 export function AdminLayout() {
   const { admin } = useAdminAuth();
-  const isSuperAdmin = admin?.role === "super_admin";
+  const canPlatformSettings = isGlobalAdminRole(admin?.role);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("sm_admin_theme") || "dark"; } catch { return "dark"; }
   });
@@ -44,6 +47,13 @@ export function AdminLayout() {
     loadUnits();
     loadAdmins();
   }, [loadUnits, loadAdmins]);
+
+  useEffect(() => {
+    if (!admin) return;
+    if (isSupervisoryBranchRole(admin.role)) {
+      setPage((p) => (p === "oversight" || p === "profile" ? p : "oversight"));
+    }
+  }, [admin?.id, admin?.role]);
 
   // Fetch pending count for sidebar badge
   useEffect(() => {
@@ -98,8 +108,9 @@ export function AdminLayout() {
           {page === "admins"    && <AdminUsers   data={admins} units={units} reload={loadAdmins} />}
           {page === "requests"  && <Requests />}
           {page === "activity"  && <ActivityLog />}
-          {page === "settings"  && isSuperAdmin && <Settings />}
-          {page === "profile"   && !isSuperAdmin && <ProfileSettings />}
+          {page === "oversight" && <BranchOversight units={units} />}
+          {page === "settings"  && canPlatformSettings && <Settings />}
+          {page === "profile"   && !canPlatformSettings && <ProfileSettings />}
         </div>
       </div>
     </div>

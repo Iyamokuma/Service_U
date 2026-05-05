@@ -379,6 +379,7 @@
 .sa-badge.in_progress { background: #e0f2fe; color: #075985; }
 .sa-badge.accepted { background: #dcfce7; color: #166534; }
 .sa-badge.super_admin{ background: #ede9fe; color: #5b21b6; }
+.sa-badge.general_admin { background: #e0e7ff; color: #3730a3; }
 .sa-badge.service_unit_leader { background: #e0f2fe; color: #075985; }
 .sa-badge.sub_unit_leader { background: #fff7ed; color: #9a3412; }
 .sa-badge.country_super_admin { background: #ede9fe; color: #5b21b6; }
@@ -587,17 +588,69 @@
 .sa-btn:disabled  { opacity: .5; cursor: not-allowed; }
 
 /* ── Filters bar ──────────────────────────────────────────── */
-.sa-filter-date {
+/* Date filter: label inside the same bordered box as the input */
+.sa-date-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  padding: 6px 10px 5px;
+  min-width: 148px;
+  border: 1.5px solid var(--sa-border);
+  border-radius: 8px;
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.sa-filter-date-label {
-  font-size: 11px;
+.sa-date-field:focus-within {
+  border-color: var(--sa-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sa-accent) 22%, transparent);
+}
+/* Title only — no dd/mm/yyyy chrome until a date is chosen or field is focused (WebKit/Blink) */
+.sa-date-field-label {
+  font-size: 13px;
   font-weight: 600;
-  color: var(--sa-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--sa-text-2);
+  text-transform: none;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.sa-date-field-input {
+  width: 100%;
+  margin: 0;
+  padding: 2px 0 1px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--sa-text);
+  font-family: inherit;
+  min-height: 1.45em;
+}
+.sa-date-field-input.sa-date-empty:not(:focus) {
+  color: transparent;
+}
+.sa-date-field-input.sa-date-empty:not(:focus)::-webkit-datetime-edit-fields-wrapper,
+.sa-date-field-input.sa-date-empty:not(:focus)::-webkit-datetime-edit-text,
+.sa-date-field-input.sa-date-empty:not(:focus)::-webkit-datetime-edit-month-field,
+.sa-date-field-input.sa-date-empty:not(:focus)::-webkit-datetime-edit-day-field,
+.sa-date-field-input.sa-date-empty:not(:focus)::-webkit-datetime-edit-year-field {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.sa-date-field-input:focus {
+  outline: none;
+  color: var(--sa-text);
+}
+.sa-date-field-input:focus::-webkit-datetime-edit-fields-wrapper,
+.sa-date-field-input:focus::-webkit-datetime-edit-text,
+.sa-date-field-input:focus::-webkit-datetime-edit-month-field,
+.sa-date-field-input:focus::-webkit-datetime-edit-day-field,
+.sa-date-field-input:focus::-webkit-datetime-edit-year-field {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+.sa-date-field-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.75;
 }
 
 .sa-wizard-step {
@@ -628,6 +681,7 @@
   cursor: pointer;
 }
 .sa-select:focus { border-color: var(--sa-accent); }
+/* Standalone date input (no embedded label) */
 .sa-date-input {
   padding: 8px 12px; border: 1.5px solid var(--sa-border); border-radius: 8px;
   font-size: 13px; outline: none; background: #fff;
@@ -912,6 +966,16 @@
 .sa-root[data-theme="dark"] .sa-login-input,
 .sa-root[data-theme="dark"] .sa-search input,
 .sa-root[data-theme="dark"] .sa-select,
+.sa-root[data-theme="dark"] .sa-date-field {
+  background: #0f172a;
+  border-color: var(--sa-border);
+}
+.sa-root[data-theme="dark"] .sa-date-field-input {
+  color: var(--sa-text-2);
+}
+.sa-root[data-theme="dark"] .sa-date-field-input.sa-date-empty:not(:focus) {
+  color: transparent;
+}
 .sa-root[data-theme="dark"] .sa-date-input,
 .sa-root[data-theme="dark"] .sa-input,
 .sa-root[data-theme="dark"] .sa-textarea,

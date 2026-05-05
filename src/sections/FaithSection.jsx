@@ -21,6 +21,7 @@ export function FaithSection({ form, set, errors }) {
           required
           error={errors.joinedChurch}
           span="2"
+          embedded
           hint="Month and year of your first fellowship as a member."
         >
           <DateSplit
@@ -80,7 +81,7 @@ export function FaithSection({ form, set, errors }) {
               />
             </Field>
             <Collapse open={form.foundation === "Yes"}>
-              <Field label="When?" required error={errors.foundationDate} span="2">
+              <Field label="When?" required error={errors.foundationDate} span="2" embedded>
                 <DateSplit
                   value={form.foundationDate}
                   onChange={(v) => set("foundationDate", v)}
@@ -143,6 +144,7 @@ export function FaithSection({ form, set, errors }) {
                   required
                   error={errors.wolbiDate}
                   span="2"
+                  embedded
                 >
                   <div className="date-split month-year-level">
                     <Select
