@@ -82,6 +82,17 @@ export function isStateValidForCountry(countryCode, stateCode) {
   return branchStatesForCountry(countryCode).some((s) => s.code === sc);
 }
 
+/** Throws a clear Error if state is missing or not in the country list (fixes invalid state admin saves). */
+export function assertStateBelongsToCountry(countryCode, stateCode) {
+  const cc = normCode(countryCode);
+  const sc = normCode(stateCode);
+  if (!cc) throw new Error("Country is required.");
+  if (!sc) throw new Error("State / region is required.");
+  if (!isStateValidForCountry(cc, sc)) {
+    throw new Error("State does not match the selected country. Choose a state from the dropdown.");
+  }
+}
+
 /** Keep state only if it belongs to country; otherwise "". */
 export function coerceStateForCountry(countryCode, stateCode) {
   const sc = normCode(stateCode);

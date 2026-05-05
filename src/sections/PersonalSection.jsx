@@ -49,6 +49,7 @@ export function PersonalSection({ form, set, errors }) {
           required
           error={errors.dob}
           span="2"
+          embedded
           hint="Year is optional — we use month and day for birthday greetings."
         >
           <DateSplit

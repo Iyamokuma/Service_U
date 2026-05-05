@@ -1,5 +1,6 @@
 import { SERVICE_UNITS } from "../data.js";
-import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "./branchRegions.js";
+import { branchCountryLabel, branchStateLabel, assertStateBelongsToCountry } from "./branchRegions.js";
+import { isRootSuperAdmin, isGlobalAdminRole, isSupervisoryBranchRole } from "./roles.js";
 
 const DB_KEY = "sm_admin_demo_db_v1";
 const FORM_DB_KEY = "sm_form_db_v1";
@@ -20,7 +21,7 @@ const choirUnitId = SERVICE_UNITS.find((u) => u.name === "Choir")?.id || SERVICE
 const usheringUnitId = SERVICE_UNITS.find((u) => u.name === "Ushering")?.id || SERVICE_UNITS[2]?.id || mediaUnitId;
 
 /** Bump this string to reset the admin roster in localStorage (replaces entire `admins` array). */
-const ADMIN_ROSTER_REVISION = "2026-05-01-merge-seed-preserve-custom-admins";
+const ADMIN_ROSTER_REVISION = "2026-05-01-general-admin-branch-oversight";
 
 const seed = {
   admins: [
@@ -208,7 +209,7 @@ function normalizeStatus(s) {
   return map[s] || s || "new";
 }
 function canAccessRegistration(admin, row) {
-  if (!admin || admin.role === "super_admin") return true;
+  if (!admin || isGlobalAdminRole(admin.role)) return true;
   if (admin.role === "country_super_admin") {
     const rc = normBranchCode(row.branch_country);
     const ac = normBranchCode(admin.branch_country);
@@ -380,6 +381,10 @@ export const api = {
     }
     if (params.from) rows = rows.filter((r) => submittedLocalDateKey(r.submitted_at) >= String(params.from));
     if (params.to) rows = rows.filter((r) => submittedLocalDateKey(r.submitted_at) <= String(params.to));
+    if (params.filter_branch_state) {
+      const fs = normBranchCode(params.filter_branch_state);
+      rows = rows.filter((r) => normBranchCode(r.branch_state) === fs);
+    }
     return paginate(rows, params.page, params.per_page);
   },
   async updateStatus(id, body) {
@@ -388,6 +393,9 @@ export const api = {
     if (!row) throw new Error("Registration not found.");
     const viewer = body.viewer || null;
     if (viewer && !canAccessRegistration(viewer, row)) throw new Error("Not allowed for this queue item.");
+    if (viewer && isSupervisoryBranchRole(viewer.role)) {
+      throw new Error("Supervisory admins can view data only. Status changes are done by service unit leaders.");
+    }
     const current = normalizeStatus(row.status);
     const target = normalizeStatus(body.status || current);
     const allowedTransitions = {
@@ -397,7 +405,7 @@ export const api = {
       rejected: ["rejected", "archived"],
       archived: ["archived"],
     };
-    if (viewer?.role !== "super_admin" && !(allowedTransitions[current] || []).includes(target)) {
+    if (!isGlobalAdminRole(viewer?.role) && !(allowedTransitions[current] || []).includes(target)) {
       throw new Error("Invalid status transition.");
     }
     row.status = target;
@@ -493,6 +501,7 @@ export const api = {
   },
   async createAdmin(body) {
     const db = readDb();
+    const viewerRole = body.viewer?.role;
     const username = normText(body.username);
     const email = normText(body.email);
     const fullName = normText(body.full_name);
@@ -505,6 +514,9 @@ export const api = {
     if (!username) throw new Error("Username is required.");
     if (!email) throw new Error("Email is required.");
     if (!fullName) throw new Error("Full name is required.");
+    if (role === "super_admin" && !isRootSuperAdmin(viewerRole)) {
+      throw new Error("Only a Super Admin can create or assign the Super Admin role.");
+    }
     const existingByUsername = db.admins.find((a) => normText(a.username).toLowerCase() === username.toLowerCase());
     const existingByEmail = db.admins.find((a) => normText(a.email).toLowerCase() === email.toLowerCase());
     if (existingByUsername && existingByEmail && Number(existingByUsername.id) !== Number(existingByEmail.id)) {
@@ -517,7 +529,7 @@ export const api = {
     let outSubUnit = "";
     let outServiceUnitId = null;
 
-    if (role === "super_admin") {
+    if (role === "super_admin" || role === "general_admin") {
       outServiceUnitId = null;
       outSubUnit = "";
     } else if (role === "country_super_admin") {
@@ -591,19 +603,34 @@ export const api = {
     const db = readDb();
     const admin = db.admins.find((a) => Number(a.id) === Number(id));
     if (!admin) throw new Error("Admin not found.");
+    const viewerRole = body.viewer?.role;
+    const selfService = Number(body.viewer?.id) === Number(admin.id);
+    if (selfService && body.role !== undefined && body.role !== admin.role) {
+      throw new Error("You cannot change your own role here.");
+    }
     const nextRole = body.role ?? admin.role;
     const nextServiceUnitId = body.service_unit_id !== undefined ? (body.service_unit_id ? Number(body.service_unit_id) : null) : admin.service_unit_id;
     const nextSubUnitName = body.sub_unit_name !== undefined ? normText(body.sub_unit_name) : admin.sub_unit_name;
     const nextBranchCountry = body.branch_country !== undefined ? normBranchCode(body.branch_country) : normBranchCode(admin.branch_country);
     const nextBranchState = body.branch_state !== undefined ? normBranchCode(body.branch_state) : normBranchCode(admin.branch_state);
 
-    if (nextRole === "super_admin") {
+    if (!selfService) {
+      if (nextRole === "super_admin" && !isRootSuperAdmin(viewerRole)) {
+        throw new Error("Only a Super Admin can assign the Super Admin role.");
+      }
+      if (admin.role === "super_admin" && !isRootSuperAdmin(viewerRole)) {
+        throw new Error("Only a Super Admin can edit Super Admin accounts.");
+      }
+    }
+
+    if (nextRole === "super_admin" || nextRole === "general_admin") {
       /* ok */
     } else if (nextRole === "country_super_admin") {
       if (!nextBranchCountry) throw new Error("Country is required for country super admin.");
     } else if (nextRole === "state_super_admin") {
       if (!nextBranchCountry) throw new Error("Country is required for state super admin.");
       if (!nextBranchState) throw new Error("State / region is required for state super admin.");
+      assertStateBelongsToCountry(nextBranchCountry, nextBranchState);
     } else if (nextRole === "service_unit_leader") {
       if (!nextServiceUnitId) throw new Error("Service unit is required for service unit leaders.");
     } else if (nextRole === "sub_unit_leader") {
@@ -617,7 +644,7 @@ export const api = {
     admin.is_active = Number(body.is_active ?? admin.is_active);
     if (body.password) admin.password = body.password;
 
-    if (nextRole === "super_admin") {
+    if (nextRole === "super_admin" || nextRole === "general_admin") {
       admin.service_unit_id = null;
       admin.sub_unit_name = "";
       admin.branch_country = "";
@@ -647,8 +674,8 @@ export const api = {
     const db = readDb();
     const row = db.registrations.find((r) => String(r.id) === String(id));
     if (!row) throw new Error("Registration not found.");
-    if (body.viewer?.role !== "super_admin") {
-      throw new Error("Only a super admin can change country and state on a registration.");
+    if (!isGlobalAdminRole(body.viewer?.role)) {
+      throw new Error("Only a Super Admin or General Admin can change country and state on a registration.");
     }
     const bc = normBranchCode(body.branch_country);
     const bs = normBranchCode(body.branch_state);
@@ -667,8 +694,13 @@ export const api = {
     writeDb(db);
     return { ok: true };
   },
-  async deleteAdmin(id) {
+  async deleteAdmin(id, body = {}) {
     const db = readDb();
+    const target = db.admins.find((a) => Number(a.id) === Number(id));
+    if (!target) throw new Error("Admin not found.");
+    if (target.role === "super_admin" && !isRootSuperAdmin(body.viewer?.role)) {
+      throw new Error("Only a Super Admin can delete a Super Admin account.");
+    }
     db.admins = db.admins.filter((a) => Number(a.id) !== Number(id));
     log(db, "Super Admin", "admin.delete", "admin", id, "Deleted admin");
     writeDb(db);
@@ -679,6 +711,10 @@ export const api = {
     const db = readDb();
     let rows = db.registrations.map((r) => ({ ...r, status: normalizeStatus(r.status) })).filter((r) => r.status === "accepted");
     if (params.viewer) rows = rows.filter((r) => canAccessRegistration(params.viewer, r));
+    if (params.filter_branch_state) {
+      const fs = normBranchCode(params.filter_branch_state);
+      rows = rows.filter((r) => normBranchCode(r.branch_state) === fs);
+    }
     if (params.unit_id) rows = rows.filter((r) => Number(r.unit_id) === Number(params.unit_id));
     if (params.sub_unit) {
       rows = rows.filter((r) => String(r.sub_unit || "").toLowerCase() === String(params.sub_unit || "").toLowerCase());
@@ -745,7 +781,7 @@ export const api = {
   async activity(params = {}) {
     const db = readDb();
     let rows = db.activity.slice();
-    if (params.viewer && params.viewer.role !== "super_admin") {
+    if (params.viewer && !isGlobalAdminRole(params.viewer.role)) {
       const allowedRegs = new Set(
         db.registrations
           .filter((r) => canAccessRegistration(params.viewer, r))

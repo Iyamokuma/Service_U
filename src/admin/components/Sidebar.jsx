@@ -54,15 +54,12 @@ const NAV_SUB_UNIT = [
   },
 ];
 
-/** Same breadth as service unit leader (no global Service Units / Admin Accounts). */
-const NAV_BRANCH_SUPER = [
+/** Country / State supervisory: one data screen with filters (not separate queue/members nav). */
+const NAV_BRANCH_SUPERVISORY = [
   {
-    section: "Dashboard",
+    section: "Branch oversight",
     items: [
-      { id: "overview", label: "Dashboard", icon: <GridIcon /> },
-      { id: "queue", label: "Intake Queue", icon: <ListIcon /> },
-      { id: "members", label: "Members List", icon: <UsersIcon /> },
-      { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
+      { id: "oversight", label: "Registrations & filters", icon: <ListIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
   },
@@ -70,8 +67,9 @@ const NAV_BRANCH_SUPER = [
 
 const ROLE_LABELS = {
   super_admin: "Super Admin",
-  country_super_admin: "Country Super Admin",
-  state_super_admin: "State Super Admin",
+  general_admin: "General Admin",
+  country_super_admin: "Country Admin",
+  state_super_admin: "State Branch Admin",
   service_unit_leader: "Service Unit Leader",
   sub_unit_leader: "Sub-Unit Leader",
 };
@@ -82,14 +80,14 @@ export function Sidebar({ page, setPage, pendingCount }) {
   const initials = admin?.full_name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "SA";
   const scope = leaderScopeLabel(admin);
   const nav =
-    admin?.role === "super_admin"
+    admin?.role === "super_admin" || admin?.role === "general_admin"
       ? NAV_SUPER
       : admin?.role === "sub_unit_leader"
         ? NAV_SUB_UNIT
         : admin?.role === "service_unit_leader"
           ? NAV_LEADER
           : admin?.role === "country_super_admin" || admin?.role === "state_super_admin"
-            ? NAV_BRANCH_SUPER
+            ? NAV_BRANCH_SUPERVISORY
             : NAV_LEADER;
 
   return (
@@ -118,7 +116,7 @@ export function Sidebar({ page, setPage, pendingCount }) {
               >
                 {item.icon}
                 {item.label}
-                {item.id === "queue" && pendingCount > 0 && (
+                {(item.id === "queue" || item.id === "oversight") && pendingCount > 0 && (
                   <span className="sa-nav-badge">{pendingCount > 99 ? "99+" : pendingCount}</span>
                 )}
               </button>

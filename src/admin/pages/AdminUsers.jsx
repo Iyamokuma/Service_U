@@ -5,18 +5,23 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { SERVICE_UNITS } from "../../data.js";
 import { BRANCH_COUNTRIES, branchStatesForCountry, coerceStateForCountry } from "../branchRegions.js";
+import { isRootSuperAdmin, isGlobalAdminRole } from "../roles.js";
 
 const ROLES = [
-  { value: "super_admin", label: "Super Admin", desc: "Full global access." },
-  { value: "country_super_admin", label: "Country Super Admin", desc: "Dashboard scoped to one country (all states)." },
-  { value: "state_super_admin", label: "State Super Admin", desc: "Dashboard scoped to one state/region within a country." },
+  { value: "general_admin", label: "General Admin", desc: "Full global access except creating Super Admin accounts." },
+  { value: "super_admin", label: "Super Admin", desc: "Platform owner — full access including Super Admin accounts." },
+  { value: "country_super_admin", label: "Country Admin", desc: "Supervisory: one country, filters only, mostly view-only on intake." },
+  { value: "state_super_admin", label: "State Branch Admin", desc: "Supervisory: one state / satellites, filters only, mostly view-only on intake." },
   { value: "service_unit_leader", label: "Service Unit Leader", desc: "Can manage assigned service unit." },
   { value: "sub_unit_leader", label: "Sub-unit Leader", desc: "Can manage assigned sub-unit only." },
 ];
 
 function roleDisplayLabel(role) {
   if (!role) return "—";
-  if (role === "super_admin") return "General Admin";
+  if (role === "general_admin") return "General Admin";
+  if (role === "super_admin") return "Super Admin";
+  if (role === "country_super_admin") return "Country Admin";
+  if (role === "state_super_admin") return "State Branch Admin";
   return String(role)
     .split("_")
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ""))
@@ -38,7 +43,7 @@ function adminInitials(fullName) {
 }
 
 function formatAdminScope(a) {
-  if (a.role === "super_admin") return "Global";
+  if (a.role === "super_admin" || a.role === "general_admin") return "Global";
   if (a.role === "country_super_admin") return `${a.branch_country_label || a.branch_country || "—"} (country)`;
   if (a.role === "state_super_admin") return `${a.branch_country_label || "—"} · ${a.branch_state_label || "—"}`;
   return `${a.service_unit_name || "—"}${a.sub_unit_name ? ` / ${a.sub_unit_name}` : ""}`;
@@ -54,11 +59,12 @@ function fmtDate(str) {
 export function AdminUsers({ data, units, reload }) {
   const toast = useToast();
   const { admin: me } = useAdminAuth();
-  const isSuper = me?.role === "super_admin";
+  const isRootSuper = isRootSuperAdmin(me?.role);
+  const isGlobalAdmin = isGlobalAdminRole(me?.role);
   const isServiceLeader = me?.role === "service_unit_leader";
   const [showInactive, setShowInactive] = useState(false);
   const scopedAdmins = (data?.data ?? []).filter((a) => {
-    if (isSuper) return true;
+    if (isGlobalAdmin) return true;
     if (isServiceLeader) return a.role === "sub_unit_leader" && Number(a.service_unit_id) === Number(me.service_unit_id);
     return false;
   });
@@ -82,8 +88,9 @@ export function AdminUsers({ data, units, reload }) {
   async function save(form) {
     setSaving(true);
     try {
-      if (form.id) await api.updateAdmin(form.id, form);
-      else await api.createAdmin(form);
+      const payload = { ...form, viewer: me };
+      if (form.id) await api.updateAdmin(form.id, payload);
+      else await api.createAdmin(payload);
       toast(form.id ? "Admin updated." : "Admin created.", "success");
       setModal(null);
       reload();
@@ -93,7 +100,7 @@ export function AdminUsers({ data, units, reload }) {
 
   async function toggleActive(admin) {
     try {
-      await api.updateAdmin(admin.id, { is_active: admin.is_active ? 0 : 1 });
+      await api.updateAdmin(admin.id, { is_active: admin.is_active ? 0 : 1, viewer: me });
       toast(admin.is_active ? "Admin deactivated." : "Admin activated.", "success");
       reload();
     } catch (e) { toast(e.message, "error"); }
@@ -107,7 +114,7 @@ export function AdminUsers({ data, units, reload }) {
     const ok = window.confirm(`Delete ${admin.full_name} (${admin.username}) permanently?`);
     if (!ok) return;
     try {
-      await api.deleteAdmin(admin.id);
+      await api.deleteAdmin(admin.id, { viewer: me });
       toast("Admin deleted.", "success");
       reload();
     } catch (e) {
@@ -139,7 +146,19 @@ export function AdminUsers({ data, units, reload }) {
               </span>
             </label>
           )}
-          {(isSuper || isServiceLeader) && <button className="sa-btn sa-btn-primary" onClick={() => setModal({ role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader", service_unit_id: isServiceLeader ? me.service_unit_id : "" })}>+ New Admin</button>}
+          {(isGlobalAdmin || isServiceLeader) && (
+            <button
+              className="sa-btn sa-btn-primary"
+              onClick={() =>
+                setModal({
+                  role: isServiceLeader ? "sub_unit_leader" : "general_admin",
+                  service_unit_id: isServiceLeader ? me.service_unit_id : "",
+                })
+              }
+            >
+              + New Admin
+            </button>
+          )}
         </div>
       </div>
 
@@ -181,9 +200,17 @@ export function AdminUsers({ data, units, reload }) {
                     <td className="sa-text-muted">{fmtDate(a.last_login)}</td>
                     <td>
                       <div className="sa-table-actions">
-                        <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>Edit</button>
-                        {a.id !== +me.id && <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>{a.is_active ? "Deactivate" : "Activate"}</button>}
-                        {isSuper && a.id !== +me.id && (
+                        {!(a.role === "super_admin" && !isRootSuper) && (
+                          <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
+                            Edit
+                          </button>
+                        )}
+                        {a.id !== +me.id && !(a.role === "super_admin" && !isRootSuper) && (
+                          <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
+                            {a.is_active ? "Deactivate" : "Activate"}
+                          </button>
+                        )}
+                        {isGlobalAdmin && a.id !== +me.id && (isRootSuper || a.role !== "super_admin") && (
                           <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
                             Delete
                           </button>
@@ -204,7 +231,8 @@ export function AdminUsers({ data, units, reload }) {
 }
 
 function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
-  const isSuper = me?.role === "super_admin";
+  const isRootSuper = isRootSuperAdmin(me?.role);
+  const isGlobalAdmin = isGlobalAdminRole(me?.role);
   const isServiceLeader = me?.role === "service_unit_leader";
   const isEdit = !!data?.id;
   const emptyForm = useCallback(
@@ -213,14 +241,14 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
       username: "",
       email: "",
       password: "",
-      role: isServiceLeader ? "sub_unit_leader" : "service_unit_leader",
+      role: isServiceLeader ? "sub_unit_leader" : isGlobalAdmin ? "general_admin" : "service_unit_leader",
       service_unit_id: isServiceLeader ? me?.service_unit_id : "",
       sub_unit_name: "",
       branch_country: "",
       branch_state: "",
       is_active: 1,
     }),
-    [isServiceLeader, me?.service_unit_id]
+    [isServiceLeader, isGlobalAdmin, me?.service_unit_id]
   );
   const [form, setForm] = useState(() => emptyForm());
 
@@ -241,7 +269,7 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
         username: data.username || "",
         email: data.email || "",
         password: "",
-        role: data.role || (isServiceLeader ? "sub_unit_leader" : "service_unit_leader"),
+        role: data.role || (isServiceLeader ? "sub_unit_leader" : isGlobalAdmin ? "general_admin" : "service_unit_leader"),
         service_unit_id: data.service_unit_id || (isServiceLeader ? me?.service_unit_id : ""),
         sub_unit_name: data.sub_unit_name || "",
         branch_country: country,
@@ -312,9 +340,18 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
               }));
             }}
           >
-            {(isSuper ? ROLES : ROLES.filter((r) => r.value === "sub_unit_leader")).map((r) => (
+            {(isGlobalAdmin
+              ? ROLES.filter((r) => {
+                  if (r.value === "super_admin") {
+                    if (!isEdit) return false;
+                    return isRootSuper;
+                  }
+                  return true;
+                })
+              : ROLES.filter((r) => r.value === "sub_unit_leader")
+            ).map((r) => (
               <option key={r.value} value={r.value}>
-                {!isEdit && r.value === "super_admin" ? "General Admin" : r.label}
+                {r.label}
               </option>
             ))}
           </select>

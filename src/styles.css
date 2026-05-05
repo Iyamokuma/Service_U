@@ -250,6 +250,53 @@ a { color: inherit; }
   line-height: 1.45;
 }
 
+/* Label + control(s) inside one bordered box (date splits, etc.) */
+.field-embedded {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 10px 12px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field-embedded:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 15%, transparent);
+}
+.field-embedded--error {
+  border-color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 3%, var(--surface));
+}
+.field-embedded--error:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 15%, transparent);
+}
+.field-embedded-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+.field-embedded-label .req {
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.field-embedded-label .opt {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.field-embedded-body {
+  min-width: 0;
+}
+
 .input-wrap {
   position: relative;
   display: flex;
