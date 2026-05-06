@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
 import { PersonalSection } from "./sections/PersonalSection.jsx";
 import { ContactSection } from "./sections/ContactSection.jsx";
-import { WorkSection } from "./sections/WorkSection.jsx";
 import { PhotoSection } from "./sections/PhotoSection.jsx";
 import { FaithSection } from "./sections/FaithSection.jsx";
+import { ChurchMembershipSection } from "./sections/ChurchMembershipSection.jsx";
 import { ServiceUnitSection } from "./sections/ServiceUnitSection.jsx";
 import { SERVICE_UNITS, isEmail, isPhone } from "./data.js";
 import { shrinkPhotoDataUrl } from "./photoCompress.js";
@@ -35,21 +35,16 @@ const INITIAL = {
   phone2: "",
   email: "",
 
-  workplace: "",
-  titheCard: "",
-  homecell: "",
-
   photo: null,
 
   joinedChurch: { month: "", year: "" },
+  titheCard: "",
+  homecell: "",
+
   bornAgain: "",
   bornAgainYear: "",
-  foundation: "",
-  foundationDate: { month: "", year: "" },
-  baptised: "",
-  baptisedDate: { month: "", year: "" },
   wolbi: "",
-  wolbiDate: { month: "", year: "", level: "" },
+  wolbiDate: { year: "", level: "" },
 
   unitId: null,
   subUnit: "",
@@ -61,8 +56,6 @@ function validate(form) {
   if (!form.firstName.trim()) e.firstName = "First name is required.";
   if (!form.address.trim()) e.address = "Residential address is required.";
   if (!form.busStop.trim()) e.busStop = "Nearest bus stop is required.";
-  if (!form.branchCountry) e.branchCountry = "Select your country of residence.";
-  if (!form.branchState) e.branchState = "Select your state or region.";
   if (!form.phone1.trim()) e.phone1 = "Primary phone is required.";
   else if (!isPhone(form.phone1)) e.phone1 = "Enter a valid phone number.";
   if (form.phone2 && !isPhone(form.phone2))
@@ -81,26 +74,12 @@ function validate(form) {
   if (!form.bornAgain) e.bornAgain = "Please answer Yes or No.";
   if (form.bornAgain === "Yes") {
     if (!form.bornAgainYear) e.bornAgainYear = "Year required.";
-    if (!form.foundation) e.foundation = "Please answer Yes or No.";
-    if (
-      form.foundation === "Yes" &&
-      (!form.foundationDate.month || !form.foundationDate.year)
-    )
-      e.foundationDate = "Month and year required.";
-    if (!form.baptised) e.baptised = "Please answer Yes or No.";
-    if (
-      form.baptised === "Yes" &&
-      (!form.baptisedDate.month || !form.baptisedDate.year)
-    )
-      e.baptisedDate = "Month and year required.";
     if (!form.wolbi) e.wolbi = "Please answer Yes or No.";
     if (
       form.wolbi === "Yes" &&
-      (!form.wolbiDate.month ||
-        !form.wolbiDate.year ||
-        !form.wolbiDate.level)
+      (!form.wolbiDate.year || !form.wolbiDate.level)
     )
-      e.wolbiDate = "Month, year and level required.";
+      e.wolbiDate = "Year and level required.";
   }
 
   if (!form.unitId) e.unitId = "Select a service unit.";
@@ -202,21 +181,21 @@ export default function App() {
         phone1: form.phone1,
         phone2: form.phone2,
         email: form.email,
-        workplace: form.workplace,
+        workplace: "",
         tithe_card: form.titheCard,
         homecell: form.homecell,
         joined_church_month: form.joinedChurch?.month || "",
         joined_church_year: form.joinedChurch?.year || "",
         born_again: form.bornAgain || "",
         born_again_year: ba ? form.bornAgainYear || "" : "",
-        foundation: ba ? form.foundation || "" : "",
-        foundation_month: ba && form.foundation === "Yes" ? form.foundationDate?.month || "" : "",
-        foundation_year: ba && form.foundation === "Yes" ? form.foundationDate?.year || "" : "",
-        baptised: ba ? form.baptised || "" : "",
-        baptised_month: ba && form.baptised === "Yes" ? form.baptisedDate?.month || "" : "",
-        baptised_year: ba && form.baptised === "Yes" ? form.baptisedDate?.year || "" : "",
+        foundation: "",
+        foundation_month: "",
+        foundation_year: "",
+        baptised: "",
+        baptised_month: "",
+        baptised_year: "",
         wolbi: ba ? form.wolbi || "" : "",
-        wolbi_month: ba && form.wolbi === "Yes" ? form.wolbiDate?.month || "" : "",
+        wolbi_month: ba && form.wolbi === "Yes" ? "" : "",
         wolbi_year: ba && form.wolbi === "Yes" ? form.wolbiDate?.year || "" : "",
         wolbi_level: ba && form.wolbi === "Yes" ? form.wolbiDate?.level || "" : "",
         unit_id: Number(form.unitId),
@@ -315,9 +294,9 @@ export default function App() {
       <form onSubmit={onSubmit} noValidate>
         <PersonalSection form={form} set={set} errors={errors} />
         <ContactSection form={form} set={set} errors={errors} />
-        <WorkSection form={form} set={set} />
-        <PhotoSection form={form} set={set} />
         <FaithSection form={form} set={set} errors={errors} />
+        <PhotoSection form={form} set={set} />
+        <ChurchMembershipSection form={form} set={set} errors={errors} />
         <ServiceUnitSection form={form} set={set} errors={errors} />
 
         <div className="submit-bar">

@@ -68,10 +68,10 @@ export function AdminUsers({ data, units, reload }) {
     if (isServiceLeader) return a.role === "sub_unit_leader" && Number(a.service_unit_id) === Number(me.service_unit_id);
     return false;
   });
-  const admins = scopedAdmins.filter((a) => {
-    if (isServiceLeader) return Number(a.is_active) === 1;
-    return showInactive || Number(a.is_active) === 1;
-  });
+  const admins = scopedAdmins.filter(
+    (a) => showInactive || Number(a.is_active) === 1
+  );
+  const activeAdminCount = scopedAdmins.filter((a) => Number(a.is_active) === 1).length;
   const fallbackUnits = SERVICE_UNITS.map((u, idx) => ({
     id: u.id,
     name: u.name,
@@ -132,7 +132,7 @@ export function AdminUsers({ data, units, reload }) {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {!isServiceLeader && (
+          {(isGlobalAdmin || isServiceLeader) && (
             <label className="sa-field-toggle">
               <span className="sa-field-toggle-label">Show inactive</span>
               <span className="sa-switch">

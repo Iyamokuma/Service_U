@@ -166,29 +166,29 @@ export function BranchOversight({ units }) {
             <option value="Male">Male</option>
             <option value="Female">Female</option>
           </select>
-          <div className="sa-date-field">
-            <label className="sa-date-field-label" htmlFor="bo-from">
-              Start date
-            </label>
-            <input
-              id="bo-from"
-              className={`sa-date-field-input${!filters.from ? " sa-date-empty" : ""}`}
-              type="date"
-              value={filters.from}
-              onChange={setFilter("from")}
-            />
-          </div>
-          <div className="sa-date-field">
-            <label className="sa-date-field-label" htmlFor="bo-to">
-              End date
-            </label>
-            <input
-              id="bo-to"
-              className={`sa-date-field-input${!filters.to ? " sa-date-empty" : ""}`}
-              type="date"
-              value={filters.to}
-              onChange={setFilter("to")}
-            />
+          <div className="sa-date-range-group" aria-label="Date range">
+            <div className="sa-date-field">
+              <span className="sa-date-placeholder" aria-hidden="true">Start date</span>
+              <input
+                id="bo-from"
+                aria-label="Start date"
+                className={`sa-date-field-input${!filters.from ? " sa-date-empty" : ""}`}
+                type="date"
+                value={filters.from}
+                onChange={setFilter("from")}
+              />
+            </div>
+            <div className="sa-date-field">
+              <span className="sa-date-placeholder" aria-hidden="true">End date</span>
+              <input
+                id="bo-to"
+                aria-label="End date"
+                className={`sa-date-field-input${!filters.to ? " sa-date-empty" : ""}`}
+                type="date"
+                value={filters.to}
+                onChange={setFilter("to")}
+              />
+            </div>
           </div>
           <button
             type="button"

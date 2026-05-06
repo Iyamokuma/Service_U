@@ -7,17 +7,9 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
-const INTAKE_STATUS_TABS = [
-  { id: "all", label: "All" },
-  { id: "new", label: "Active" },
-  { id: "in_progress", label: "In progress" },
-  { id: "accepted", label: "Accepted" },
-  { id: "rejected", label: "Rejected" },
-  { id: "archived", label: "Archived" },
-  { id: "overdue", label: "Overdue" },
-];
 
-/** Service unit leader: sub-unit tab row includes this sentinel for the overdue (all sub-units) view */
+/** Service unit leader: sub-unit tab row sentinels (all sub-units views) */
+const SVC_LEADER_ARCHIVED_TAB = "__archived__";
 const SVC_LEADER_OVERDUE_TAB = "__overdue__";
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -109,7 +101,6 @@ export function Queue({ units }) {
   const [statusModal, setStatusModal] = useState(null);
   const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
   const [subUnitTab, setSubUnitTab] = useState("all");
-  const [intakeStatusTab, setIntakeStatusTab] = useState("all");
   const [leaderSubUnitLabels, setLeaderSubUnitLabels] = useState([]);
   const debounce = useRef(null);
 
@@ -118,7 +109,12 @@ export function Queue({ units }) {
       const subUnitForQueue = (() => {
         if (isSubUnitLeader) return admin?.sub_unit_name || admin?.sub_unit || "";
         if (isServiceLeader) {
-          if (subUnitTab === "all" || subUnitTab === SVC_LEADER_OVERDUE_TAB) return "";
+          if (
+            subUnitTab === "all" ||
+            subUnitTab === SVC_LEADER_OVERDUE_TAB ||
+            subUnitTab === SVC_LEADER_ARCHIVED_TAB
+          )
+            return "";
           return subUnitTab;
         }
         return subUnitTab === "all" ? "" : subUnitTab;
@@ -131,16 +127,19 @@ export function Queue({ units }) {
         unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
         sub_unit: subUnitForQueue,
       };
-      const onLeaderIntake = isLeader && (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB);
-      if (onLeaderIntake) {
+      if (isServiceLeader && subUnitTab === SVC_LEADER_ARCHIVED_TAB) {
         delete scoped.overdue_only;
-        scoped.status = "";
-        if (intakeStatusTab === "overdue") scoped.overdue_only = true;
-        else if (intakeStatusTab !== "all") scoped.status = intakeStatusTab;
+        scoped.status = "archived";
+      } else {
+        const onLeaderIntake = isLeader && (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB);
+        if (onLeaderIntake) {
+          delete scoped.overdue_only;
+          scoped.status = "";
+        }
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, isLeader, subUnitTab, intakeStatusTab]
+    [filters, admin, isServiceLeader, isSubUnitLeader, isLeader, subUnitTab]
   );
 
   useEffect(() => {
@@ -239,8 +238,12 @@ export function Queue({ units }) {
     return !allowedStatus(row.status).includes(target);
   };
 
-  const svcLeaderSubTabs = isServiceLeader ? ["all", ...new Set(leaderSubUnitLabels), SVC_LEADER_OVERDUE_TAB] : [];
-  const showIntakeFilters = !isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB;
+  const svcLeaderSubTabs = isServiceLeader
+    ? ["all", ...new Set(leaderSubUnitLabels), SVC_LEADER_ARCHIVED_TAB, SVC_LEADER_OVERDUE_TAB]
+    : [];
+  const showIntakeFilters =
+    !isServiceLeader ||
+    (subUnitTab !== SVC_LEADER_OVERDUE_TAB && subUnitTab !== SVC_LEADER_ARCHIVED_TAB);
   const showMainTable = !isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB;
   const overdueRows = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB ? overdue : [];
 
@@ -248,18 +251,39 @@ export function Queue({ units }) {
     <>
       <div className="sa-card">
         {isServiceLeader && (
-          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="sa-card-body sa-unit-tab-row">
             {svcLeaderSubTabs.map((sub) => (
               <button
                 key={sub}
                 type="button"
-                className={`sa-btn sa-btn-sm ${subUnitTab === sub ? "sa-btn-primary" : "sa-btn-outline"}`}
-                style={{ width: "auto" }}
+                className={`sa-unit-tab-btn ${subUnitTab === sub ? "is-active" : ""}`}
                 onClick={() => setSubUnitTab(sub)}
+                title={sub === "all" ? "All sub-units" : sub === SVC_LEADER_ARCHIVED_TAB ? "Archived" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
               >
-                {sub === "all" ? "All sub-units" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
+                {sub === "all" ? "All sub-units" : sub === SVC_LEADER_ARCHIVED_TAB ? "Archived" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
               </button>
             ))}
+          </div>
+        )}
+        {isServiceLeader && subUnitTab === SVC_LEADER_ARCHIVED_TAB && (
+          <div
+            className="sa-card-body"
+            style={{
+              borderBottom: "1px solid var(--sa-border)",
+              paddingTop: 4,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <span className="sa-text-muted sa-text-sm">All sub-units · archived applications</span>
+            {!loading && (
+              <span className="sa-text-muted sa-text-sm">
+                {pag.total} archived
+              </span>
+            )}
           </div>
         )}
         {isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB && (
@@ -289,48 +313,38 @@ export function Queue({ units }) {
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
               </select>
             )}
-            {isLeader && (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB) && (
-              <select
-                className="sa-select"
-                value={intakeStatusTab}
-                onChange={(e) => setIntakeStatusTab(e.target.value)}
-                aria-label="Application status"
-                title="Filter by application status"
-              >
-                {INTAKE_STATUS_TABS.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-            )}
             <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
               <option value="">All Genders</option><option value="Male">Male</option><option value="Female">Female</option>
             </select>
-            <div className="sa-date-field">
-              <label className="sa-date-field-label" htmlFor="queue-filter-from">Start date</label>
-              <input
-                id="queue-filter-from"
-                className={`sa-date-field-input${!filters.from ? " sa-date-empty" : ""}`}
-                type="date"
-                value={filters.from}
-                onChange={setFilter("from")}
-              />
-            </div>
-            <div className="sa-date-field">
-              <label className="sa-date-field-label" htmlFor="queue-filter-to">End date</label>
-              <input
-                id="queue-filter-to"
-                className={`sa-date-field-input${!filters.to ? " sa-date-empty" : ""}`}
-                type="date"
-                value={filters.to}
-                onChange={setFilter("to")}
-              />
+            <div className="sa-date-range-group" aria-label="Date range">
+              <div className="sa-date-field">
+                <span className="sa-date-placeholder" aria-hidden="true">Start date</span>
+                <input
+                  id="queue-filter-from"
+                  aria-label="Start date"
+                  className={`sa-date-field-input${!filters.from ? " sa-date-empty" : ""}`}
+                  type="date"
+                  value={filters.from}
+                  onChange={setFilter("from")}
+                />
+              </div>
+              <div className="sa-date-field">
+                <span className="sa-date-placeholder" aria-hidden="true">End date</span>
+                <input
+                  id="queue-filter-to"
+                  aria-label="End date"
+                  className={`sa-date-field-input${!filters.to ? " sa-date-empty" : ""}`}
+                  type="date"
+                  value={filters.to}
+                  onChange={setFilter("to")}
+                />
+              </div>
             </div>
             <button
               type="button"
               className="sa-btn sa-btn-outline sa-btn-sm"
               onClick={() => {
                 setFilters({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
-                setIntakeStatusTab("all");
               }}
             >
               Clear

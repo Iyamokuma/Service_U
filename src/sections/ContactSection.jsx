@@ -1,15 +1,14 @@
 import { Field } from "../components/Field.jsx";
-import { TextInput, TextArea, Select } from "../components/Inputs.jsx";
+import { TextInput, TextArea } from "../components/Inputs.jsx";
 import { SectionHead } from "./SectionHead.jsx";
 import { isEmail, isPhone } from "../data.js";
-import { BRANCH_COUNTRIES, branchStatesForCountry } from "../admin/branchRegions.js";
 
 export function ContactSection({ form, set, errors }) {
   return (
     <section className="section">
       <SectionHead
         num="02"
-        title="Contact & address"
+        title="Contact information"
         desc="How we can reach you and where you live."
       />
       <div className="grid">
@@ -30,29 +29,6 @@ export function ContactSection({ form, set, errors }) {
           />
         </Field>
 
-        <Field label="Country of residence" required error={errors.branchCountry}>
-          <Select
-            value={form.branchCountry}
-            onChange={(v) => {
-              set("branchCountry", v);
-              set("branchState", "");
-            }}
-            placeholder="Select country"
-            options={BRANCH_COUNTRIES.map((c) => [c.code, c.name])}
-            state={errors.branchCountry ? "error" : form.branchCountry ? "valid" : undefined}
-          />
-        </Field>
-        <Field label="State / region" required error={errors.branchState}>
-          <Select
-            value={form.branchState}
-            onChange={(v) => set("branchState", v)}
-            placeholder={form.branchCountry ? "Select state" : "Select country first"}
-            options={branchStatesForCountry(form.branchCountry).map((s) => [s.code, s.name])}
-            state={errors.branchState ? "error" : form.branchState ? "valid" : undefined}
-            disabled={!form.branchCountry}
-          />
-        </Field>
-
         <Field
           label="Primary phone"
           required
@@ -69,8 +45,8 @@ export function ContactSection({ form, set, errors }) {
               errors.phone1
                 ? "error"
                 : form.phone1 && isPhone(form.phone1)
-                ? "valid"
-                : undefined
+                  ? "valid"
+                  : undefined
             }
           />
         </Field>
@@ -84,8 +60,8 @@ export function ContactSection({ form, set, errors }) {
               errors.phone2
                 ? "error"
                 : form.phone2 && isPhone(form.phone2)
-                ? "valid"
-                : undefined
+                  ? "valid"
+                  : undefined
             }
           />
         </Field>
@@ -101,8 +77,8 @@ export function ContactSection({ form, set, errors }) {
               errors.email
                 ? "error"
                 : form.email && isEmail(form.email)
-                ? "valid"
-                : undefined
+                  ? "valid"
+                  : undefined
             }
           />
         </Field>
