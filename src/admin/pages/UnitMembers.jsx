@@ -50,10 +50,12 @@ export function UnitMembers({ units }) {
     <div className="sa-card">
       <div className="sa-filters">
         <input className="sa-input" placeholder="Search member name/email/phone" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
-        <select className="sa-select" value={isLeader ? admin?.service_unit_id || "" : filters.unit_id} onChange={(e) => setFilters((f) => ({ ...f, unit_id: e.target.value }))} disabled={isLeader}>
-          <option value="">All Units</option>
-          {(units?.data || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+        {!isLeader && (
+          <select className="sa-select" value={filters.unit_id} onChange={(e) => setFilters((f) => ({ ...f, unit_id: e.target.value }))}>
+            <option value="">All Units</option>
+            {(units?.data || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
         {isServiceUnitLeader && (
           <select className="sa-select" value={filters.sub_unit} onChange={(e) => setFilters((f) => ({ ...f, sub_unit: e.target.value }))}>
             <option value="">All sub-units</option>

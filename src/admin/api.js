@@ -343,13 +343,16 @@ export const api = {
     const bySexMap = {};
     regs.forEach((r) => { bySexMap[r.sex || "Unknown"] = (bySexMap[r.sex || "Unknown"] || 0) + 1; });
     const by_sex = Object.entries(bySexMap).map(([sex, cnt]) => ({ sex, cnt }));
-    const trendDays = Math.min(365, Math.max(7, Number(params.trend_days) || 14));
+    const trendDays = Math.min(365, Math.max(7, Number(params.trend_days) || 365));
     const trend = Array.from({ length: trendDays }, (_, i) => {
       const d = new Date(today);
       d.setDate(today.getDate() - (trendDays - 1 - i));
       const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const cnt = regs.filter((r) => submittedLocalDateKey(r.submitted_at) === day).length;
-      return { day, cnt };
+      const dayRegs = regs.filter((r) => submittedLocalDateKey(r.submitted_at) === day);
+      const st = (r) => normalizeStatus(r.status);
+      const open = dayRegs.filter((r) => ["new", "in_progress"].includes(st(r))).length;
+      const closed = dayRegs.filter((r) => ["accepted", "rejected", "archived"].includes(st(r))).length;
+      return { day, cnt: dayRegs.length, open, closed };
     });
     return { totals, by_unit, by_sex, trend, recent_activity: db.activity.slice(0, 10) };
   },

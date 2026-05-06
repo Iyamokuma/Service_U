@@ -429,7 +429,7 @@ a { color: inherit; }
 .date-split .select, .date-split .input { padding-right: 30px; }
 .date-split.no-year { grid-template-columns: 1.5fr 1fr; }
 .date-split.month-year { grid-template-columns: 1.5fr 1fr; }
-.date-split.month-year-level { grid-template-columns: 1.5fr 1fr 1fr; }
+.date-split.month-year-level { grid-template-columns: 1fr 1fr; }
 
 /* ———— Conditional expand ———— */
 .collapse {
@@ -769,3 +769,89 @@ a { color: inherit; }
 
 /* scrollbar in selects — Safari fix */
 .select option { color: var(--ink); background: var(--surface); }
+
+/* ———— Global responsive polish ———— */
+@media (max-width: 900px) {
+  .page {
+    max-width: 100%;
+    padding: 28px 20px 90px;
+  }
+  .brand {
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .brand-divider {
+    width: 100%;
+    flex: 0 0 100%;
+    order: 3;
+  }
+  .hero {
+    margin-bottom: 24px;
+  }
+  .hero-title {
+    font-size: clamp(30px, 7vw, 44px);
+    line-height: 1.08;
+  }
+  .hero-sub {
+    max-width: 100%;
+  }
+  .section {
+    padding: 18px 0;
+  }
+  .submit-bar {
+    position: static;
+    margin-top: 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .submit-meta {
+    width: 100%;
+    order: 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 22px 14px 70px;
+  }
+  .brand {
+    margin-bottom: 16px;
+  }
+  .brand-name {
+    font-size: 12px;
+  }
+  .brand-meta {
+    font-size: 11px;
+  }
+  .hero-eyebrow {
+    font-size: 11px;
+  }
+  .hero-title {
+    font-size: clamp(26px, 9vw, 34px);
+  }
+  .hero-sub {
+    font-size: 14px;
+  }
+  .section-head {
+    gap: 6px;
+  }
+  .section-title {
+    font-size: 20px;
+  }
+  .section-desc {
+    font-size: 13px;
+  }
+  .field {
+    gap: 4px;
+  }
+  .submit-bar {
+    padding: 12px;
+  }
+  .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+}

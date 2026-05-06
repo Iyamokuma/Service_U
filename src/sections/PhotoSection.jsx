@@ -6,7 +6,7 @@ export function PhotoSection({ form, set }) {
     <section className="section">
       <SectionHead
         num="04"
-        title="Passport photo"
+        title="Passport-style photo"
         desc="A clear portrait helps us identify you at service unit meetings."
       />
       <Dropzone value={form.photo} onChange={(v) => set("photo", v)} />

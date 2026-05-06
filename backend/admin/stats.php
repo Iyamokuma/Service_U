@@ -27,14 +27,40 @@ $byUnit = $db->query("
 // By sex
 $bySex = $db->query("SELECT sex, COUNT(*) AS cnt FROM registrations GROUP BY sex")->fetchAll();
 
-// Daily trend last 14 days
-$trend = $db->query("
-    SELECT DATE(submitted_at) AS day, COUNT(*) AS cnt
+// Daily trend: dense series (7–365 days) for dashboard charts — optional ?trend_days=
+$trendDays = min(365, max(7, (int) ($_GET['trend_days'] ?? 365)));
+$interval  = max(0, $trendDays - 1);
+$stmt = $db->prepare("
+    SELECT DATE(submitted_at) AS day,
+      COUNT(*) AS cnt,
+      SUM(CASE WHEN status IN ('pending','waitlisted','new','in_progress') THEN 1 ELSE 0 END) AS open_cnt,
+      SUM(CASE WHEN status IN ('approved','rejected','accepted','archived') THEN 1 ELSE 0 END) AS closed_cnt
     FROM registrations
-    WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+    WHERE submitted_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
     GROUP BY DATE(submitted_at)
     ORDER BY day ASC
-")->fetchAll();
+");
+$stmt->bindValue(1, $interval, PDO::PARAM_INT);
+$stmt->execute();
+$byDay = [];
+foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $byDay[$r['day']] = [
+        'cnt'    => (int) $r['cnt'],
+        'open'   => (int) $r['open_cnt'],
+        'closed' => (int) $r['closed_cnt'],
+    ];
+}
+$trend = [];
+for ($i = $interval; $i >= 0; $i--) {
+    $d = date('Y-m-d', strtotime('-' . $i . ' days'));
+    $row       = $byDay[$d] ?? ['cnt' => 0, 'open' => 0, 'closed' => 0];
+    $trend[] = [
+        'day'    => $d,
+        'cnt'    => $row['cnt'],
+        'open'   => $row['open'],
+        'closed' => $row['closed'],
+    ];
+}
 
 // Active units
 $activeUnits = (int)$db->query("SELECT COUNT(*) FROM service_units WHERE is_active = 1")->fetchColumn();

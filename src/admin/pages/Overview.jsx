@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { leaderScopeLabel } from "../leaderScope.js";
+import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtDate(d) {
@@ -17,87 +18,17 @@ function actionDot(action) {
   return "default";
 }
 
-const RANGE_PRESETS = [
-  { days: 7, label: "7D" },
-  { days: 28, label: "28D" },
-  { days: 90, label: "90D" },
-  { days: 365, label: "365D" },
-];
-
-function SubUnitLeaderAnalytics({ trend, rangeDays, onRangeDays, scopeLabel }) {
-  const slice = (trend || []).slice(-rangeDays);
-  const maxCnt = Math.max(...slice.map((x) => +x.cnt), 1);
-  const minCnt = Math.min(...slice.map((x) => +x.cnt), 0);
-  const span = Math.max(maxCnt - minCnt, 1);
-  const w = 340;
-  const h = 160;
-  const padL = 36;
-  const padR = 12;
-  const padT = 12;
-  const padB = 28;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
-  const n = slice.length || 1;
-  const pts = slice.map((r, i) => {
-    const x = padL + (i / Math.max(n - 1, 1)) * plotW;
-    const v = +r.cnt;
-    const y = padT + plotH - ((v - minCnt) / span) * plotH;
-    return [x, y];
-  });
-  const lineD = pts.length
-    ? `M ${pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L ")}`
-    : "";
-  const curSum = slice.reduce((s, x) => s + +x.cnt, 0);
-  const prevSlice = (trend || []).slice(-2 * rangeDays, -rangeDays);
-  const prevSum = prevSlice.reduce((s, x) => s + +x.cnt, 0);
-  const pct = prevSum === 0 ? (curSum > 0 ? 100 : 0) : Math.round(((curSum - prevSum) / prevSum) * 100);
-  const pos = pct >= 0;
-  const tickIdx = n <= 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
-  const uniqTicks = [...new Set(tickIdx)];
-
+function GenderBreakdown({ sexMap }) {
+  const entries = Object.entries(sexMap);
   return (
-    <div className="sa-analytics-dark">
-      <div className="sa-analytics-dark-head">
-        <span className="sa-analytics-dark-title">Registrations</span>
-      </div>
-      <div className="sa-pill-row">
-        {RANGE_PRESETS.map(({ days, label }) => (
-          <button key={days} type="button" className={`sa-pill ${rangeDays === days ? "sa-pill-active" : ""}`} onClick={() => onRangeDays(days)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="sa-analytics-chart-wrap">
-        <svg className="sa-analytics-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
-          {[0, 0.33, 0.66, 1].map((t) => {
-            const y = padT + t * plotH;
-            return <line key={t} x1={padL} x2={w - padR} y1={y} y2={y} className="sa-analytics-grid" />;
-          })}
-          {lineD && <path d={lineD} className="sa-analytics-line" fill="none" />}
-          {uniqTicks.map((ti) => {
-            const r = slice[ti];
-            if (!r?.day) return null;
-            const d = new Date(r.day + "T12:00:00");
-            const lbl = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
-            const x = padL + (ti / Math.max(n - 1, 1)) * plotW;
-            return (
-              <text key={ti} x={x} y={h - 6} textAnchor="middle" className="sa-analytics-axis-label">
-                {lbl}
-              </text>
-            );
-          })}
-        </svg>
-      </div>
-      <div className="sa-analytics-footer">
-        <div className="sa-analytics-metric">
-          <span className="sa-analytics-dot" />
-          <span>Registrations ({rangeDays} days)</span>
+    <div className="sa-gender-strip">
+      {entries.map(([k, v]) => (
+        <div key={k} className="sa-gender-item">
+          <div className="sa-gender-value">{v}</div>
+          <div className="sa-gender-label">{k}</div>
         </div>
-        <span className="sa-analytics-value">{curSum}</span>
-      </div>
-      <div className={`sa-analytics-compare ${pos ? "sa-analytics-compare-up" : "sa-analytics-compare-down"}`}>
-        {pos ? `${Math.abs(pct)}% more` : `${Math.abs(pct)}% fewer`} than previous {rangeDays} days
-      </div>
+      ))}
+      {entries.length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
     </div>
   );
 }
@@ -113,25 +44,24 @@ export function Overview() {
 
   useEffect(() => {
     setLoading(true);
-    const p = { viewer: admin };
-    if (isSubUnitLeader) p.trend_days = 365;
-    api.stats(p)
+    api
+      .stats({ viewer: admin, trend_days: 365 })
       .then(setData)
       .finally(() => setLoading(false));
-  }, [admin, isSubUnitLeader]);
+  }, [admin]);
 
   if (loading) return <div className="sa-loading"><div className="sa-spinner" /><span>Loading…</span></div>;
   if (!data) return <div className="sa-empty"><div className="sa-empty-text">Failed to load stats.</div></div>;
 
   const { totals, by_unit, by_sex, trend, recent_activity } = data;
   const maxUnit = Math.max(...by_unit.map((r) => +r.cnt), 1);
-  const maxTrend = Math.max(...trend.map((r) => +r.cnt), 1);
   const sexMap = {};
   by_sex.forEach((r) => {
     sexMap[r.sex || "Unknown"] = +r.cnt;
   });
 
-  const showBarTrendCharts = !isServiceLeader && !isSubUnitLeader;
+  const showBarAndTrend = !isServiceLeader && !isSubUnitLeader;
+  const trendSubtitle = scope && scope !== "—" ? scope : "Your visible registrations";
 
   return (
     <>
@@ -143,115 +73,105 @@ export function Overview() {
       </div>
 
       {isSubUnitLeader && (
-        <div style={{ marginBottom: 24 }}>
-          <SubUnitLeaderAnalytics trend={trend} rangeDays={rangeDays} onRangeDays={setRangeDays} scopeLabel={scope} />
+        <div className="sa-overview-analytics-block">
+          <RegistrationTrendAnalytics
+            trend={trend}
+            rangeDays={rangeDays}
+            onRangeDays={setRangeDays}
+            title="Registration pulse"
+            subtitle={scope}
+          />
         </div>
       )}
 
       {isServiceLeader && (
-        <div className="sa-card" style={{ marginBottom: 24 }}>
-          <div className="sa-card-head">
-            <span className="sa-card-title">Gender breakdown</span>
-          </div>
-          <div className="sa-card-body">
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-              {Object.entries(sexMap).map(([k, v]) => (
-                <div key={k} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 22, fontWeight: 800 }}>{v}</div>
-                  <div className="sa-text-sm sa-text-muted">{k}</div>
-                </div>
-              ))}
-              {Object.keys(sexMap).length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
+        <div className="sa-overview-split">
+          <RegistrationTrendAnalytics
+            trend={trend}
+            rangeDays={rangeDays}
+            onRangeDays={setRangeDays}
+            title="Registration pulse"
+            subtitle={scope}
+          />
+          <div className="sa-card sa-card--gender">
+            <div className="sa-card-head">
+              <span className="sa-card-title">Gender breakdown</span>
+            </div>
+            <div className="sa-card-body sa-card-body--gender">
+              <GenderBreakdown sexMap={sexMap} />
             </div>
           </div>
         </div>
       )}
 
-      {showBarTrendCharts && (
-        <div className="sa-chart-grid">
-          <div className="sa-card">
-            <div className="sa-card-head">
-              <span className="sa-card-title">Registrations by Unit</span>
-              <span className="sa-text-sm sa-text-muted">Top {by_unit.length}</span>
-            </div>
-            <div className="sa-card-body">
-              <div className="sa-bar-chart">
-                {by_unit.map((r) => (
-                  <div className="sa-bar-row" key={r.unit_name}>
-                    <div className="sa-bar-label">{r.unit_name}</div>
-                    <div className="sa-bar-track">
-                      <div className="sa-bar-fill" style={{ width: `${(+r.cnt / maxUnit) * 100}%` }} />
-                    </div>
-                    <div className="sa-bar-count">{r.cnt}</div>
-                  </div>
-                ))}
-                {by_unit.length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
+      {showBarAndTrend && (
+        <>
+          <div className="sa-chart-grid sa-chart-grid--dashboard">
+            <div className="sa-card">
+              <div className="sa-card-head">
+                <span className="sa-card-title">Registrations by unit</span>
+                <span className="sa-text-sm sa-text-muted">{by_unit.length} units</span>
               </div>
-            </div>
-          </div>
-          <div className="sa-card">
-            <div className="sa-card-head">
-              <span className="sa-card-title">14-Day Registration Trend</span>
-            </div>
-            <div className="sa-card-body">
-              <div className="sa-trend-chart">
-                {trend.map((r) => {
-                  const pct = (+r.cnt / maxTrend) * 100;
-                  const d = new Date(r.day + "T12:00:00");
-                  const lbl = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
-                  return (
-                    <div className="sa-trend-col" key={r.day} title={`${lbl}: ${r.cnt}`}>
-                      <div className="sa-trend-bar" style={{ height: `${Math.max(4, pct)}px`, maxHeight: "80px" }} />
-                      <div className="sa-trend-day">{lbl}</div>
-                    </div>
-                  );
-                })}
-                {trend.length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
-              </div>
-              <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--sa-border)" }}>
-                <div className="sa-text-sm sa-fw-600" style={{ marginBottom: 10 }}>
-                  Gender Breakdown
-                </div>
-                <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-                  {Object.entries(sexMap).map(([k, v]) => (
-                    <div key={k} style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 22, fontWeight: 800 }}>{v}</div>
-                      <div className="sa-text-sm sa-text-muted">{k}</div>
+              <div className="sa-card-body">
+                <div className="sa-bar-chart">
+                  {by_unit.map((r) => (
+                    <div className="sa-bar-row" key={r.unit_name}>
+                      <div className="sa-bar-label">{r.unit_name}</div>
+                      <div className="sa-bar-track">
+                        <div className="sa-bar-fill" style={{ width: `${(+r.cnt / maxUnit) * 100}%` }} />
+                      </div>
+                      <div className="sa-bar-count">{r.cnt}</div>
                     </div>
                   ))}
+                  {by_unit.length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
                 </div>
               </div>
             </div>
+            <RegistrationTrendAnalytics
+              trend={trend}
+              rangeDays={rangeDays}
+              onRangeDays={setRangeDays}
+              title="Registration pulse"
+              subtitle={trendSubtitle}
+            />
           </div>
-        </div>
+          <div className="sa-card sa-card--gender-wide">
+            <div className="sa-card-head">
+              <span className="sa-card-title">Gender breakdown</span>
+            </div>
+            <div className="sa-card-body sa-card-body--gender-wide">
+              <GenderBreakdown sexMap={sexMap} />
+            </div>
+          </div>
+        </>
       )}
 
-      <div className="sa-card" style={{ marginBottom: 24 }}>
+      <div className="sa-card sa-card--section">
         <div className="sa-card-head">
-          <span className="sa-card-title">Status Summary</span>
+          <span className="sa-card-title">Status summary</span>
         </div>
         <div className="sa-card-body">
-          <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+          <div className="sa-status-chips">
             {[
               { label: "Pending", val: totals.pending, cls: "pending" },
               { label: "Approved", val: totals.approved, cls: "approved" },
               { label: "Rejected", val: totals.rejected, cls: "rejected" },
               { label: "Waitlisted", val: totals.waitlisted, cls: "waitlisted" },
             ].map(({ label, val, cls }) => (
-              <div key={label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div key={label} className="sa-status-chip">
                 <span className={`sa-badge ${cls}`}>{label}</span>
-                <span style={{ fontSize: 20, fontWeight: 700 }}>{val}</span>
+                <span className="sa-status-chip-value">{val}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="sa-card">
+      <div className="sa-card sa-card--section">
         <div className="sa-card-head">
-          <span className="sa-card-title">Recent Activity</span>
+          <span className="sa-card-title">Recent activity</span>
         </div>
-        <div className="sa-card-body" style={{ padding: "8px 22px" }}>
+        <div className="sa-card-body sa-card-body--activity">
           <ul className="sa-activity-list">
             {recent_activity.length === 0 && (
               <li className="sa-empty">
