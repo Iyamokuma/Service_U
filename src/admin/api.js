@@ -371,7 +371,12 @@ export const api = {
         return hours >= threshold;
       });
     } else if (params.status) {
-      rows = rows.filter((r) => normalizeStatus(r.status) === normalizeStatus(params.status));
+      const wanted = normalizeStatus(params.status);
+      if (wanted === "active") {
+        rows = rows.filter((r) => ["new", "in_progress"].includes(normalizeStatus(r.status)));
+      } else {
+        rows = rows.filter((r) => normalizeStatus(r.status) === wanted);
+      }
     }
     if (params.unit_id) rows = rows.filter((r) => Number(r.unit_id) === Number(params.unit_id));
     if (params.sub_unit) rows = rows.filter((r) => String(r.sub_unit || "").toLowerCase() === String(params.sub_unit || "").toLowerCase());
