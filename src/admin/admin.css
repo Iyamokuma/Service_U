@@ -1181,40 +1181,47 @@
 }
 .sa-select:focus { border-color: var(--sa-accent); }
 
-/* Intake queue top tab row (service unit leader) */
+/* Intake queue top tab row (service + sub-unit leaders) */
 .sa-unit-tab-row {
   border-bottom: 1px solid var(--sa-border);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 14px 18px;
 }
 .sa-unit-tab-btn {
-  width: 100%;
-  min-width: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1.5px solid var(--sa-border);
-  background: #fff;
+  width: auto;
+  min-width: 88px;
+  max-width: 220px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--sa-border);
+  background: #f8fafc;
   color: var(--sa-text-2);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: border-color .15s, background .15s, color .15s;
+  box-shadow: 0 1px 1px rgba(2, 6, 23, 0.04);
+  transition: border-color .15s, background .15s, color .15s, box-shadow .15s, transform .12s;
 }
 .sa-unit-tab-btn:hover {
   border-color: var(--sa-accent);
   color: var(--sa-accent);
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 .sa-unit-tab-btn.is-active {
   border-color: var(--sa-accent);
   background: var(--sa-accent);
   color: #fff;
+  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.24);
 }
 
 /* Intake status quick toggle */
@@ -1528,13 +1535,14 @@
     min-width: 0;
   }
   .sa-unit-tab-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+    gap: 7px;
   }
 }
 
 @media (max-width: 560px) {
-  .sa-unit-tab-row {
-    grid-template-columns: 1fr;
+  .sa-unit-tab-btn {
+    max-width: 100%;
   }
   .sa-line-head {
     flex-direction: column;
@@ -1692,10 +1700,13 @@
 }
 .sa-root[data-theme="dark"] .sa-unit-tab-btn {
   color: var(--sa-text-2);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
 }
 .sa-root[data-theme="dark"] .sa-unit-tab-btn:hover {
   border-color: #475569;
   color: #e2e8f0;
+  background: #111827;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 .sa-root[data-theme="dark"] .sa-unit-tab-btn.is-active,
 .sa-root[data-theme="dark"] .sa-intake-toggle-btn.is-active {
