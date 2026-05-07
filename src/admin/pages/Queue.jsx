@@ -7,6 +7,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
+const SUB_UNIT_STATUS_TABS = ["all", "active", "inprogress", "rejected", "accepted", "archived", "overdue"];
 
 /** Service unit leader: sub-unit tab row sentinels (all sub-units views) */
 const SVC_LEADER_ARCHIVED_TAB = "__archived__";
@@ -101,6 +102,7 @@ export function Queue({ units }) {
   const [statusModal, setStatusModal] = useState(null);
   const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
   const [subUnitTab, setSubUnitTab] = useState("all");
+  const [subUnitStatusTab, setSubUnitStatusTab] = useState("all");
   const [leaderSubUnitLabels, setLeaderSubUnitLabels] = useState([]);
   const debounce = useRef(null);
 
@@ -127,19 +129,42 @@ export function Queue({ units }) {
         unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
         sub_unit: subUnitForQueue,
       };
-      if (isServiceLeader && subUnitTab === SVC_LEADER_ARCHIVED_TAB) {
-        delete scoped.overdue_only;
-        scoped.status = "archived";
-      } else {
-        const onLeaderIntake = isLeader && (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB);
-        if (onLeaderIntake) {
+      if (isServiceLeader) {
+        if (subUnitTab === SVC_LEADER_ARCHIVED_TAB) {
           delete scoped.overdue_only;
-          scoped.status = "";
+          scoped.status = "archived";
+        } else {
+          const onLeaderIntake = subUnitTab !== SVC_LEADER_OVERDUE_TAB;
+          if (onLeaderIntake) {
+            delete scoped.overdue_only;
+            scoped.status = "";
+          }
+        }
+      } else if (isSubUnitLeader) {
+        delete scoped.overdue_only;
+        switch (subUnitStatusTab) {
+          case "active":
+            scoped.status = "active";
+            break;
+          case "inprogress":
+            scoped.status = "in_progress";
+            break;
+          case "rejected":
+          case "accepted":
+          case "archived":
+            scoped.status = subUnitStatusTab;
+            break;
+          case "overdue":
+            scoped.status = "";
+            scoped.overdue_only = true;
+            break;
+          default:
+            scoped.status = "";
         }
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, isLeader, subUnitTab]
+    [filters, admin, isServiceLeader, isSubUnitLeader, subUnitTab, subUnitStatusTab]
   );
 
   useEffect(() => {
@@ -151,7 +176,7 @@ export function Queue({ units }) {
 
   useEffect(() => {
     setExpanded(null);
-  }, [subUnitTab]);
+  }, [subUnitTab, subUnitStatusTab]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -165,26 +190,30 @@ export function Queue({ units }) {
 
   useEffect(() => {
     clearTimeout(debounce.current);
-    if (isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) return;
+    if ((isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) || (isSubUnitLeader && subUnitStatusTab === "overdue")) return;
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
-  }, [filters, subUnitTab, load, mergedQueueParams, isServiceLeader]);
+  }, [filters, subUnitTab, subUnitStatusTab, load, mergedQueueParams, isServiceLeader, isSubUnitLeader]);
 
   useEffect(() => {
-    if (!isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB) return;
+    const isServiceOverdue = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB;
+    const isSubUnitOverdue = isSubUnitLeader && subUnitStatusTab === "overdue";
+    if (!isServiceOverdue && !isSubUnitOverdue) return;
     setLoading(true);
     api.overdueAlerts(admin)
       .then((r) => setOverdue(r.data || []))
       .catch(() => setOverdue([]))
       .finally(() => setLoading(false));
-  }, [isServiceLeader, subUnitTab, admin]);
+  }, [isServiceLeader, isSubUnitLeader, subUnitTab, subUnitStatusTab, admin]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const gotoPage = (p) => load(mergedQueueParams(p));
 
   async function refreshAfterQueueAction(page = 1) {
-    if (isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) {
+    const isServiceOverdue = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB;
+    const isSubUnitOverdue = isSubUnitLeader && subUnitStatusTab === "overdue";
+    if (isServiceOverdue || isSubUnitOverdue) {
       setLoading(true);
       try {
         const r = await api.overdueAlerts(admin);
@@ -244,8 +273,11 @@ export function Queue({ units }) {
   const showIntakeFilters =
     !isServiceLeader ||
     (subUnitTab !== SVC_LEADER_OVERDUE_TAB && subUnitTab !== SVC_LEADER_ARCHIVED_TAB);
-  const showMainTable = !isServiceLeader || subUnitTab !== SVC_LEADER_OVERDUE_TAB;
-  const overdueRows = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB ? overdue : [];
+  const onOverdueTab =
+    (isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) ||
+    (isSubUnitLeader && subUnitStatusTab === "overdue");
+  const showMainTable = !onOverdueTab;
+  const overdueRows = onOverdueTab ? overdue : [];
 
   return (
     <>
@@ -261,6 +293,21 @@ export function Queue({ units }) {
                 title={sub === "all" ? "All sub-units" : sub === SVC_LEADER_ARCHIVED_TAB ? "Archived" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
               >
                 {sub === "all" ? "All sub-units" : sub === SVC_LEADER_ARCHIVED_TAB ? "Archived" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
+              </button>
+            ))}
+          </div>
+        )}
+        {isSubUnitLeader && (
+          <div className="sa-card-body sa-unit-tab-row">
+            {SUB_UNIT_STATUS_TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                className={`sa-unit-tab-btn ${subUnitStatusTab === tab ? "is-active" : ""}`}
+                onClick={() => setSubUnitStatusTab(tab)}
+                title={tab === "inprogress" ? "In progress" : tab[0].toUpperCase() + tab.slice(1)}
+              >
+                {tab === "inprogress" ? "In progress" : tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
@@ -286,10 +333,12 @@ export function Queue({ units }) {
             )}
           </div>
         )}
-        {isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB && (
+        {onOverdueTab && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
             <span className="sa-text-muted sa-text-sm">
-              All sub-units · older than the overdue threshold in Settings
+              {isServiceLeader
+                ? "All sub-units · older than the overdue threshold in Settings"
+                : "Your sub-unit · older than the overdue threshold in Settings"}
             </span>
           </div>
         )}
@@ -352,6 +401,8 @@ export function Queue({ units }) {
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
               {isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB
                 ? `${overdueRows.length} overdue`
+                : isSubUnitLeader && subUnitStatusTab === "overdue"
+                  ? `${overdueRows.length} overdue`
                 : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
             </span>
           </div>
@@ -360,7 +411,7 @@ export function Queue({ units }) {
         <div className="sa-table-wrap">
           {loading ? (
             <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div>
-          ) : isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB ? (
+          ) : onOverdueTab ? (
             overdueRows.length === 0 ? (
               <div className="sa-empty"><div className="sa-empty-icon">✓</div><div className="sa-empty-text">No overdue applications for your unit.</div></div>
             ) : (
