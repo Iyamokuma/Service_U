@@ -9,9 +9,6 @@ import { useAdminAuth } from "../AdminContext.jsx";
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
 const SUB_UNIT_STATUS_TABS = ["all", "active", "inprogress", "rejected", "accepted", "archived", "overdue"];
 
-/** Service unit leader: sub-unit tab row sentinels (all sub-units views) */
-const SVC_LEADER_ARCHIVED_TAB = "__archived__";
-const SVC_LEADER_OVERDUE_TAB = "__overdue__";
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 export function fmtDate(str) {
@@ -111,12 +108,7 @@ export function Queue({ units }) {
       const subUnitForQueue = (() => {
         if (isSubUnitLeader) return admin?.sub_unit_name || admin?.sub_unit || "";
         if (isServiceLeader) {
-          if (
-            subUnitTab === "all" ||
-            subUnitTab === SVC_LEADER_OVERDUE_TAB ||
-            subUnitTab === SVC_LEADER_ARCHIVED_TAB
-          )
-            return "";
+          if (subUnitTab === "all") return "";
           return subUnitTab;
         }
         return subUnitTab === "all" ? "" : subUnitTab;
@@ -130,16 +122,8 @@ export function Queue({ units }) {
         sub_unit: subUnitForQueue,
       };
       if (isServiceLeader) {
-        if (subUnitTab === SVC_LEADER_ARCHIVED_TAB) {
-          delete scoped.overdue_only;
-          scoped.status = "archived";
-        } else {
-          const onLeaderIntake = subUnitTab !== SVC_LEADER_OVERDUE_TAB;
-          if (onLeaderIntake) {
-            delete scoped.overdue_only;
-            scoped.status = "";
-          }
-        }
+        delete scoped.overdue_only;
+        scoped.status = "";
       } else if (isSubUnitLeader) {
         delete scoped.overdue_only;
         switch (subUnitStatusTab) {
@@ -190,16 +174,15 @@ export function Queue({ units }) {
 
   useEffect(() => {
     clearTimeout(debounce.current);
-    if ((isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) || (isSubUnitLeader && subUnitStatusTab === "overdue")) return;
+    if (isSubUnitLeader && subUnitStatusTab === "overdue") return;
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
   }, [filters, subUnitTab, subUnitStatusTab, load, mergedQueueParams, isServiceLeader, isSubUnitLeader]);
 
   useEffect(() => {
-    const isServiceOverdue = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB;
     const isSubUnitOverdue = isSubUnitLeader && subUnitStatusTab === "overdue";
-    if (!isServiceOverdue && !isSubUnitOverdue) return;
+    if (!isSubUnitOverdue) return;
     setLoading(true);
     api.overdueAlerts(admin)
       .then((r) => setOverdue(r.data || []))
@@ -211,9 +194,8 @@ export function Queue({ units }) {
   const gotoPage = (p) => load(mergedQueueParams(p));
 
   async function refreshAfterQueueAction(page = 1) {
-    const isServiceOverdue = isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB;
     const isSubUnitOverdue = isSubUnitLeader && subUnitStatusTab === "overdue";
-    if (isServiceOverdue || isSubUnitOverdue) {
+    if (isSubUnitOverdue) {
       setLoading(true);
       try {
         const r = await api.overdueAlerts(admin);
@@ -268,14 +250,11 @@ export function Queue({ units }) {
   };
 
   const svcLeaderSubTabs = isServiceLeader
-    ? ["all", ...new Set(leaderSubUnitLabels), SVC_LEADER_ARCHIVED_TAB, SVC_LEADER_OVERDUE_TAB]
+    ? ["all", ...new Set(leaderSubUnitLabels)]
     : [];
-  const showIntakeFilters =
-    !isServiceLeader ||
-    (subUnitTab !== SVC_LEADER_OVERDUE_TAB && subUnitTab !== SVC_LEADER_ARCHIVED_TAB);
+  const showIntakeFilters = true;
   const onOverdueTab =
-    (isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB) ||
-    (isSubUnitLeader && subUnitStatusTab === "overdue");
+    isSubUnitLeader && subUnitStatusTab === "overdue";
   const showMainTable = !onOverdueTab;
   const overdueRows = onOverdueTab ? overdue : [];
 
@@ -290,9 +269,9 @@ export function Queue({ units }) {
                 type="button"
                 className={`sa-unit-tab-btn ${subUnitTab === sub ? "is-active" : ""}`}
                 onClick={() => setSubUnitTab(sub)}
-                title={sub === "all" ? "All sub-units" : sub === SVC_LEADER_ARCHIVED_TAB ? "Archived" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
+                title={sub === "all" ? "All sub-units" : sub}
               >
-                {sub === "all" ? "All sub-units" : sub === SVC_LEADER_ARCHIVED_TAB ? "Archived" : sub === SVC_LEADER_OVERDUE_TAB ? "Overdue" : sub}
+                {sub === "all" ? "All sub-units" : sub}
               </button>
             ))}
           </div>
@@ -312,33 +291,10 @@ export function Queue({ units }) {
             ))}
           </div>
         )}
-        {isServiceLeader && subUnitTab === SVC_LEADER_ARCHIVED_TAB && (
-          <div
-            className="sa-card-body"
-            style={{
-              borderBottom: "1px solid var(--sa-border)",
-              paddingTop: 4,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-            }}
-          >
-            <span className="sa-text-muted sa-text-sm">All sub-units · archived applications</span>
-            {!loading && (
-              <span className="sa-text-muted sa-text-sm">
-                {pag.total} archived
-              </span>
-            )}
-          </div>
-        )}
         {onOverdueTab && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
             <span className="sa-text-muted sa-text-sm">
-              {isServiceLeader
-                ? "All sub-units · older than the overdue threshold in Settings"
-                : "Your sub-unit · older than the overdue threshold in Settings"}
+              Your sub-unit · older than the overdue threshold in Settings
             </span>
           </div>
         )}
@@ -399,10 +355,8 @@ export function Queue({ units }) {
               Clear
             </button>
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
-              {isServiceLeader && subUnitTab === SVC_LEADER_OVERDUE_TAB
+              {isSubUnitLeader && subUnitStatusTab === "overdue"
                 ? `${overdueRows.length} overdue`
-                : isSubUnitLeader && subUnitStatusTab === "overdue"
-                  ? `${overdueRows.length} overdue`
                 : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
             </span>
           </div>
