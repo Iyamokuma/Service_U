@@ -1,12 +1,19 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { PersonalSection } from "./sections/PersonalSection.jsx";
 import { ContactSection } from "./sections/ContactSection.jsx";
 import { PhotoSection } from "./sections/PhotoSection.jsx";
 import { FaithSection } from "./sections/FaithSection.jsx";
 import { ChurchMembershipSection } from "./sections/ChurchMembershipSection.jsx";
+import {
+  ChurchLocationSection,
+  effectiveBranchStateForPayload,
+  validateChurchLocation,
+} from "./sections/ChurchLocationSection.jsx";
 import { ServiceUnitSection } from "./sections/ServiceUnitSection.jsx";
 import { SERVICE_UNITS, isEmail, isPhone } from "./data.js";
 import { shrinkPhotoDataUrl } from "./photoCompress.js";
+import { isSupabaseSubmitConfigured, submitRegistration } from "./registrationSubmit.js";
+import { fetchServiceUnitsCatalog } from "./serviceUnitsCatalog.js";
 
 function firstValidationErrorEl() {
   return (
@@ -15,8 +22,6 @@ function firstValidationErrorEl() {
     document.querySelector('[data-error="true"]')
   );
 }
-
-const FORM_DB_KEY = "sm_form_db_v1";
 
 const INITIAL = {
   surname: "",
@@ -29,8 +34,10 @@ const INITIAL = {
 
   address: "",
   busStop: "",
-  branchCountry: "NG",
-  branchState: "RI",
+  branchCountry: "",
+  branchState: "",
+  churchId: "",
+  satelliteSite: "",
   phone1: "",
   phone2: "",
   email: "",
@@ -48,9 +55,12 @@ const INITIAL = {
 
   unitId: null,
   subUnit: "",
+
+  /** Set by ChurchLocationSection for directory-backed validation (not submitted). */
+  churchLocationCtx: null,
 };
 
-function validate(form) {
+function validate(form, units) {
   const e = {};
   if (!form.surname.trim()) e.surname = "Surname is required.";
   if (!form.firstName.trim()) e.firstName = "First name is required.";
@@ -84,14 +94,17 @@ function validate(form) {
 
   if (!form.unitId) e.unitId = "Select a service unit.";
   else {
-    const unit = SERVICE_UNITS.find((u) => u.id === form.unitId);
-    if (unit?.subs && !form.subUnit) e.subUnit = "Select a sub-unit.";
+    const unit = units.find((u) => u.id === form.unitId);
+    if (unit?.subs?.length && !form.subUnit) e.subUnit = "Select a sub-unit.";
   }
+
+  Object.assign(e, validateChurchLocation(form));
 
   return e;
 }
 
 export default function App() {
+  const [serviceUnits, setServiceUnits] = useState(SERVICE_UNITS);
   const [form, setForm] = useState(INITIAL);
   const [touched, setTouched] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -99,12 +112,26 @@ export default function App() {
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const set = (key, value) => {
+  useEffect(() => {
+    let cancelled = false;
+    fetchServiceUnitsCatalog().then((u) => {
+      if (!cancelled) setServiceUnits(u);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const set = useCallback((key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
     setTouched((t) => ({ ...t, [key]: true }));
-  };
+  }, []);
 
-  const allErrors = useMemo(() => validate(form), [form]);
+  const setSilent = useCallback((key, value) => {
+    setForm((f) => ({ ...f, [key]: value }));
+  }, []);
+
+  const allErrors = useMemo(() => validate(form, serviceUnits), [form, serviceUnits]);
 
   const errors = useMemo(() => {
     if (submitted) return allErrors;
@@ -129,20 +156,22 @@ export default function App() {
       "maritalStatus",
     ];
     let filled = requiredKeys.filter((k) => String(form[k]).trim()).length;
-    const total = requiredKeys.length + 5;
+    const total = requiredKeys.length + 7;
     if (form.dob.month && form.dob.day) filled += 1;
     if (form.joinedChurch.month && form.joinedChurch.year) filled += 1;
     if (form.bornAgain) filled += 1;
     if (form.unitId) filled += 1;
-    const unit = SERVICE_UNITS.find((u) => u.id === form.unitId);
-    if (!unit?.subs || form.subUnit) filled += 1;
+    const unit = serviceUnits.find((u) => u.id === form.unitId);
+    if (!unit?.subs?.length || form.subUnit) filled += 1;
+    if (form.branchCountry && effectiveBranchStateForPayload(form)) filled += 1;
+    if (form.churchId) filled += 1;
     return Math.round((filled / total) * 100);
-  }, [form]);
+  }, [form, serviceUnits]);
 
   async function onSubmit(e) {
     e.preventDefault();
     setSaveError("");
-    const validationErrors = validate(form);
+    const validationErrors = validate(form, serviceUnits);
     setSubmitted(true);
     if (Object.keys(validationErrors).length > 0) {
       requestAnimationFrame(() => {
@@ -161,10 +190,9 @@ export default function App() {
       } catch {
         photo_path = form.photo?.dataUrl || "";
       }
-      const unit = SERVICE_UNITS.find((u) => Number(u.id) === Number(form.unitId));
+      const unit = serviceUnits.find((u) => Number(u.id) === Number(form.unitId));
       const ba = form.bornAgain === "Yes";
       const payload = {
-        id: `FORM-${Date.now()}`,
         first_name: form.firstName,
         surname: form.surname,
         other_names: form.otherNames,
@@ -177,7 +205,8 @@ export default function App() {
         address: form.address,
         bus_stop: form.busStop,
         branch_country: form.branchCountry,
-        branch_state: form.branchState,
+        branch_state: effectiveBranchStateForPayload(form),
+        satellite_site: String(form.satelliteSite || "").trim(),
         phone1: form.phone1,
         phone2: form.phone2,
         email: form.email,
@@ -206,26 +235,18 @@ export default function App() {
         submitted_at: new Date().toISOString(),
         photo_path,
       };
-      let existing;
-      try {
-        existing = JSON.parse(localStorage.getItem(FORM_DB_KEY) || '{"registrations":[]}');
-      } catch {
-        existing = { registrations: [] };
-      }
-      if (!Array.isArray(existing.registrations)) existing.registrations = [];
-      existing.registrations = [payload, ...existing.registrations];
-      try {
-        localStorage.setItem(FORM_DB_KEY, JSON.stringify(existing));
-      } catch (err) {
-        const q =
-          err?.name === "QuotaExceededError" ||
-          err?.code === 22 ||
-          err?.code === 1014;
+
+      if (!isSupabaseSubmitConfigured()) {
         setSaveError(
-          q
-            ? "Could not save: browser storage is full. Try a smaller photo or clear site data for this page."
-            : "Could not save your registration. Check browser settings (storage / private mode) and try again."
+          "Submission service is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then restart the app."
         );
+        return;
+      }
+
+      try {
+        await submitRegistration(payload);
+      } catch (err) {
+        setSaveError(err?.message || "Could not submit your registration right now. Please try again.");
         return;
       }
       setDone(true);
@@ -294,10 +315,11 @@ export default function App() {
       <form onSubmit={onSubmit} noValidate>
         <PersonalSection form={form} set={set} errors={errors} />
         <ContactSection form={form} set={set} errors={errors} />
+        <ChurchLocationSection form={form} set={set} setSilent={setSilent} errors={errors} />
         <FaithSection form={form} set={set} errors={errors} />
         <PhotoSection form={form} set={set} />
         <ChurchMembershipSection form={form} set={set} errors={errors} />
-        <ServiceUnitSection form={form} set={set} errors={errors} />
+        <ServiceUnitSection form={form} set={set} errors={errors} units={serviceUnits} />
 
         <div className="submit-bar">
           {saveError && (

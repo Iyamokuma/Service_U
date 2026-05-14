@@ -1,0 +1,1221 @@
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  assertStateBelongsToCountry,
+  branchCountryCodeFromIso2,
+  branchStateCodeForLocationPublish,
+  resolveStateCodeByName,
+} from "./branch_regions.ts";
+import { applyRegistrationScopeQuery, canAccessRegistration } from "./registration_scope.ts";
+
+type AdminRow = Record<string, unknown>;
+type Ctx = { admin: AdminRow; ip: string };
+
+function norm(s: unknown): string {
+  return String(s ?? "").trim();
+}
+function normUp(s: unknown): string {
+  return norm(s).toUpperCase();
+}
+function normStatus(s: unknown): string {
+  const x = norm(s).toLowerCase();
+  if (x === "pending") return "new";
+  return x || "new";
+}
+
+async function logActivity(
+  supabase: SupabaseClient,
+  admin: AdminRow,
+  action: string,
+  entityType: string,
+  entityId: string,
+  description: string,
+  ip: string,
+) {
+  await supabase.from("activity_logs").insert({
+    admin_id: Number(admin.id) || null,
+    admin_name: String(admin.full_name || ""),
+    action,
+    entity_type: entityType,
+    entity_id: entityId,
+    description,
+    ip_address: ip,
+  });
+}
+
+export async function dispatchAdminOp(
+  supabase: SupabaseClient,
+  op: string,
+  params: Record<string, unknown>,
+  ctx: Ctx,
+): Promise<unknown> {
+  const admin = ctx.admin;
+  const ip = ctx.ip;
+
+  switch (op) {
+    case "populateDemoData":
+      return { ok: true };
+    case "refreshSession": {
+      let service_unit_name = "";
+      if (admin.service_unit_id != null) {
+        const { data: u } = await supabase.from("service_units").select("name").eq("id", admin.service_unit_id).maybeSingle();
+        service_unit_name = String(u?.name || "");
+      }
+      return {
+        admin: {
+          id: admin.id,
+          full_name: admin.full_name,
+          username: admin.username,
+          email: admin.email,
+          role: admin.role,
+          service_unit_id: admin.service_unit_id,
+          sub_unit_name: admin.sub_unit_name || "",
+          branch_country: admin.branch_country ?? "",
+          branch_state: admin.branch_state ?? "",
+          satellite_site: admin.satellite_site ?? "",
+          service_unit_name,
+        },
+      };
+    }
+    case "logout":
+      await logActivity(supabase, admin, "admin.logout", "admin", String(admin.id || ""), "Admin logged out", ip);
+      return { ok: true };
+    case "queue":
+      return handleQueue(supabase, params, admin);
+    case "stats":
+      return handleStats(supabase, params, admin);
+    case "updateStatus":
+      return handleUpdateStatus(supabase, params, admin, ip);
+    case "deleteReg":
+      return handleDeleteReg(supabase, params, admin, ip);
+    case "units":
+      return handleUnits(supabase);
+    case "createUnit":
+      return handleCreateUnit(supabase, params, admin, ip);
+    case "updateUnit":
+      return handleUpdateUnit(supabase, params, admin, ip);
+    case "deleteUnit":
+      return handleDeleteUnit(supabase, params, admin, ip);
+    case "createSub":
+      return handleCreateSub(supabase, params, admin, ip);
+    case "updateSub":
+      return handleUpdateSub(supabase, params, admin, ip);
+    case "deleteSub":
+      return handleDeleteSub(supabase, params, admin, ip);
+    case "admins":
+      return handleAdmins(supabase, admin);
+    case "createAdmin":
+      return handleCreateAdmin(supabase, params, admin, ip);
+    case "updateAdmin":
+      return handleUpdateAdmin(supabase, params, admin, ip);
+    case "deleteAdmin":
+      return handleDeleteAdmin(supabase, params, admin, ip);
+    case "updateRegistrationBranch":
+      return handleUpdateRegistrationBranch(supabase, params, admin, ip);
+    case "members":
+      return handleMembers(supabase, params, admin);
+    case "requests":
+      return handleRequests(supabase, params, admin);
+    case "createRequest":
+      return handleCreateRequest(supabase, params, admin, ip);
+    case "updateRequest":
+      return handleUpdateRequest(supabase, params, admin, ip);
+    case "approveServiceUnitProposal":
+      return handleApproveServiceUnitProposal(supabase, params, admin, ip);
+    case "settings":
+      return handleSettings(supabase);
+    case "updateSettings":
+      return handleUpdateSettings(supabase, params, admin, ip);
+    case "activity":
+      return handleActivity(supabase, params, admin);
+    case "subUnitQueuesByUnit":
+      return handleSubUnitQueuesByUnit(supabase, admin);
+    case "overdueAlerts":
+      return handleOverdueAlerts(supabase, admin);
+    case "notifications":
+      return handleNotifications(supabase, admin);
+    case "markNotificationRead":
+      return handleMarkNotificationRead(supabase, params, admin);
+    case "markAllNotificationsRead":
+      return handleMarkAllNotificationsRead(supabase, admin);
+    case "announcements":
+      return handleAnnouncements(supabase, admin);
+    case "createAnnouncement":
+      return handleCreateAnnouncement(supabase, params, admin, ip);
+    case "deleteAnnouncement":
+      return handleDeleteAnnouncement(supabase, params, admin, ip);
+    case "catalogList":
+      return handleCatalogList(supabase, admin);
+    case "catalogAddCountry":
+      return handleCatalogAddCountry(supabase, params, admin, ip);
+    case "catalogAddState":
+      return handleCatalogAddState(supabase, params, admin, ip);
+    case "catalogAddChurch":
+      return handleCatalogAddChurch(supabase, params, admin, ip);
+    case "catalogSetChurchActive":
+      return handleCatalogSetChurchActive(supabase, params, admin, ip);
+    case "catalogDeleteChurch":
+      return handleCatalogDeleteChurch(supabase, params, admin, ip);
+    default:
+      throw new Error(`Unsupported op: ${op}`);
+  }
+}
+
+async function handleQueue(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
+  const page = Math.max(1, Number(params.page) || 1);
+  const perPage = Math.min(100, Math.max(1, Number(params.per_page) || 25));
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+
+  let q = supabase.from("registrations").select("*", { count: "exact" });
+  q = applyRegistrationScopeQuery(q, admin);
+
+  if (params.status) q = q.eq("status", normStatus(params.status));
+  if (params.unit_id) q = q.eq("unit_id", Number(params.unit_id));
+  if (params.sub_unit) q = q.eq("sub_unit", norm(params.sub_unit));
+  if (params.sex) q = q.eq("sex", norm(params.sex));
+  if (params.from) q = q.gte("submitted_at", `${norm(params.from)}T00:00:00.000Z`);
+  if (params.to) q = q.lte("submitted_at", `${norm(params.to)}T23:59:59.999Z`);
+  if (params.search) {
+    const r = norm(params.search).replace(/%/g, "").slice(0, 120);
+    if (r) q = q.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
+  }
+  if (norm(params.filter_branch_state)) q = q.eq("branch_state", normUp(params.filter_branch_state));
+
+  const sortKey = ["submitted_at", "surname", "unit_name", "status"].includes(norm(params.sort))
+    ? norm(params.sort)
+    : "submitted_at";
+  const asc = normUp(params.dir) === "ASC";
+  q = q.order(sortKey, { ascending: asc });
+
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw new Error(error.message);
+  let rows = data || [];
+  if (params.overdue_only) {
+    const { data: settings } = await supabase.from("app_settings").select("overdue_threshold_hours").eq("id", 1).maybeSingle();
+    const th = Number(settings?.overdue_threshold_hours ?? 72);
+    const now = Date.now();
+    rows = rows.filter((r: Record<string, unknown>) => {
+      const st = normStatus(r.status);
+      if (!["new", "in_progress"].includes(st)) return false;
+      const t = new Date(String(r.submitted_at || "")).getTime();
+      return (now - t) / (1000 * 60 * 60) >= th;
+    });
+  }
+  const total = typeof count === "number" ? count : rows.length;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  return { data: rows, pagination: { page, per_page: perPage, total, pages } };
+}
+
+async function handleStats(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
+  let q = supabase.from("registrations").select(
+    "id,status,sex,unit_name,submitted_at,branch_country,branch_state,satellite_site,unit_id",
+  );
+  q = applyRegistrationScopeQuery(q, admin);
+  if (params.filter_country) q = q.eq("branch_country", normUp(params.filter_country));
+  if (params.filter_state) q = q.eq("branch_state", normUp(params.filter_state));
+  if (params.filter_branch) q = q.eq("satellite_site", norm(params.filter_branch));
+  if (params.filter_unit_id) q = q.eq("unit_id", Number(params.filter_unit_id));
+  if (params.filter_sub_unit) q = q.eq("sub_unit", norm(params.filter_sub_unit));
+  if (params.filter_status && norm(params.filter_status) !== "all") {
+    if (norm(params.filter_status) === "active") q = q.in("status", ["new", "in_progress"]);
+    else q = q.eq("status", normStatus(params.filter_status));
+  }
+  if (params.filter_sex) q = q.eq("sex", norm(params.filter_sex));
+  if (params.filter_from) q = q.gte("submitted_at", `${norm(params.filter_from)}T00:00:00.000Z`);
+
+  const { data: rowsRaw, error } = await q.limit(8000);
+  if (error) throw new Error(error.message);
+  const rows = (rowsRaw || []) as Record<string, unknown>[];
+
+  const { data: settings } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+  const overdueTh = Number(settings?.overdue_threshold_hours ?? 72);
+  const now = Date.now();
+  const msTh = overdueTh * 3600000;
+
+  const totals: Record<string, number> = {
+    registrations: rows.length,
+    pending: rows.filter((r) => normStatus(r.status) === "new").length,
+    new_unreviewed: rows.filter((r) => normStatus(r.status) === "new").length,
+    in_progress_count: rows.filter((r) => normStatus(r.status) === "in_progress").length,
+    waitlisted: rows.filter((r) => normStatus(r.status) === "in_progress").length,
+    approved: rows.filter((r) => normStatus(r.status) === "accepted").length,
+    rejected: rows.filter((r) => normStatus(r.status) === "rejected").length,
+    overdue_count: rows.filter((r) => {
+      const st = normStatus(r.status);
+      if (!["new", "in_progress"].includes(st)) return false;
+      return now - new Date(String(r.submitted_at || "")).getTime() >= msTh;
+    }).length,
+    overdue_threshold_hours: overdueTh,
+    active_members: rows.filter((r) => normStatus(r.status) === "accepted").length,
+    this_week: rows.filter((r) => {
+      const t = new Date(String(r.submitted_at || "")).getTime();
+      return now - t < 7 * 86400000;
+    }).length,
+    new_today: rows.filter((r) => String(r.submitted_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length,
+    accepted_this_month: 0,
+    accepted_prev_month: 0,
+    rejected_this_month: 0,
+    rejected_prev_month: 0,
+    active_units: 0,
+    parent_units: 0,
+    sub_units_count: 0,
+  };
+
+  const d0 = new Date();
+  const thisYm = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
+  const prev = new Date(d0.getFullYear(), d0.getMonth() - 1, 1);
+  const prevYm = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+  totals.accepted_this_month = rows.filter((r) =>
+    normStatus(r.status) === "accepted" && String(r.submitted_at || "").slice(0, 7) === thisYm.slice(0, 7)
+  ).length;
+  totals.accepted_prev_month = rows.filter((r) =>
+    normStatus(r.status) === "accepted" && String(r.submitted_at || "").slice(0, 7) === prevYm
+  ).length;
+  totals.rejected_this_month = rows.filter((r) =>
+    normStatus(r.status) === "rejected" && String(r.submitted_at || "").slice(0, 7) === thisYm.slice(0, 7)
+  ).length;
+  totals.rejected_prev_month = rows.filter((r) =>
+    normStatus(r.status) === "rejected" && String(r.submitted_at || "").slice(0, 7) === prevYm
+  ).length;
+
+  const { data: units } = await supabase.from("service_units").select("id,is_active");
+  const { data: subs } = await supabase.from("sub_units").select("id");
+  totals.active_units = (units || []).filter((u: { is_active?: number }) => Number(u.is_active ?? 1) === 1).length;
+  totals.parent_units = totals.active_units;
+  totals.sub_units_count = (subs || []).length;
+
+  const byUnitMap: Record<string, number> = {};
+  rows.forEach((r) => {
+    const k = String(r.unit_name || "Unknown");
+    byUnitMap[k] = (byUnitMap[k] || 0) + 1;
+  });
+  const by_unit = Object.entries(byUnitMap).map(([unit_name, cnt]) => ({ unit_name, cnt }));
+
+  const bySexMap: Record<string, number> = {};
+  rows.forEach((r) => {
+    const k = String(r.sex || "Unknown");
+    bySexMap[k] = (bySexMap[k] || 0) + 1;
+  });
+  const by_sex = Object.entries(bySexMap).map(([sex, cnt]) => ({ sex, cnt }));
+
+  const trendDays = Math.min(365, Math.max(7, Number(params.trend_days) || 28));
+  const trend = [];
+  for (let i = trendDays - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const day = d.toISOString().slice(0, 10);
+    trend.push({ day, cnt: rows.filter((r) => String(r.submitted_at || "").slice(0, 10) === day).length });
+  }
+
+  const branches = new Set<string>();
+  rows.forEach((r) => {
+    const s = norm(r.satellite_site);
+    if (s) branches.add(s);
+  });
+
+  const status_distribution: Record<string, number> = {};
+  ["new", "in_progress", "accepted", "rejected", "archived"].forEach((k) => {
+    status_distribution[k] = rows.filter((r) => normStatus(r.status) === k).length;
+  });
+  status_distribution["overdue"] = totals.overdue_count;
+
+  const { data: recent_activity } = await supabase.from("activity_logs").select("*").order("created_at", {
+    ascending: false,
+  }).limit(10);
+
+  return {
+    totals: { ...totals, status_distribution, top_overdue_units: [] as { label: string; count: number }[] },
+    by_unit,
+    by_sex,
+    trend,
+    recent_activity: recent_activity || [],
+    branch_options: [...branches].sort(),
+  };
+}
+
+async function handleUpdateStatus(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  admin: AdminRow,
+  ip: string,
+) {
+  const id = params.id;
+  const body = (params.body || {}) as Record<string, unknown>;
+  const { data: row, error: fe } = await supabase.from("registrations").select("*").eq("id", id).maybeSingle();
+  if (fe || !row) throw new Error("Registration not found.");
+  if (!canAccessRegistration(admin, row as Record<string, unknown>)) {
+    throw new Error("Not allowed for this queue item.");
+  }
+  const patch: Record<string, unknown> = {
+    status: normStatus(body.status ?? row.status),
+    notes: body.notes ?? row.notes ?? "",
+  };
+  if (body.verify_called_candidate != null) {
+    patch.leader_accept_called_candidate = Boolean(body.verify_called_candidate);
+  }
+  if (body.verify_physical_meeting != null) {
+    patch.leader_accept_physical_meeting = Boolean(body.verify_physical_meeting);
+  }
+  if (body.verify_foundation_class != null) {
+    patch.leader_accept_foundation_class = Boolean(body.verify_foundation_class);
+  }
+  if (body.verify_water_baptism != null) {
+    patch.leader_accept_water_baptism = Boolean(body.verify_water_baptism);
+  }
+  if (normStatus(patch.status) === "accepted" && (body.verify_called_candidate != null || body.verify_physical_meeting != null)) {
+    patch.leader_accept_verified_at = new Date().toISOString();
+  }
+  const { error } = await supabase.from("registrations").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+  await logActivity(
+    supabase,
+    admin,
+    "queue.update",
+    "registration",
+    String(id),
+    `Status → ${patch.status}`,
+    ip,
+  );
+  return { ok: true };
+}
+
+async function handleDeleteReg(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (norm(admin.role) !== "super_admin" && norm(admin.role) !== "general_admin") {
+    throw new Error("Only super or general admin can delete registrations.");
+  }
+  const id = params.id;
+  const { error } = await supabase.from("registrations").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "queue.delete", "registration", String(id), "Registration deleted", ip);
+  return { ok: true };
+}
+
+async function handleUnits(supabase: SupabaseClient) {
+  const { data: units, error } = await supabase.from("service_units").select("*").order("sort_order", { ascending: true });
+  if (error) throw new Error(error.message);
+  const { data: subs, error: se } = await supabase.from("sub_units").select("*").order("sort_order", { ascending: true });
+  if (se) throw new Error(se.message);
+  const data = (units || []).map((u: Record<string, unknown>) => ({
+    ...u,
+    sub_units: (subs || []).filter((s: Record<string, unknown>) => Number(s.unit_id) === Number(u.id)),
+  }));
+  return { data };
+}
+
+async function handleCreateUnit(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const body = (params.body || {}) as Record<string, unknown>;
+  const { data: maxRow } = await supabase.from("service_units").select("id").order("id", { ascending: false }).limit(1).maybeSingle();
+  const nextId = Number(maxRow?.id || 0) + 1;
+  const row = {
+    id: nextId,
+    name: norm(body.name),
+    description: norm(body.description),
+    coordinator: norm(body.coordinator),
+    sort_order: Number(body.sort_order ?? 0),
+    is_active: Number(body.is_active ?? 1),
+  };
+  const { data, error } = await supabase.from("service_units").insert(row).select("*").single();
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "unit.create", "unit", String(data.id), `Created unit ${data.name}`, ip);
+  return { data };
+}
+
+async function handleUpdateUnit(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const body = (params.body || {}) as Record<string, unknown>;
+  const { error } = await supabase.from("service_units").update({
+    name: norm(body.name),
+    description: norm(body.description),
+    coordinator: norm(body.coordinator),
+    sort_order: Number(body.sort_order ?? 0),
+    is_active: Number(body.is_active ?? 1),
+  }).eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "unit.update", "unit", String(params.id), "Updated unit", ip);
+  return { data: { id: params.id, ...body } };
+}
+
+async function handleDeleteUnit(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const { error } = await supabase.from("service_units").delete().eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "unit.delete", "unit", String(params.id), "Deleted unit", ip);
+  return { ok: true };
+}
+
+async function handleCreateSub(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const body = (params.body || {}) as Record<string, unknown>;
+  const row = {
+    unit_id: Number(body.unit_id),
+    name: norm(body.name),
+    sort_order: Number(body.sort_order ?? 0),
+    is_active: Number(body.is_active ?? 1),
+  };
+  const { data, error } = await supabase.from("sub_units").insert(row).select("*").single();
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "sub.create", "sub_unit", String(data.id), `Created sub ${data.name}`, ip);
+  return { data };
+}
+
+async function handleUpdateSub(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const body = (params.body || {}) as Record<string, unknown>;
+  const { error } = await supabase.from("sub_units").update({
+    name: norm(body.name),
+    sort_order: Number(body.sort_order ?? 0),
+    is_active: Number(body.is_active ?? 1),
+  }).eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "sub.update", "sub_unit", String(params.id), "Updated sub-unit", ip);
+  return { data: { id: params.id } };
+}
+
+async function handleDeleteSub(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const { error } = await supabase.from("sub_units").delete().eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "sub.delete", "sub_unit", String(params.id), "Deleted sub-unit", ip);
+  return { ok: true };
+}
+
+async function handleAdmins(supabase: SupabaseClient, admin: AdminRow) {
+  const role = norm(admin.role);
+  let q = supabase.from("admins").select("*").order("id", { ascending: true });
+  if (role === "service_unit_leader") {
+    q = q.eq("service_unit_id", admin.service_unit_id).in("role", ["sub_unit_leader", "service_unit_leader"]);
+  } else if (role === "country_super_admin") {
+    q = q.eq("branch_country", normUp(admin.branch_country));
+  } else if (!["super_admin", "general_admin"].includes(role)) {
+    q = q.eq("id", -1);
+  }
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return { data: data || [] };
+}
+
+async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  const body = (params.body || {}) as Record<string, unknown>;
+  if (!["super_admin", "general_admin", "service_unit_leader"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const row = {
+    full_name: norm(body.full_name),
+    username: norm(body.username),
+    email: norm(body.email),
+    password: String(body.password || ""),
+    role: norm(body.role),
+    service_unit_id: body.service_unit_id ? Number(body.service_unit_id) : null,
+    sub_unit_name: norm(body.sub_unit_name),
+    branch_country: normUp(body.branch_country),
+    branch_state: normUp(body.branch_state),
+    satellite_site: norm(body.satellite_site),
+    is_active: Number(body.is_active ?? 1),
+  };
+  if (norm(admin.role) === "service_unit_leader") {
+    row.service_unit_id = Number(admin.service_unit_id);
+    if (row.role !== "sub_unit_leader") throw new Error("Service unit leaders may only create sub-unit leaders.");
+  }
+  const { data, error } = await supabase.from("admins").insert(row).select("*").single();
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "admin.create", "admin", String(data.id), `Created admin ${data.username}`, ip);
+  return { data };
+}
+
+async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  const body = (params.body || {}) as Record<string, unknown>;
+  const targetId = Number(params.id);
+  const { data: target } = await supabase.from("admins").select("*").eq("id", targetId).maybeSingle();
+  if (!target) throw new Error("Admin not found.");
+  if (!["super_admin", "general_admin", "service_unit_leader"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  if (norm(admin.role) === "service_unit_leader") {
+    if (Number(target.service_unit_id) !== Number(admin.service_unit_id)) throw new Error("Not allowed.");
+    if (norm(target.role) !== "sub_unit_leader") throw new Error("Not allowed.");
+  }
+  const patch: Record<string, unknown> = {
+    full_name: body.full_name ?? target.full_name,
+    email: body.email ?? target.email,
+    role: body.role ?? target.role,
+    service_unit_id: body.service_unit_id !== undefined
+      ? (body.service_unit_id ? Number(body.service_unit_id) : null)
+      : target.service_unit_id,
+    sub_unit_name: body.sub_unit_name ?? target.sub_unit_name,
+    branch_country: body.branch_country !== undefined ? normUp(body.branch_country) : target.branch_country,
+    branch_state: body.branch_state !== undefined ? normUp(body.branch_state) : target.branch_state,
+    satellite_site: body.satellite_site !== undefined ? norm(body.satellite_site) : target.satellite_site,
+    is_active: body.is_active !== undefined ? Number(body.is_active) : target.is_active,
+  };
+  if (body.password) patch.password = String(body.password);
+  const { error } = await supabase.from("admins").update(patch).eq("id", targetId);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "admin.update", "admin", String(targetId), "Updated admin", ip);
+  return { data: { id: targetId, ...patch } };
+}
+
+async function handleDeleteAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  if (Number(params.id) === Number(admin.id)) throw new Error("You cannot delete your own account.");
+  const { error } = await supabase.from("admins").delete().eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "admin.delete", "admin", String(params.id), "Deleted admin", ip);
+  return { ok: true };
+}
+
+async function handleUpdateRegistrationBranch(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  admin: AdminRow,
+  ip: string,
+) {
+  if (!["super_admin", "general_admin", "data_entry_admin", "country_super_admin", "state_super_admin"].includes(norm(admin.role))) {
+    throw new Error("Not allowed.");
+  }
+  const body = (params.body || {}) as Record<string, unknown>;
+  const cc = normUp(body.branch_country);
+  const st = normUp(body.branch_state);
+  assertStateBelongsToCountry(cc, st);
+  const { data: row } = await supabase.from("registrations").select("*").eq("id", params.id).maybeSingle();
+  if (!row) throw new Error("Registration not found.");
+  if (!canAccessRegistration(admin, row as Record<string, unknown>)) throw new Error("Not allowed.");
+  const { error } = await supabase.from("registrations").update({ branch_country: cc, branch_state: st }).eq(
+    "id",
+    params.id,
+  );
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "registration.branch", "registration", String(params.id), "Updated branch", ip);
+  return { ok: true };
+}
+
+async function handleMembers(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
+  const page = Math.max(1, Number(params.page) || 1);
+  const perPage = Math.max(1, Number(params.per_page) || 25);
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+  let q = supabase.from("registrations").select("*", { count: "exact" }).eq("status", "accepted");
+  q = applyRegistrationScopeQuery(q, admin);
+  if (params.unit_id) q = q.eq("unit_id", Number(params.unit_id));
+  if (norm(admin.role) === "service_unit_leader" && params.sub_unit) {
+    q = q.eq("sub_unit", norm(params.sub_unit));
+  }
+  if (params.search) {
+    const r = norm(params.search).replace(/%/g, "").slice(0, 120);
+    if (r) q = q.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
+  }
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw new Error(error.message);
+  const total = typeof count === "number" ? count : (data || []).length;
+  return { data: data || [], pagination: { page, per_page: perPage, total, pages: Math.max(1, Math.ceil(total / perPage)) } };
+}
+
+async function handleRequests(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
+  const page = Math.max(1, Number(params.page) || 1);
+  const perPage = Math.max(1, Number(params.per_page) || 25);
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+  let q = supabase.from("admin_requests").select("*", { count: "exact" }).order("created_at", { ascending: false });
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) {
+    q = q.eq("from_admin_id", admin.id);
+  }
+  if (params.status) q = q.eq("status", norm(params.status));
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw new Error(error.message);
+  const total = typeof count === "number" ? count : (data || []).length;
+  return { data: data || [], pagination: { page, per_page: perPage, total, pages: Math.max(1, Math.ceil(total / perPage)) } };
+}
+
+async function handleCreateRequest(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  const body = (params.body || {}) as Record<string, unknown>;
+  const row = {
+    from_admin_id: Number(admin.id),
+    from_name: String(admin.full_name || ""),
+    from_role: String(admin.role || ""),
+    message: norm(body.message),
+    request_type: norm(body.request_type) || "general",
+    payload: (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>,
+    status: "open",
+  };
+  const { data, error } = await supabase.from("admin_requests").insert(row).select("*").single();
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "request.create", "request", String(data.id), "Created request", ip);
+  return { data };
+}
+
+async function handleUpdateRequest(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const body = (params.body || {}) as Record<string, unknown>;
+  const newStatus = norm(body.status);
+  const { data: req } = await supabase.from("admin_requests").select("*").eq("id", params.id).maybeSingle();
+  if (!req) throw new Error("Request not found.");
+  if (newStatus === "approved" && norm((req as { request_type?: string }).request_type) === "location_catalog") {
+    const payload = ((req as { payload?: unknown }).payload || {}) as Record<string, unknown>;
+    await applyLocationCatalogProposal(supabase, payload, Number(req.id));
+  }
+  const { error } = await supabase.from("admin_requests").update({ status: newStatus }).eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "request.update", "request", String(params.id), "Updated request", ip);
+  return { data: { id: params.id } };
+}
+
+/** Prefer an existing directory_states row (same country) so approvals never duplicate Abia, etc. */
+async function resolveExistingDirectoryState(
+  supabase: SupabaseClient,
+  countryId: number,
+  branchCountryCode: string,
+  payloadStateName: string,
+): Promise<{ id: number; branch_state_code: string } | null> {
+  const raw = String(payloadStateName ?? "").trim();
+  if (!raw) return null;
+  const { data: rows } = await supabase
+    .from("directory_states")
+    .select("id,name,branch_state_code")
+    .eq("country_id", countryId);
+  const list = rows || [];
+  const lower = raw.toLowerCase();
+  const stripped = lower.replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
+
+  const catalogCode = resolveStateCodeByName(branchCountryCode, raw);
+  if (catalogCode) {
+    const cc = normUp(catalogCode);
+    const byCode = list.find((r) => normUp(r.branch_state_code) === cc);
+    if (byCode && String(byCode.branch_state_code ?? "").trim()) {
+      return { id: Number(byCode.id), branch_state_code: normUp(byCode.branch_state_code) };
+    }
+  }
+
+  for (const r of list) {
+    const n = String(r.name ?? "").trim().toLowerCase();
+    if (!n) continue;
+    const nStripped = n.replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
+    if (n === lower || n === stripped || nStripped === stripped || nStripped === lower) {
+      const code = String(r.branch_state_code ?? "").trim();
+      if (code) return { id: Number(r.id), branch_state_code: normUp(code) };
+    }
+  }
+
+  if (stripped.length >= 4) {
+    for (const r of list) {
+      const n = String(r.name ?? "").trim().toLowerCase().replace(/\s+state\s*$/i, "").trim();
+      if (n.length < 3) continue;
+      if (n.startsWith(stripped) || stripped.startsWith(n)) {
+        const code = String(r.branch_state_code ?? "").trim();
+        if (code) return { id: Number(r.id), branch_state_code: normUp(code) };
+      }
+    }
+  }
+
+  const slug = branchStateCodeForLocationPublish(branchCountryCode, raw);
+  const su = normUp(slug);
+  const bySlug = list.find((r) => normUp(r.branch_state_code) === su);
+  if (bySlug && String(bySlug.branch_state_code ?? "").trim()) {
+    return { id: Number(bySlug.id), branch_state_code: normUp(bySlug.branch_state_code) };
+  }
+
+  return null;
+}
+
+/**
+ * Publish an approved location_catalog payload: satellite_church_sites, directory_countries/states
+ * (if missing), directory_branches + public.churches so the registration form lists branches immediately.
+ */
+async function applyLocationCatalogProposal(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+  requestId: number,
+): Promise<void> {
+  const iso = String(payload.countryIso2 || "").trim();
+  const bc = branchCountryCodeFromIso2(iso);
+  if (!bc) throw new Error("Unknown country ISO code.");
+  const stateName = String(payload.stateName || "");
+  const lga = String(payload.lgaName || "").trim();
+  const countryDisplay = String(payload.countryName || "").trim() || normUp(iso);
+  const sats = Array.isArray(payload.satelliteChurches) ? payload.satelliteChurches as string[] : [];
+
+  let { data: country } = await supabase.from("directory_countries").select("id,branch_country_code").eq(
+    "branch_country_code",
+    bc,
+  ).maybeSingle();
+  if (!country) {
+    const cid = await nextIntPk(supabase, "directory_countries");
+    const { error: ce } = await supabase.from("directory_countries").insert({
+      id: cid,
+      name: countryDisplay,
+      branch_country_code: bc,
+    });
+    if (ce) throw new Error(ce.message);
+    country = { id: cid, branch_country_code: bc };
+  }
+
+  const countryId = Number(country.id);
+  const matched = await resolveExistingDirectoryState(supabase, countryId, bc, stateName);
+  let st: string;
+  let state: { id: number };
+  if (matched) {
+    state = { id: matched.id };
+    st = matched.branch_state_code;
+  } else {
+    st = branchStateCodeForLocationPublish(bc, stateName);
+    const sid = await nextIntPk(supabase, "directory_states");
+    const { error: se } = await supabase.from("directory_states").insert({
+      id: sid,
+      country_id: countryId,
+      name: stateName || st,
+      branch_state_code: st,
+    });
+    if (se) throw new Error(se.message);
+    state = { id: sid };
+  }
+
+  const addressBase = [lga, stateName, countryDisplay].filter(Boolean).join(", ");
+
+  for (const name of sats) {
+    const site = String(name || "").trim();
+    if (!site) continue;
+    await supabase.from("satellite_church_sites").upsert({
+      continent: String(payload.continent || ""),
+      branch_country: bc,
+      branch_state: st,
+      lga,
+      site_name: site,
+      source_request_id: requestId,
+      is_active: 1,
+    }, { onConflict: "branch_country,branch_state,lga,site_name" });
+
+    const address = addressBase ? `${site} — ${addressBase}` : site;
+    const { data: existingCh } = await supabase.from("churches").select("id,directory_branch_id").eq(
+      "branch_country",
+      bc,
+    ).eq("branch_state", st).eq("name", site).maybeSingle();
+    if (existingCh) {
+      const ex = existingCh as { id: number; directory_branch_id?: number | null };
+      const { error: ue } = await supabase.from("churches").update({ address, is_active: 1 }).eq("id", ex.id);
+      if (ue) throw new Error(ue.message);
+      if (ex.directory_branch_id) {
+        await supabase.from("directory_branches").update({ name: site, address }).eq("id", ex.directory_branch_id);
+      }
+      continue;
+    }
+    const bid = await nextIntPk(supabase, "directory_branches");
+    const { error: be } = await supabase.from("directory_branches").insert({
+      id: bid,
+      state_id: Number(state.id),
+      name: site,
+      address,
+    });
+    if (be) throw new Error(be.message);
+    const { error: cins } = await supabase.from("churches").insert({
+      branch_country: bc,
+      branch_state: st,
+      name: site,
+      address,
+      directory_branch_id: bid,
+      is_active: 1,
+    });
+    if (cins) throw new Error(cins.message);
+  }
+}
+
+async function handleApproveServiceUnitProposal(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  admin: AdminRow,
+  ip: string,
+) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const { data: req } = await supabase.from("admin_requests").select("*").eq("id", params.id).maybeSingle();
+  if (!req) throw new Error("Request not found.");
+  const payload = (req.payload || {}) as Record<string, unknown>;
+  const { data: maxRow } = await supabase.from("service_units").select("id").order("id", { ascending: false }).limit(1).maybeSingle();
+  const nextId = Number(maxRow?.id || 0) + 1;
+  const unitName = String(payload.unitName || "").trim();
+  if (!unitName) throw new Error("Missing unit name in proposal.");
+  await supabase.from("service_units").insert({
+    id: nextId,
+    name: unitName,
+    description: String(payload.description || ""),
+    coordinator: "",
+    sort_order: 0,
+    is_active: 1,
+  });
+  const subs = Array.isArray(payload.subUnitNames) ? payload.subUnitNames as string[] : [];
+  let order = 0;
+  for (const sn of subs) {
+    const name = String(sn || "").trim();
+    if (!name) continue;
+    await supabase.from("sub_units").insert({ unit_id: nextId, name, sort_order: order++, is_active: 1 });
+  }
+  await supabase.from("admin_requests").update({ status: "resolved" }).eq("id", req.id);
+  await logActivity(supabase, admin, "request.approve_unit", "request", String(req.id), "Approved service unit proposal", ip);
+  return { ok: true };
+}
+
+async function handleSettings(supabase: SupabaseClient) {
+  const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return { data: data || { templates: {}, overdue_threshold_hours: 72, permissions: {} } };
+}
+
+async function handleUpdateSettings(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const body = (params.body || {}) as Record<string, unknown>;
+  const { data: cur } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+  const next = {
+    id: 1,
+    templates: { ...(cur?.templates as object || {}), ...(body.templates as object || {}) },
+    overdue_threshold_hours: Number(body.overdue_threshold_hours ?? cur?.overdue_threshold_hours ?? 72),
+    permissions: { ...(cur?.permissions as object || {}), ...(body.permissions as object || {}) },
+  };
+  const { error } = await supabase.from("app_settings").upsert(next);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "settings.update", "settings", "1", "Updated settings", ip);
+  return { data: next };
+}
+
+async function handleActivity(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
+  const page = Math.max(1, Number(params.page) || 1);
+  const perPage = Math.max(1, Number(params.per_page) || 50);
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+  const { data: logs, error, count } = await supabase.from("activity_logs").select("*", { count: "exact" }).order(
+    "created_at",
+    { ascending: false },
+  ).range(from, to);
+  if (error) throw new Error(error.message);
+  let rows = logs || [];
+  if (["service_unit_leader", "sub_unit_leader"].includes(norm(admin.role))) {
+    const { data: regs } = await supabase.from("registrations").select("id,sub_unit").eq("unit_id", admin.service_unit_id);
+    const allowed = new Set(
+      (regs || [])
+        .filter((r: Record<string, unknown>) =>
+          norm(admin.role) !== "sub_unit_leader" ||
+          norm(r.sub_unit).toLowerCase() === norm(admin.sub_unit_name).toLowerCase()
+        )
+        .map((r: Record<string, unknown>) => String(r.id)),
+    );
+    rows = rows.filter((r: Record<string, unknown>) => {
+      if (r.entity_type !== "registration") return true;
+      return allowed.has(String(r.entity_id));
+    });
+  }
+  const { data: admins } = await supabase.from("admins").select("id,full_name");
+  return {
+    data: rows,
+    pagination: { page, per_page: perPage, total: count || 0, pages: Math.max(1, Math.ceil(Number(count || 0) / perPage)) },
+    admins: (admins || []).map((a: { id: number; full_name: string }) => ({ admin_id: a.id, admin_name: a.full_name })),
+  };
+}
+
+async function handleSubUnitQueuesByUnit(supabase: SupabaseClient, admin: AdminRow) {
+  const uid = Number(admin.service_unit_id);
+  const { data: rows } = await supabase.from("registrations").select("*").eq("unit_id", uid);
+  const grouped: Record<string, unknown[]> = {};
+  for (const r of rows || []) {
+    const rec = r as Record<string, unknown>;
+    const key = String(rec.sub_unit || "No sub-unit");
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(rec);
+  }
+  return {
+    data: Object.entries(grouped).map(([sub_unit, items]) => ({
+      sub_unit,
+      items: items.sort((a, b) =>
+        String((b as Record<string, unknown>).submitted_at || "").localeCompare(
+          String((a as Record<string, unknown>).submitted_at || ""),
+        )
+      ),
+    })),
+  };
+}
+
+async function handleOverdueAlerts(supabase: SupabaseClient, admin: AdminRow) {
+  const { data: settings } = await supabase.from("app_settings").select("overdue_threshold_hours").eq("id", 1).maybeSingle();
+  const th = Number(settings?.overdue_threshold_hours ?? 72);
+  const now = Date.now();
+  let q = supabase.from("registrations").select("*").in("status", ["new", "in_progress"]);
+  q = applyRegistrationScopeQuery(q, admin);
+  if (norm(admin.role) === "sub_unit_leader") q = q.eq("sub_unit", norm(admin.sub_unit_name));
+  const { data: rows, error } = await q.limit(500);
+  if (error) throw new Error(error.message);
+  const out = (rows || []).filter((r: Record<string, unknown>) =>
+    now - new Date(String(r.submitted_at || "")).getTime() >= th * 3600000
+  );
+  return { data: out };
+}
+
+async function handleNotifications(supabase: SupabaseClient, admin: AdminRow) {
+  const { data, error } = await supabase.from("admin_notifications").select("*").eq("admin_id", admin.id).order(
+    "created_at",
+    { ascending: false },
+  ).limit(100);
+  if (error) throw new Error(error.message);
+  return { data: data || [] };
+}
+
+async function handleMarkNotificationRead(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
+  const { error } = await supabase.from("admin_notifications").update({ read_at: new Date().toISOString() }).eq(
+    "id",
+    params.id,
+  ).eq("admin_id", admin.id);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
+
+async function handleMarkAllNotificationsRead(supabase: SupabaseClient, admin: AdminRow) {
+  const { error } = await supabase.from("admin_notifications").update({ read_at: new Date().toISOString() }).eq(
+    "admin_id",
+    admin.id,
+  ).is("read_at", null);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
+
+async function handleAnnouncements(supabase: SupabaseClient, admin: AdminRow) {
+  const { data, error } = await supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(
+    200,
+  );
+  if (error) throw new Error(error.message);
+  const role = norm(admin.role);
+  const rows = (data || []).filter((r: Record<string, unknown>) => {
+    if (["super_admin", "general_admin"].includes(role)) return true;
+    const uid = Number(r.scope_unit_id || 0);
+    if (uid && Number(admin.service_unit_id) === uid) {
+      const su = norm(r.scope_sub_unit);
+      if (!su) return true;
+      if (role === "sub_unit_leader") return su === norm(admin.sub_unit_name);
+      return ["service_unit_leader", "data_entry_admin"].includes(role);
+    }
+    if (!norm(r.branch_country)) return false;
+    if (norm(r.branch_country) !== normUp(admin.branch_country)) return false;
+    const st = norm(r.scope_branch_state);
+    if (st && st !== normUp(admin.branch_state)) return false;
+    const sat = norm(r.scope_satellite_site);
+    if (sat && sat !== norm(admin.satellite_site)) return false;
+    return true;
+  });
+  return { data: rows };
+}
+
+async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  const body = (params.body || {}) as Record<string, unknown>;
+  const title = norm(body.title);
+  const text = norm(body.body);
+  if (!title || !text) throw new Error("Title and body are required.");
+  const role = norm(admin.role);
+  const row: Record<string, unknown> = {
+    title,
+    body: text,
+    branch_country: normUp(admin.branch_country),
+    scope_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? Number(admin.service_unit_id) : null,
+    scope_sub_unit: role === "sub_unit_leader" ? norm(admin.sub_unit_name) : "",
+    scope_branch_state: ["state_super_admin", "satellite_church_admin"].includes(role)
+      ? normUp(admin.branch_state)
+      : "",
+    scope_satellite_site: role === "satellite_church_admin" ? norm(admin.satellite_site) : "",
+    created_by_admin_id: Number(admin.id),
+    created_by_name: String(admin.full_name || ""),
+  };
+  if (["super_admin", "general_admin"].includes(role)) {
+    row.branch_country = "";
+    row.scope_unit_id = null;
+  }
+  const { data, error } = await supabase.from("announcements").insert(row).select("*").single();
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "announcement.create", "announcement", String(data.id), title, ip);
+  return { data };
+}
+
+async function handleDeleteAnnouncement(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  const { data: row } = await supabase.from("announcements").select("*").eq("id", params.id).maybeSingle();
+  if (!row) throw new Error("Not found.");
+  if (!["super_admin", "general_admin"].includes(norm(admin.role)) && Number(row.created_by_admin_id) !== Number(admin.id)) {
+    throw new Error("Not allowed.");
+  }
+  const { error } = await supabase.from("announcements").delete().eq("id", params.id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "announcement.delete", "announcement", String(params.id), "Deleted", ip);
+  return { ok: true };
+}
+
+function requireCatalogEditor(admin: AdminRow) {
+  const r = norm(admin.role);
+  if (!["super_admin", "general_admin", "data_entry_admin"].includes(r)) {
+    throw new Error("Only Super Admin, General Admin, or Data Entry Admin can edit the branch catalog.");
+  }
+}
+
+async function nextIntPk(supabase: SupabaseClient, table: string): Promise<number> {
+  const { data, error } = await supabase.from(table).select("id").order("id", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return Number((data as { id?: number })?.id ?? 0) + 1;
+}
+
+async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
+  requireCatalogEditor(admin);
+  const { data: countries, error: e1 } = await supabase.from("directory_countries").select("*").order("name");
+  if (e1) throw new Error(e1.message);
+  const { data: states, error: e2 } = await supabase.from("directory_states").select("*").order("country_id").order("name");
+  if (e2) throw new Error(e2.message);
+  const { data: churches, error: e3 } = await supabase.from("churches").select(
+    "id,name,address,branch_country,branch_state,directory_branch_id,is_active",
+  ).order("branch_country").order("branch_state").order("name").limit(5000);
+  if (e3) throw new Error(e3.message);
+  return { countries: countries || [], states: states || [], churches: churches || [] };
+}
+
+async function handleCatalogAddCountry(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  requireCatalogEditor(admin);
+  const code = normUp(params.branch_country_code);
+  const name = norm(params.name);
+  if (!/^[A-Z]{2,8}$/.test(code)) throw new Error("Country code must be 2–8 letters A–Z.");
+  if (!name) throw new Error("Country name is required.");
+  const { data: clash } = await supabase.from("directory_countries").select("id").eq("branch_country_code", code).maybeSingle();
+  if (clash) throw new Error("That country code already exists.");
+  const id = await nextIntPk(supabase, "directory_countries");
+  const { error } = await supabase.from("directory_countries").insert({ id, name, branch_country_code: code });
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "catalog.country", "directory_country", String(id), `Added country ${code}`, ip);
+  return { data: { id, name, branch_country_code: code } };
+}
+
+async function handleCatalogAddState(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  requireCatalogEditor(admin);
+  const countryId = Number(params.country_id);
+  const stateCode = normUp(params.branch_state_code);
+  const stateName = norm(params.state_name) || stateCode;
+  if (!Number.isFinite(countryId) || countryId < 1) throw new Error("Valid country is required.");
+  if (!/^[A-Z0-9]{1,12}$/.test(stateCode)) throw new Error("State / region code must be 1–12 characters (A–Z, 0–9).");
+  const { data: cc } = await supabase.from("directory_countries").select("id,branch_country_code").eq("id", countryId).maybeSingle();
+  if (!cc) throw new Error("Country not found.");
+  const { data: dup } = await supabase.from("directory_states").select("id").eq("country_id", countryId).eq(
+    "branch_state_code",
+    stateCode,
+  ).maybeSingle();
+  if (dup) throw new Error("That state code already exists for this country.");
+  const bcStr = String((cc as { branch_country_code?: string }).branch_country_code || "");
+  const fuzzy = await resolveExistingDirectoryState(supabase, countryId, normUp(bcStr), stateName);
+  if (fuzzy && normUp(fuzzy.branch_state_code) !== normUp(stateCode)) {
+    throw new Error(
+      `A state already exists for this area (code ${fuzzy.branch_state_code}). Use that code instead of "${stateCode}" to avoid duplicates.`,
+    );
+  }
+  const id = await nextIntPk(supabase, "directory_states");
+  const { error } = await supabase.from("directory_states").insert({
+    id,
+    country_id: countryId,
+    name: stateName,
+    branch_state_code: stateCode,
+  });
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "catalog.state", "directory_state", String(id), `Added state ${stateCode}`, ip);
+  return { data: { id, country_id: countryId, name: stateName, branch_state_code: stateCode } };
+}
+
+async function handleCatalogAddChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  requireCatalogEditor(admin);
+  const countryCode = normUp(params.branch_country);
+  const requestedStateCode = normUp(params.branch_state);
+  const churchName = norm(params.name);
+  const address = norm(params.address);
+  const stateLabel = norm(params.state_display_name) || String(params.branch_state || "");
+  if (!countryCode || !requestedStateCode || !churchName) throw new Error("Country, state, and church name are required.");
+  const { data: country } = await supabase.from("directory_countries").select("id,branch_country_code").eq(
+    "branch_country_code",
+    countryCode,
+  ).maybeSingle();
+  if (!country) throw new Error("Unknown country code. Add the country first.");
+  const cid = Number(country.id);
+
+  const { data: byCode } = await supabase.from("directory_states").select("id,branch_state_code").eq("country_id", cid).eq(
+    "branch_state_code",
+    requestedStateCode,
+  ).maybeSingle();
+
+  const canonical = await resolveExistingDirectoryState(supabase, cid, countryCode, stateLabel);
+
+  let state: { id: number };
+  let effectiveBranchState: string;
+
+  if (canonical) {
+    if (byCode && Number(byCode.id) !== canonical.id) {
+      state = { id: canonical.id };
+      effectiveBranchState = canonical.branch_state_code;
+    } else if (byCode) {
+      state = { id: Number(byCode.id) };
+      effectiveBranchState = normUp(byCode.branch_state_code);
+    } else {
+      state = { id: canonical.id };
+      effectiveBranchState = canonical.branch_state_code;
+    }
+  } else if (byCode) {
+    state = { id: Number(byCode.id) };
+    effectiveBranchState = normUp(byCode.branch_state_code);
+  } else {
+    const sid = await nextIntPk(supabase, "directory_states");
+    const { error: se } = await supabase.from("directory_states").insert({
+      id: sid,
+      country_id: cid,
+      name: norm(params.state_display_name) || requestedStateCode,
+      branch_state_code: requestedStateCode,
+    });
+    if (se) throw new Error(se.message);
+    state = { id: sid };
+    effectiveBranchState = requestedStateCode;
+  }
+
+  const { data: existingCh } = await supabase.from("churches").select("id,directory_branch_id").eq(
+    "branch_country",
+    countryCode,
+  ).eq("branch_state", effectiveBranchState).eq("name", churchName).maybeSingle();
+  if (existingCh) {
+    const ex = existingCh as { id: number; directory_branch_id?: number | null };
+    const { error: ue } = await supabase.from("churches").update({ address, is_active: 1 }).eq("id", ex.id);
+    if (ue) throw new Error(ue.message);
+    if (ex.directory_branch_id) {
+      await supabase.from("directory_branches").update({ name: churchName, address }).eq("id", ex.directory_branch_id);
+    }
+    await logActivity(supabase, admin, "catalog.church", "church", String(ex.id), `Updated church ${churchName}`, ip);
+    return { data: { id: ex.id } };
+  }
+  const bid = await nextIntPk(supabase, "directory_branches");
+  const { error: be } = await supabase.from("directory_branches").insert({
+    id: bid,
+    state_id: Number(state.id),
+    name: churchName,
+    address,
+  });
+  if (be) throw new Error(be.message);
+  const { data: ch, error: ce } = await supabase.from("churches").insert({
+    branch_country: countryCode,
+    branch_state: effectiveBranchState,
+    name: churchName,
+    address,
+    directory_branch_id: bid,
+    is_active: 1,
+  }).select("id").single();
+  if (ce) throw new Error(ce.message);
+  await logActivity(supabase, admin, "catalog.church", "church", String(ch?.id ?? ""), `Added church ${churchName}`, ip);
+  return { data: ch };
+}
+
+async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  requireCatalogEditor(admin);
+  const id = params.id;
+  const isActive = Number(params.is_active) === 1 ? 1 : 0;
+  const { error } = await supabase.from("churches").update({ is_active: isActive }).eq("id", id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "catalog.church_active", "church", String(id), `is_active=${isActive}`, ip);
+  return { ok: true };
+}
+
+async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  requireCatalogEditor(admin);
+  const id = params.id;
+  const { data: row } = await supabase.from("churches").select("directory_branch_id").eq("id", id).maybeSingle();
+  if (!row) throw new Error("Church not found.");
+  const { error: e1 } = await supabase.from("churches").delete().eq("id", id);
+  if (e1) throw new Error(e1.message);
+  const bid = Number((row as { directory_branch_id?: number }).directory_branch_id);
+  if (Number.isFinite(bid) && bid > 0) {
+    await supabase.from("directory_branches").delete().eq("id", bid);
+  }
+  await logActivity(supabase, admin, "catalog.church_delete", "church", String(id), "Deleted church", ip);
+  return { ok: true };
+}

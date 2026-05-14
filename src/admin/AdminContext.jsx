@@ -5,7 +5,18 @@ const AuthCtx = createContext(null);
 
 export function AdminAuthProvider({ children }) {
   const [admin, setAdmin]     = useState(() => {
-    try { return JSON.parse(localStorage.getItem("admin_user") || "null"); } catch { return null; }
+    try {
+      const tok = localStorage.getItem("admin_token");
+      const raw = localStorage.getItem("admin_user");
+      const u = JSON.parse(raw || "null");
+      if (u && !tok) {
+        localStorage.removeItem("admin_user");
+        return null;
+      }
+      return u;
+    } catch {
+      return null;
+    }
   });
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
@@ -22,7 +33,17 @@ export function AdminAuthProvider({ children }) {
     }
     if (!stored?.id) return undefined;
     api.refreshSession(stored).then((next) => {
-      if (cancelled || !next) return;
+      if (cancelled) return;
+      if (!next) {
+        try {
+          localStorage.removeItem("admin_user");
+          localStorage.removeItem("admin_token");
+        } catch {
+          /* ignore */
+        }
+        setAdmin(null);
+        return;
+      }
       setAdmin(next);
       localStorage.setItem("admin_user", JSON.stringify(next));
     });
@@ -41,10 +62,18 @@ export function AdminAuthProvider({ children }) {
       return;
     }
     const next = await api.refreshSession(stored);
-    if (next) {
-      setAdmin(next);
-      localStorage.setItem("admin_user", JSON.stringify(next));
+    if (!next) {
+      try {
+        localStorage.removeItem("admin_user");
+        localStorage.removeItem("admin_token");
+      } catch {
+        /* ignore */
+      }
+      setAdmin(null);
+      return;
     }
+    setAdmin(next);
+    localStorage.setItem("admin_user", JSON.stringify(next));
   }, []);
 
   const login = useCallback(async (username, password) => {

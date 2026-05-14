@@ -8,7 +8,7 @@ export function ChurchMembershipSection({ form, set, errors }) {
   return (
     <section className="section">
       <SectionHead
-        num="05"
+        num="06"
         title="Church membership"
         desc="When you joined and how we identify you in church records."
       />

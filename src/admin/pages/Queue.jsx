@@ -62,6 +62,7 @@ export function RegistrationDetails({ r }) {
       <Field label="Nationality" value={r.nationality || "—"} />
       <Field label="Country (residence)" value={branchCountryLabel(r.branch_country)} />
       <Field label="State / region" value={branchStateLabel(r.branch_country, r.branch_state)} />
+      <Field label="Church / branch" value={(r.satellite_site || "").trim() || "—"} />
       <Field label="Residential address" value={r.address || "—"} />
       <Field label="Nearest bus stop" value={r.bus_stop || "—"} />
       <Field label="Primary phone" value={r.phone1 || "—"} />
@@ -80,6 +81,21 @@ export function RegistrationDetails({ r }) {
       <Field label="Water baptised" value={ba ? r.baptised || "—" : "—"} />
       {ba && <Field label="Baptism (when)" value={r.baptised === "Yes" ? fmtMy(r.baptised_month, r.baptised_year) : "—"} />}
       <Field label="WOLBI" value={ba ? wolbiDetail(r) : "—"} />
+      {r.leader_accept_verified_at && (
+        <>
+          <div className="sa-detail-field" style={{ gridColumn: "1 / -1", marginTop: 8 }}>
+            <div className="sa-detail-label" style={{ fontWeight: 600 }}>Acceptance verification (admin check)</div>
+            <div className="sa-detail-value sa-text-sm sa-text-muted">
+              Recorded by the accepting admin when moving this application from in-progress to accepted.
+            </div>
+          </div>
+          <Field label="Foundation class done" value={r.leader_accept_foundation_class ? "Yes" : "Not confirmed"} />
+          <Field label="Water baptism done" value={r.leader_accept_water_baptism ? "Yes" : "Not confirmed"} />
+          <Field label="Called the candidate" value={r.leader_accept_called_candidate ? "Yes" : "No"} />
+          <Field label="Invited to physical meeting" value={r.leader_accept_physical_meeting ? "Yes" : "No"} />
+          <Field label="Verified at" value={fmtDate(r.leader_accept_verified_at)} />
+        </>
+      )}
       {r.notes ? <Field label="Internal notes" value={r.notes} /> : <Field label="Internal notes" value="—" />}
     </div>
   );
@@ -97,6 +113,7 @@ export function Queue({ units }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
+  const [acceptVerifyModal, setAcceptVerifyModal] = useState(null);
   const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
   const [subUnitTab, setSubUnitTab] = useState("all");
   const [subUnitStatusTab, setSubUnitStatusTab] = useState("all");
@@ -210,15 +227,38 @@ export function Queue({ units }) {
     }
   }
 
-  async function updateStatus(id, status, notes) {
+  // Called by StatusModal for non-leader admins.
+  // Intercepts in_progress → accepted to require the verify modal first.
+  async function updateStatus(id, newStatus, notes, originalStatus) {
+    if (originalStatus === "in_progress" && newStatus === "accepted") {
+      // Find the row so we can show the candidate name in the modal
+      const row = rows.find((r) => r.id === id) || { id, status: originalStatus };
+      setStatusModal(null);
+      setAcceptVerifyModal({ ...row, _pendingNotes: notes });
+      return;
+    }
     try {
-      await api.updateStatus(id, { status, notes, viewer: admin });
+      await api.updateStatus(id, { status: newStatus, notes, viewer: admin });
       toast("Status updated.", "success");
       setStatusModal(null);
       await refreshAfterQueueAction(pag.page);
     } catch (e) { toast(e.message, "error"); }
   }
 
+  // Called after the verify modal confirms — actually persists the accept.
+  async function doAcceptWithVerify(id, notes, verify) {
+    try {
+      const body = { status: "accepted", notes: notes || "", viewer: admin, ...(verify || {}) };
+      await api.updateStatus(id, body);
+      toast("Application moved to accepted.", "success");
+      setAcceptVerifyModal(null);
+      await refreshAfterQueueAction(pag.page);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  // Quick leader action for all statuses other than in_progress→accepted.
   async function quickLeaderStatus(id, status) {
     try {
       await api.updateStatus(id, { status, notes: "", viewer: admin });
@@ -227,6 +267,15 @@ export function Queue({ units }) {
     } catch (e) {
       toast(e.message, "error");
     }
+  }
+
+  // Accept button for leader rows — always shows verify modal when currently in_progress.
+  function requestLeaderAccept(row) {
+    if (row.status === "in_progress") {
+      setAcceptVerifyModal(row);
+      return;
+    }
+    doAcceptWithVerify(row.id, "", null);
   }
 
   const unitOpts = units?.data ?? [];
@@ -383,7 +432,7 @@ export function Queue({ units }) {
                         <td>
                           <div className="sa-table-actions">
                             <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"} Details</button>
-                            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => quickLeaderStatus(r.id, "accepted")}>Accept</button>
+                            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => requestLeaderAccept(r)}>Accept</button>
                             <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
                             <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
                             <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
@@ -420,13 +469,13 @@ export function Queue({ units }) {
                           <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"}</button>
                           {isLeader ? (
                             <>
-                              <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => quickLeaderStatus(r.id, "accepted")}>Accept</button>
+                              <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => requestLeaderAccept(r)}>Accept</button>
                               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
                               <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
                               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
                             </>
                           ) : (
-                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "" })}>Update</button>
+                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "", row: r })}>Update</button>
                           )}
                         </div>
                       </td>
@@ -447,7 +496,120 @@ export function Queue({ units }) {
       </div>
 
       <StatusModal open={!!statusModal} data={statusModal} onClose={() => setStatusModal(null)} onSave={updateStatus} allowedStatus={allowedStatus} />
+      <AcceptVerifyModal
+        open={!!acceptVerifyModal}
+        row={acceptVerifyModal}
+        onClose={() => setAcceptVerifyModal(null)}
+        onConfirm={(verify) =>
+          acceptVerifyModal
+            ? doAcceptWithVerify(acceptVerifyModal.id, acceptVerifyModal._pendingNotes || "", verify)
+            : Promise.resolve()
+        }
+      />
     </>
+  );
+}
+
+function AcceptVerifyModal({ open, row, onClose, onConfirm }) {
+  const [foundation, setFoundation] = useState(false);
+  const [baptism, setBaptism] = useState(false);
+  const [called, setCalled] = useState(false);
+  const [meet, setMeet] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setFoundation(false);
+      setBaptism(false);
+      setCalled(false);
+      setMeet(false);
+    }
+  }, [open, row?.id]);
+
+  async function submit() {
+    setSaving(true);
+    try {
+      await onConfirm({
+        verify_foundation_class: foundation,
+        verify_water_baptism: baptism,
+        verify_called_candidate: called,
+        verify_physical_meeting: meet,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Both admin-action checkboxes must be ticked before moving.
+  const canMove = called && meet;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Confirm candidate's criteria"
+      size="sm"
+      footer={
+        <>
+          <button type="button" className="sa-btn sa-btn-outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button type="button" className="sa-btn sa-btn-primary" onClick={submit} disabled={!canMove || saving}>
+            {saving ? "Moving…" : "Move"}
+          </button>
+        </>
+      }
+    >
+      {row ? (
+        <div className="sa-stack" style={{ gap: 20 }}>
+          {/* ── Section 1: Candidate's criteria (optional) ──────── */}
+          <div>
+            <p className="sa-verify-section-title">Has the candidate done these?</p>
+            <p className="sa-text-xs sa-text-muted" style={{ marginTop: 2, marginBottom: 10 }}>
+              These are optional — tick what applies for <strong>{fullName(row)}</strong>.
+            </p>
+            <div className="sa-stack" style={{ gap: 10 }}>
+              <label className="sa-check-row">
+                <input type="checkbox" checked={foundation} onChange={(e) => setFoundation(e.target.checked)} />
+                <span>Foundation Class</span>
+                <span className="sa-badge-optional">optional</span>
+              </label>
+              <label className="sa-check-row">
+                <input type="checkbox" checked={baptism} onChange={(e) => setBaptism(e.target.checked)} />
+                <span>Water Baptism</span>
+                <span className="sa-badge-optional">optional</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="sa-verify-divider" />
+
+          {/* ── Section 2: What the admin has done (required) ───── */}
+          <div>
+            <p className="sa-verify-section-title">Which of these have you done?</p>
+            <p className="sa-text-xs sa-text-muted" style={{ marginTop: 2, marginBottom: 10 }}>
+              Both are required before you can move this application.
+            </p>
+            <div className="sa-stack" style={{ gap: 10 }}>
+              <label className="sa-check-row">
+                <input type="checkbox" checked={called} onChange={(e) => setCalled(e.target.checked)} />
+                <span>Called the Candidate</span>
+              </label>
+              <label className="sa-check-row">
+                <input type="checkbox" checked={meet} onChange={(e) => setMeet(e.target.checked)} />
+                <span>Invited for a physical meeting in church</span>
+              </label>
+            </div>
+          </div>
+
+          {!canMove && (
+            <p className="sa-text-xs sa-text-muted" style={{ color: "var(--sa-warning, #d97706)", margin: 0 }}>
+              You must confirm both actions above to proceed.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 
@@ -456,7 +618,7 @@ function StatusModal({ open, data, onClose, onSave, allowedStatus }) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => { if (data) { setStatus(data.status); setNotes(data.notes || ""); } }, [data]);
-  async function save() { setSaving(true); await onSave(data.id, status, notes); setSaving(false); }
+  async function save() { setSaving(true); await onSave(data.id, status, notes, data.status); setSaving(false); }
   return (
     <Modal open={open} onClose={onClose} title="Update Application Status" size="sm" footer={<><button className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button><button className="sa-btn sa-btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button></>}>
       <div className="sa-field"><label className="sa-label">Status</label><select className="sa-field-select" value={status} onChange={(e) => setStatus(e.target.value)}>{(allowedStatus(data?.status) || []).map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}</select></div>

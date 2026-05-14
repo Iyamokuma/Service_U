@@ -1,7 +1,24 @@
+# Dependencies
 node_modules/
+
+# Build output (Netlify runs `npm run build` on CI)
 dist/
-.DS_Store
+
+# Environment & secrets — never commit
 .env
 .env.*
 !.env.example
+
+# Supabase CLI local cache (linked project ref, versions)
+supabase/.temp/
+
+# Local mirrors / scratch
 _target_repo/
+
+# OS
+.DS_Store
+
+# Optional large uploads in repo tree
+src/admin/*.xlsx
+
+*.log

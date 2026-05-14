@@ -69,6 +69,43 @@ This README is a **plain-language record of what was built or changed** across r
 - **`public/_redirects`:** Same redirect rules for the built site.
 - **`main`** has been **pushed to GitHub**; if the Netlify site is **connected to this repo**, each push can trigger a **new deploy**.
 
+### Supabase + Resend submit flow
+
+Implemented flow:
+
+- User submits form
+- Frontend calls Supabase Edge Function (`submit-registration`)
+- Edge Function saves to Supabase `registrations` table
+- Edge Function sends admin notification via [Resend](https://resend.com/)
+- Edge Function sends user confirmation via Resend (when email is filled)
+
+Frontend env vars (Netlify/site build env):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_FORM_SUBMIT_FN` (optional, defaults to `submit-registration`)
+
+Edge Function env vars (Supabase project secrets):
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_REGISTRATIONS_TABLE` (optional, defaults to `registrations`)
+- `RESEND_API_KEY` (Resend API key, prefix `re_`)
+- `RESEND_SENDER_EMAIL` (verified sender in Resend), **or** set full `RESEND_FROM` instead
+- `RESEND_SENDER_NAME` (optional, default `Salvation Ministries`)
+- `RESEND_FROM` (optional override, e.g. `Salvation Ministries <noreply@yourdomain.com>`)
+- `ADMIN_NOTIFICATION_EMAIL`
+
+**Resend sender:** Use a domain you verified in Resend, or Resend’s test sender while developing. See [Resend — Add domain](https://resend.com/docs/dashboard/domains/introduction).
+
+After updating secrets:
+
+```bash
+npx supabase functions deploy submit-registration --project-ref YOUR_PROJECT_REF
+```
+
+**Troubleshooting:** If the form error mentions **Brevo** or **unrecognised IP**, your project is still running an **old deployed** `submit-registration` build. This repo only uses **Resend**. Fix: deploy the current function from this repo (command above), then in Supabase Dashboard → Edge Functions → confirm the latest deploy time. Remove obsolete secrets like `BREVO_API_KEY` so nothing else can call Brevo by mistake.
+
 ---
 
 ## Styling (`admin.css`)
@@ -102,3 +139,61 @@ npm run build   # output in dist/ (same as Netlify)
 | State Super Admin (Rivers) | `rivers.state` or `rivers.state@smhos.org` | `Ibiyeomie@58` |
 
 **Storage note:** Admin demo data lives in browser **localStorage** (e.g. `sm_admin_demo_db_v1`). A **roster revision** key may reset or merge lists when the app version changes. If logins or data look wrong, clear site data for this origin and refresh.
+
+---
+
+## Production checklist (Supabase + Netlify)
+
+Do these **in order** after merging or pushing to `main`, so the live site and database stay in sync without surprises.
+
+### 1. Netlify (frontend)
+
+- Confirm the Netlify site is **linked to this GitHub repo** and deploys from **`main`** (or your production branch).
+- **Build:** `npm run build` (already set in `netlify.toml`); **publish:** `dist/`.
+- In Netlify → **Site configuration → Environment variables**, set at least:
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+  - Optional: `VITE_SUPABASE_FORM_SUBMIT_FN` (defaults to `submit-registration` if unset).
+- After each successful Git push, Netlify should **auto-build**. If not, trigger **Deploy site** manually once.
+
+### 2. Supabase (database + Edge Functions)
+
+**A. Migrations (schema & one-off data fixes)** — run against the **production** project (replace `YOUR_PROJECT_REF`):
+
+```bash
+# From repo root, with Supabase CLI logged in and project linked:
+supabase link --project-ref YOUR_PROJECT_REF   # once per machine
+supabase db push                                  # applies pending migrations safely
+```
+
+Review migration output. If a migration was already applied manually, use Supabase migration history / repair only if you know what you are doing.
+
+**B. Edge Function secrets** — in **Supabase Dashboard → Edge Functions → Secrets** (or CLI), ensure at least:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_JWT_SECRET` (long random string; used by `admin-login` / `admin-api` JWT flow)
+
+Plus any **Resend** / email secrets already documented above for `submit-registration`.
+
+**C. Deploy Edge Functions** (whenever `supabase/functions/` changes):
+
+```bash
+supabase functions deploy submit-registration --project-ref YOUR_PROJECT_REF
+supabase functions deploy admin-login --project-ref YOUR_PROJECT_REF
+supabase functions deploy admin-api --project-ref YOUR_PROJECT_REF
+```
+
+Deploy **`admin-api`** whenever `supabase/functions/_shared/admin_ops.ts` (or related handlers) change.
+
+### 3. Smoke test after deploy
+
+- Open the **public form** and confirm country / state / church lists load.
+- Open **`/admin`**, sign in, hit **Requests**, **Branch directory**, and **Queue** once.
+- Optional: submit a test registration and confirm a row appears in Supabase `registrations`.
+
+### 4. Rollback mindset
+
+- **Frontend:** Netlify keeps deploy previews; you can **publish** a previous successful deploy if needed.
+- **Database:** Avoid destructive SQL on production without a backup; prefer forward-fix migrations in `supabase/migrations/`.
+- **Edge Functions:** Redeploy a known-good Git revision if a deploy misbehaves.

@@ -42,11 +42,15 @@ export function Settings() {
           <textarea className="sa-textarea" value={settings.templates.waitlisted} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...s.templates, waitlisted: e.target.value } }))} />
         </div>
 
-        <h3 style={{ margin: "20px 0 12px" }}>System Config</h3>
+        <h3 style={{ margin: "20px 0 12px" }}>Overdue &amp; alerts</h3>
+        <p className="sa-text-sm sa-text-muted" style={{ maxWidth: 640, lineHeight: 1.55, marginBottom: 14 }}>
+          Applications in <strong>New</strong> or <strong>In progress</strong> are marked <strong>overdue</strong> after this many hours without a status change.
+          The relevant <strong>service unit</strong> and <strong>sub-unit leaders</strong> get one in-app notification per application (until it moves forward), and an email if Resend is configured on the server (<code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code>).
+        </p>
         <div className="sa-form-row">
           <div className="sa-field">
             <label className="sa-label">Overdue threshold (hours)</label>
-            <input className="sa-input" type="number" min="1" value={settings.overdue_threshold_hours} onChange={(e) => setSettings((s) => ({ ...s, overdue_threshold_hours: Number(e.target.value || 1) }))} />
+            <input className="sa-input" type="number" min="1" step="1" value={settings.overdue_threshold_hours} onChange={(e) => setSettings((s) => ({ ...s, overdue_threshold_hours: Number(e.target.value || 1) }))} />
           </div>
         </div>
 
