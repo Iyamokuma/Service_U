@@ -1,6 +1,5 @@
-/** Hardcoded church branch geography (codes are stable for localStorage matching). */
+/** Mirrors src/admin/branchRegions.js for server-side validation. */
 
-/** Nigeria: 36 states + Federal Capital Territory (alphabetical by name). Codes uppercase; avoid NG/NIG (country conflict). */
 const NIGERIA_STATES = [
   { code: "ABI", name: "Abia" },
   { code: "ADM", name: "Adamawa" },
@@ -41,12 +40,8 @@ const NIGERIA_STATES = [
   { code: "ZAM", name: "Zamfara" },
 ];
 
-export const BRANCH_COUNTRIES = [
-  {
-    code: "NG",
-    name: "Nigeria",
-    states: NIGERIA_STATES,
-  },
+const BRANCH_COUNTRIES = [
+  { code: "NG", name: "Nigeria", states: NIGERIA_STATES },
   {
     code: "GH",
     name: "Ghana",
@@ -63,7 +58,6 @@ export const BRANCH_COUNTRIES = [
       { code: "CA", name: "California" },
     ],
   },
-  // Salvation Ministries directory (single “national” state = country code until subdivided)
   { code: "ASIA", name: "Asia Region", states: [{ code: "ASIA", name: "Asia Region" }] },
   { code: "BJ", name: "Benin Republic", states: [{ code: "BJ", name: "National" }] },
   { code: "CM", name: "Cameroon", states: [{ code: "CM", name: "National" }] },
@@ -73,25 +67,23 @@ export const BRANCH_COUNTRIES = [
   { code: "GB", name: "United Kingdom", states: [{ code: "GB", name: "National" }] },
 ];
 
-function normCode(v) {
+function normCode(v: unknown): string {
   return String(v ?? "").trim().toUpperCase();
 }
 
-export function branchStatesForCountry(countryCode) {
+export function branchStatesForCountry(countryCode: string) {
   const c = BRANCH_COUNTRIES.find((x) => x.code === normCode(countryCode));
   const states = c?.states || [];
   return [...states].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** True if stateCode exists for country (codes compared uppercase). */
-export function isStateValidForCountry(countryCode, stateCode) {
+export function isStateValidForCountry(countryCode: string, stateCode: string): boolean {
   const sc = normCode(stateCode);
   if (!normCode(countryCode) || !sc) return false;
   return branchStatesForCountry(countryCode).some((s) => s.code === sc);
 }
 
-/** Throws a clear Error if state is missing or not in the country list (fixes invalid state admin saves). */
-export function assertStateBelongsToCountry(countryCode, stateCode) {
+export function assertStateBelongsToCountry(countryCode: unknown, stateCode: unknown): void {
   const cc = normCode(countryCode);
   const sc = normCode(stateCode);
   if (!cc) throw new Error("Country is required.");
@@ -101,28 +93,7 @@ export function assertStateBelongsToCountry(countryCode, stateCode) {
   }
 }
 
-/** Keep state only if it belongs to country; otherwise "". */
-export function coerceStateForCountry(countryCode, stateCode) {
-  const sc = normCode(stateCode);
-  if (!sc) return "";
-  return isStateValidForCountry(countryCode, sc) ? sc : "";
-}
-
-export function branchCountryLabel(code) {
-  if (!code) return "—";
-  return BRANCH_COUNTRIES.find((c) => c.code === normCode(code))?.name || code;
-}
-
-export function branchStateLabel(countryCode, stateCode) {
-  if (!countryCode || !stateCode) return "—";
-  const cc = normCode(countryCode);
-  const sc = normCode(stateCode);
-  const st = (BRANCH_COUNTRIES.find((x) => x.code === cc)?.states || []).find((s) => s.code === sc);
-  return st?.name || stateCode;
-}
-
-/** Resolve catalog state code from a display name (e.g. API "Lagos" → "LA"). */
-export function resolveStateCodeByName(countryCode, stateName) {
+export function resolveStateCodeByName(countryCode: string, stateName: string): string {
   const raw = String(stateName ?? "").trim();
   if (!raw || !normCode(countryCode)) return "";
   const states = branchStatesForCountry(countryCode);
@@ -146,16 +117,15 @@ export function resolveStateCodeByName(countryCode, stateName) {
   return hit?.code || "";
 }
 
-/** Match server: catalog code when label matches, else A–Z/0–9 slug (max 12) for publishing. */
-export function branchStateCodeForLocationPublish(countryCode, stateName) {
+/** For location-catalog publish: use catalog state code when the label matches; else A–Z/0–9 slug (max 12). */
+export function branchStateCodeForLocationPublish(countryCode: string, stateName: string): string {
   const fromCatalog = resolveStateCodeByName(countryCode, stateName);
   if (fromCatalog) return fromCatalog;
   const slug = normCode(stateName).replace(/[^A-Z0-9]/g, "").slice(0, 12);
   return slug.length >= 1 ? slug : "REG";
 }
 
-/** Map common ISO 3166-1 alpha-2 codes to internal branch country codes (catalog). */
-export function branchCountryCodeFromIso2(iso2) {
+export function branchCountryCodeFromIso2(iso2: unknown): string {
   const c = normCode(iso2);
   if (!c) return "";
   if (BRANCH_COUNTRIES.some((x) => x.code === c)) return c;

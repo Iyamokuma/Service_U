@@ -11,7 +11,7 @@ export function FaithSection({ form, set, errors }) {
   return (
     <section className="section">
       <SectionHead
-        num="03"
+        num="04"
         title="Spiritual background"
         desc="A few questions about your walk with Christ."
       />

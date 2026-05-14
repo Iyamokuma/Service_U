@@ -3,13 +3,13 @@ import { Collapse } from "../components/Collapse.jsx";
 import { SectionHead } from "./SectionHead.jsx";
 import { SERVICE_UNITS } from "../data.js";
 
-export function ServiceUnitSection({ form, set, errors }) {
-  const selected = SERVICE_UNITS.find((u) => u.id === form.unitId);
-  const hasSubs = !!selected?.subs;
+export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS }) {
+  const selected = units.find((u) => u.id === form.unitId);
+  const hasSubs = !!selected?.subs?.length;
 
   const rows = [];
-  for (let i = 0; i < SERVICE_UNITS.length; i += 2) {
-    rows.push(SERVICE_UNITS.slice(i, i + 2));
+  for (let i = 0; i < units.length; i += 2) {
+    rows.push(units.slice(i, i + 2));
   }
 
   const renderUnit = (u) => (
@@ -43,7 +43,7 @@ export function ServiceUnitSection({ form, set, errors }) {
   return (
     <section className="section">
       <SectionHead
-        num="06"
+        num="07"
         title="Service unit"
         desc="Select one unit to serve in. If it lists sub-units, choose exactly one — you can only serve in one sub-unit."
       />
