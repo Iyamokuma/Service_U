@@ -454,7 +454,7 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
             disabled={isEdit}
           />
           {form.role === "country_super_admin" && !isEdit && (
-            <motion className="sa-field-hint">
+            <div className="sa-field-hint">
               Usernames are unique across all countries. For United Kingdom use something like{" "}
               <strong>gb.country.admin</strong> (not <strong>country.admin</strong>, which is already used).
             </div>
