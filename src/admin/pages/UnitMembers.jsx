@@ -8,6 +8,7 @@ import { branchStatesForCountry } from "../branchRegions.js";
 export function UnitMembers({ units }) {
   const toast = useToast();
   const { admin } = useAdminAuth();
+  const isCountryAdmin = isCountrySuperAdmin(admin?.role);
   const isLeader = ["service_unit_leader", "sub_unit_leader"].includes(admin?.role);
   const isServiceUnitLeader = admin?.role === "service_unit_leader";
   const [rows, setRows] = useState([]);
@@ -43,7 +44,7 @@ export function UnitMembers({ units }) {
         setLoading(false);
       }
     },
-    [filters.search, filters.unit_id, filters.sub_unit, admin, isLeader, isServiceUnitLeader, toast]
+    [filters.search, filters.unit_id, filters.sub_unit, filters.filter_branch_state, admin, isLeader, isServiceUnitLeader, isCountryAdmin, toast]
   );
 
   useEffect(() => {

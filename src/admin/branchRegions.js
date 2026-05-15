@@ -147,6 +147,39 @@ export function resolveStateCodeByName(countryCode, stateName) {
 }
 
 /** Match server: catalog code when label matches, else A–Z/0–9 slug (max 12) for publishing. */
+/** One canonical state code + label (merges Abia / Abia State / ABIASTATE → ABI). */
+export function canonicalStateOption(countryCode, codeOrName, displayName) {
+  const cc = normCode(countryCode);
+  const rawCode = normCode(codeOrName);
+  const rawName = String(displayName ?? codeOrName ?? "").trim();
+  const canonical =
+    resolveStateCodeByName(cc, rawName) ||
+    resolveStateCodeByName(cc, rawCode) ||
+    rawCode;
+  if (!cc || !canonical) return null;
+  const catalogName = branchStatesForCountry(cc).find((s) => normCode(s.code) === canonical)?.name;
+  return {
+    code: canonical,
+    name: catalogName || String(displayName || "").trim() || branchStateLabel(cc, canonical) || canonical,
+  };
+}
+
+/** Dedupe state dropdown rows by canonical code (directory + churches + catalog). */
+export function mergeStateOptions(countryCode, ...lists) {
+  const byCode = new Map();
+  for (const list of lists) {
+    for (const item of list || []) {
+      const opt = canonicalStateOption(countryCode, item.code ?? item.branch_state_code, item.name);
+      if (!opt) continue;
+      const prev = byCode.get(opt.code);
+      if (!prev || (prev.name === prev.code && opt.name !== opt.code)) {
+        byCode.set(opt.code, opt);
+      }
+    }
+  }
+  return [...byCode.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
 export function branchStateCodeForLocationPublish(countryCode, stateName) {
   const fromCatalog = resolveStateCodeByName(countryCode, stateName);
   if (fromCatalog) return fromCatalog;
