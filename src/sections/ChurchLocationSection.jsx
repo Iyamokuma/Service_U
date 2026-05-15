@@ -7,6 +7,7 @@ import {
   branchStatesForCountry,
   branchStateLabel,
   isStateValidForCountry,
+  mergeStateOptions,
 } from "../admin/branchRegions.js";
 import { fetchChurchesCatalog } from "../lib/churchesCatalog.js";
 import { fetchDirectoryCountries, fetchDirectoryStates } from "../lib/directoryCatalog.js";
@@ -135,33 +136,15 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   }, [catalog, dirCountries, useDirectory]);
 
   const stateList = useMemo(() => {
-    const byCode = new Map();
     const cc = norm(form.branchCountry);
-
-    if (useDirectory) {
-      for (const s of dirStates) {
-        const code = norm(s.branch_state_code);
-        if (!code) continue;
-        byCode.set(code, { code, name: s.name || s.branch_state_code });
-      }
-    }
-
-    if (cc) {
-      for (const ch of catalog) {
-        if (norm(ch.branch_country) !== cc) continue;
-        const code = norm(ch.branch_state);
-        if (!code || byCode.has(code)) continue;
-        byCode.set(code, { code, name: branchStateLabel(cc, code) || code });
-      }
-    }
-
-    for (const s of branchStatesForCountry(form.branchCountry)) {
-      const code = norm(s.code);
-      if (!code || byCode.has(code)) continue;
-      byCode.set(code, { code, name: s.name });
-    }
-
-    return [...byCode.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!cc) return [];
+    const fromDir = useDirectory
+      ? dirStates.map((s) => ({ code: s.branch_state_code, name: s.name }))
+      : [];
+    const fromChurches = catalog
+      .filter((ch) => norm(ch.branch_country) === cc)
+      .map((ch) => ({ code: ch.branch_state, name: branchStateLabel(cc, ch.branch_state) }));
+    return mergeStateOptions(cc, fromDir, fromChurches);
   }, [useDirectory, dirStates, form.branchCountry, catalog]);
 
   const singleStateMode = stateList.length <= 1;

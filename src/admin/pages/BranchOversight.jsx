@@ -26,6 +26,7 @@ export function BranchOversight({ units }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
+  const [acceptVerifyModal, setAcceptVerifyModal] = useState(null);
   const [filters, setFilters] = useState({
     search: "",
     unit_id: "",
@@ -372,7 +373,10 @@ export function BranchOversight({ units }) {
             <button
               type="button"
               className="sa-btn sa-btn-primary"
-              onClick={() => statusModal && updateRowStatus(statusModal.id, statusModal.status, statusModal.notes)}
+              onClick={() =>
+                statusModal &&
+                saveRowStatus(statusModal.id, statusModal.status, statusModal.notes, statusModal.originalStatus)
+              }
             >
               Save
             </button>
