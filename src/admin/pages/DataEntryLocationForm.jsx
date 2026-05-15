@@ -183,8 +183,8 @@ export function DataEntryLocationForm() {
               color: "var(--sa-text)",
             }}
           >
-            This country is not in the platform catalog yet. You can still submit; approval will fail until the country
-            is added to branch configuration.
+            When approved, this country is added to the directory automatically if it is not there yet. Existing states
+            (e.g. Abia) are reused so churches appear under the correct region with no duplicates.
           </div>
         ) : null}
 
