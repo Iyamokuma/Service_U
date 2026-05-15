@@ -22,6 +22,62 @@ function normStatus(s: unknown): string {
   return x || "new";
 }
 
+function normalizeAdminUsername(raw: unknown): string {
+  return norm(raw).toLowerCase();
+}
+
+function assertAdminUsernameFormat(username: string): void {
+  if (!username) throw new Error("Username is required.");
+  if (username.length < 3 || username.length > 64) {
+    throw new Error("Username must be between 3 and 64 characters.");
+  }
+  if (!/^[a-z0-9._-]+$/.test(username)) {
+    throw new Error("Username may only use letters, numbers, dots, hyphens, and underscores.");
+  }
+}
+
+async function assertAdminUsernameAvailable(
+  supabase: SupabaseClient,
+  username: string,
+  excludeId?: number,
+): Promise<void> {
+  assertAdminUsernameFormat(username);
+  const { data, error } = await supabase.from("admins").select("id, username").ilike("username", username);
+  if (error) throw new Error(error.message);
+  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  if (taken) {
+    throw new Error(
+      `Username "${username}" is already in use. Login names are unique worldwide — try a country-specific id such as "gb.country.admin".`,
+    );
+  }
+}
+
+async function assertAdminEmailAvailable(
+  supabase: SupabaseClient,
+  email: string,
+  excludeId?: number,
+): Promise<void> {
+  const e = norm(email).toLowerCase();
+  if (!e) throw new Error("Email is required.");
+  const { data, error } = await supabase.from("admins").select("id, email").ilike("email", e);
+  if (error) throw new Error(error.message);
+  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  if (taken) throw new Error("That email is already used by another admin account.");
+}
+
+function throwAdminPersistError(error: { message?: string }): never {
+  const msg = String(error?.message || "");
+  if (msg.includes("idx_admins_username_lower")) {
+    throw new Error(
+      'That username is already taken. Usernames are unique across every country — use something like "gb.country.admin" for United Kingdom.',
+    );
+  }
+  if (msg.includes("idx_admins_email_lower")) {
+    throw new Error("That email is already used by another admin account.");
+  }
+  throw new Error(msg || "Failed to save admin.");
+}
+
 function isServiceUnitLeader(admin: AdminRow): boolean {
   return norm(admin.role) === "service_unit_leader";
 }
@@ -625,8 +681,17 @@ async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string
     row.satellite_site = norm(admin.satellite_site);
     await assertSubUnitInServiceUnit(supabase, Number(admin.service_unit_id), row.sub_unit_name);
   }
+  if (!row.full_name) throw new Error("Full name is required.");
+  if (!row.password) throw new Error("Password is required.");
+  if (row.role === "country_super_admin" && !row.branch_country) {
+    throw new Error("Country is required for Country Admin accounts.");
+  }
+  row.username = normalizeAdminUsername(row.username);
+  row.email = norm(row.email).toLowerCase();
+  await assertAdminUsernameAvailable(supabase, row.username);
+  await assertAdminEmailAvailable(supabase, row.email);
   const { data, error } = await supabase.from("admins").insert(row).select("*").single();
-  if (error) throw new Error(error.message);
+  if (error) throwAdminPersistError(error);
   await logActivity(supabase, admin, "admin.create", "admin", String(data.id), `Created admin ${data.username}`, ip);
   return { data };
 }

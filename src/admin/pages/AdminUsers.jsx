@@ -95,6 +95,17 @@ function fmtDate(str) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
+/** Login names are globally unique; seed NG country admin uses country.admin — use per-country ids. */
+function suggestedCountryAdminUsername(countryCode) {
+  const cc = String(countryCode || "").trim().toLowerCase();
+  return cc ? `${cc}.country.admin` : "";
+}
+
+function shouldAutoFillCountryAdminUsername(username) {
+  const u = String(username || "").trim().toLowerCase();
+  return !u || u === "country.admin" || /^[a-z]{2}\.country\.admin$/.test(u);
+}
+
 export function AdminUsers({ data, units, reload }) {
   const toast = useToast();
   const { admin: me } = useAdminAuth();
@@ -435,7 +446,19 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
         </div>
         <div className="sa-field">
           <label className="sa-label">Username <span className="sa-required">*</span></label>
-          <input className="sa-input" value={form.username} onChange={set("username")} placeholder="johndoe" disabled={isEdit} />
+          <input
+            className="sa-input"
+            value={form.username}
+            onChange={set("username")}
+            placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
+            disabled={isEdit}
+          />
+          {form.role === "country_super_admin" && !isEdit && (
+            <motion className="sa-field-hint">
+              Usernames are unique across all countries. For United Kingdom use something like{" "}
+              <strong>gb.country.admin</strong> (not <strong>country.admin</strong>, which is already used).
+            </div>
+          )}
         </div>
       </div>
       <div className="sa-field">
@@ -456,15 +479,24 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
             onChange={(e) => {
               const role = e.target.value;
               const branchRoles = ["country_super_admin", "state_super_admin", "satellite_church_admin"];
-              setForm((f) => ({
-                ...f,
-                role,
-                service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? f.service_unit_id : "",
-                sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
-                branch_country: branchRoles.includes(role) ? f.branch_country : "",
-                branch_state: ["state_super_admin", "satellite_church_admin"].includes(role) ? f.branch_state : "",
-                satellite_site: role === "satellite_church_admin" ? f.satellite_site : "",
-              }));
+              setForm((f) => {
+                const next = {
+                  ...f,
+                  role,
+                  service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? f.service_unit_id : "",
+                  sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
+                  branch_country: branchRoles.includes(role) ? f.branch_country : "",
+                  branch_state: ["state_super_admin", "satellite_church_admin"].includes(role) ? f.branch_state : "",
+                  satellite_site: role === "satellite_church_admin" ? f.satellite_site : "",
+                };
+                if (
+                  role === "country_super_admin" &&
+                  shouldAutoFillCountryAdminUsername(f.username)
+                ) {
+                  next.username = suggestedCountryAdminUsername(next.branch_country);
+                }
+                return next;
+              });
             }}
           >
             {(isGlobalAdmin
@@ -508,7 +540,19 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
             <select
               className="sa-field-select"
               value={form.branch_country}
-              onChange={(e) => setForm((f) => ({ ...f, branch_country: e.target.value, branch_state: "" }))}
+              onChange={(e) => {
+                const branch_country = e.target.value;
+                setForm((f) => {
+                  const next = { ...f, branch_country, branch_state: "" };
+                  if (
+                    f.role === "country_super_admin" &&
+                    shouldAutoFillCountryAdminUsername(f.username)
+                  ) {
+                    next.username = suggestedCountryAdminUsername(branch_country);
+                  }
+                  return next;
+                });
+              }}
               disabled={isCountryAdmin}
             >
               <option value="">Select country</option>
