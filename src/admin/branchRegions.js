@@ -158,6 +158,7 @@ export function branchStateCodeForLocationPublish(countryCode, stateName) {
 export function branchCountryCodeFromIso2(iso2) {
   const c = normCode(iso2);
   if (!c) return "";
+  if (/^[A-Z]{2}$/.test(c)) return c;
   if (BRANCH_COUNTRIES.some((x) => x.code === c)) return c;
   return "";
 }

@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertStateBelongsToCountry } from "./branch_regions.ts";
 import {
-  assertStateBelongsToCountry,
-  branchCountryCodeFromIso2,
-  branchStateCodeForLocationPublish,
-  resolveStateCodeByName,
-} from "./branch_regions.ts";
+  ensureDirectoryCountry,
+  ensureDirectoryState,
+  publishChurchToDirectory,
+  resolveExistingDirectoryCountry,
+  resolveExistingDirectoryState,
+} from "./location_directory.ts";
 import { applyRegistrationScopeQuery, canAccessRegistration } from "./registration_scope.ts";
 
 type AdminRow = Record<string, unknown>;
@@ -874,63 +876,6 @@ async function handleUpdateRequest(supabase: SupabaseClient, params: Record<stri
   return { data: { id: params.id } };
 }
 
-/** Prefer an existing directory_states row (same country) so approvals never duplicate Abia, etc. */
-async function resolveExistingDirectoryState(
-  supabase: SupabaseClient,
-  countryId: number,
-  branchCountryCode: string,
-  payloadStateName: string,
-): Promise<{ id: number; branch_state_code: string } | null> {
-  const raw = String(payloadStateName ?? "").trim();
-  if (!raw) return null;
-  const { data: rows } = await supabase
-    .from("directory_states")
-    .select("id,name,branch_state_code")
-    .eq("country_id", countryId);
-  const list = rows || [];
-  const lower = raw.toLowerCase();
-  const stripped = lower.replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
-
-  const catalogCode = resolveStateCodeByName(branchCountryCode, raw);
-  if (catalogCode) {
-    const cc = normUp(catalogCode);
-    const byCode = list.find((r) => normUp(r.branch_state_code) === cc);
-    if (byCode && String(byCode.branch_state_code ?? "").trim()) {
-      return { id: Number(byCode.id), branch_state_code: normUp(byCode.branch_state_code) };
-    }
-  }
-
-  for (const r of list) {
-    const n = String(r.name ?? "").trim().toLowerCase();
-    if (!n) continue;
-    const nStripped = n.replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
-    if (n === lower || n === stripped || nStripped === stripped || nStripped === lower) {
-      const code = String(r.branch_state_code ?? "").trim();
-      if (code) return { id: Number(r.id), branch_state_code: normUp(code) };
-    }
-  }
-
-  if (stripped.length >= 4) {
-    for (const r of list) {
-      const n = String(r.name ?? "").trim().toLowerCase().replace(/\s+state\s*$/i, "").trim();
-      if (n.length < 3) continue;
-      if (n.startsWith(stripped) || stripped.startsWith(n)) {
-        const code = String(r.branch_state_code ?? "").trim();
-        if (code) return { id: Number(r.id), branch_state_code: normUp(code) };
-      }
-    }
-  }
-
-  const slug = branchStateCodeForLocationPublish(branchCountryCode, raw);
-  const su = normUp(slug);
-  const bySlug = list.find((r) => normUp(r.branch_state_code) === su);
-  if (bySlug && String(bySlug.branch_state_code ?? "").trim()) {
-    return { id: Number(bySlug.id), branch_state_code: normUp(bySlug.branch_state_code) };
-  }
-
-  return null;
-}
-
 /**
  * Publish an approved location_catalog payload: satellite_church_sites, directory_countries/states
  * (if missing), directory_branches + public.churches so the registration form lists branches immediately.
@@ -941,94 +886,37 @@ async function applyLocationCatalogProposal(
   requestId: number,
 ): Promise<void> {
   const iso = String(payload.countryIso2 || "").trim();
-  const bc = branchCountryCodeFromIso2(iso);
-  if (!bc) throw new Error("Unknown country ISO code.");
   const stateName = String(payload.stateName || "");
   const lga = String(payload.lgaName || "").trim();
-  const countryDisplay = String(payload.countryName || "").trim() || normUp(iso);
+  const countryDisplay = String(payload.countryName || "").trim();
   const sats = Array.isArray(payload.satelliteChurches) ? payload.satelliteChurches as string[] : [];
 
-  let { data: country } = await supabase.from("directory_countries").select("id,branch_country_code").eq(
-    "branch_country_code",
-    bc,
-  ).maybeSingle();
-  if (!country) {
-    const cid = await nextIntPk(supabase, "directory_countries");
-    const { error: ce } = await supabase.from("directory_countries").insert({
-      id: cid,
-      name: countryDisplay,
-      branch_country_code: bc,
-    });
-    if (ce) throw new Error(ce.message);
-    country = { id: cid, branch_country_code: bc };
-  }
+  const country = await ensureDirectoryCountry(supabase, (t) => nextIntPk(supabase, t), {
+    iso2: iso,
+    countryName: countryDisplay,
+  });
+  const bc = country.branch_country_code;
+  const countryId = country.id;
 
-  const countryId = Number(country.id);
-  const matched = await resolveExistingDirectoryState(supabase, countryId, bc, stateName);
-  let st: string;
-  let state: { id: number };
-  if (matched) {
-    state = { id: matched.id };
-    st = matched.branch_state_code;
-  } else {
-    st = branchStateCodeForLocationPublish(bc, stateName);
-    const sid = await nextIntPk(supabase, "directory_states");
-    const { error: se } = await supabase.from("directory_states").insert({
-      id: sid,
-      country_id: countryId,
-      name: stateName || st,
-      branch_state_code: st,
-    });
-    if (se) throw new Error(se.message);
-    state = { id: sid };
-  }
+  const state = await ensureDirectoryState(supabase, (t) => nextIntPk(supabase, t), countryId, bc, stateName);
+  const st = state.branch_state_code;
 
-  const addressBase = [lga, stateName, countryDisplay].filter(Boolean).join(", ");
+  const addressBase = [lga, stateName, countryDisplay || bc].filter(Boolean).join(", ");
 
   for (const name of sats) {
     const site = String(name || "").trim();
     if (!site) continue;
-    await supabase.from("satellite_church_sites").upsert({
-      continent: String(payload.continent || ""),
-      branch_country: bc,
-      branch_state: st,
-      lga,
-      site_name: site,
-      source_request_id: requestId,
-      is_active: 1,
-    }, { onConflict: "branch_country,branch_state,lga,site_name" });
-
     const address = addressBase ? `${site} — ${addressBase}` : site;
-    const { data: existingCh } = await supabase.from("churches").select("id,directory_branch_id").eq(
-      "branch_country",
-      bc,
-    ).eq("branch_state", st).eq("name", site).maybeSingle();
-    if (existingCh) {
-      const ex = existingCh as { id: number; directory_branch_id?: number | null };
-      const { error: ue } = await supabase.from("churches").update({ address, is_active: 1 }).eq("id", ex.id);
-      if (ue) throw new Error(ue.message);
-      if (ex.directory_branch_id) {
-        await supabase.from("directory_branches").update({ name: site, address }).eq("id", ex.directory_branch_id);
-      }
-      continue;
-    }
-    const bid = await nextIntPk(supabase, "directory_branches");
-    const { error: be } = await supabase.from("directory_branches").insert({
-      id: bid,
-      state_id: Number(state.id),
-      name: site,
+    await publishChurchToDirectory(supabase, (t) => nextIntPk(supabase, t), {
+      branchCountry: bc,
+      branchState: st,
+      stateId: state.id,
+      siteName: site,
       address,
+      continent: String(payload.continent || ""),
+      lga,
+      sourceRequestId: requestId,
     });
-    if (be) throw new Error(be.message);
-    const { error: cins } = await supabase.from("churches").insert({
-      branch_country: bc,
-      branch_state: st,
-      name: site,
-      address,
-      directory_branch_id: bid,
-      is_active: 1,
-    });
-    if (cins) throw new Error(cins.message);
   }
 }
 
@@ -1308,8 +1196,12 @@ async function handleCatalogAddCountry(supabase: SupabaseClient, params: Record<
   const name = norm(params.name);
   if (!/^[A-Z]{2,8}$/.test(code)) throw new Error("Country code must be 2–8 letters A–Z.");
   if (!name) throw new Error("Country name is required.");
-  const { data: clash } = await supabase.from("directory_countries").select("id").eq("branch_country_code", code).maybeSingle();
-  if (clash) throw new Error("That country code already exists.");
+  const existing = await resolveExistingDirectoryCountry(supabase, { branchCountryCode: code, countryName: name });
+  if (existing) {
+    throw new Error(
+      `Country already exists (${existing.branch_country_code}). Add states or churches under that country instead.`,
+    );
+  }
   const id = await nextIntPk(supabase, "directory_countries");
   const { error } = await supabase.from("directory_countries").insert({ id, name, branch_country_code: code });
   if (error) throw new Error(error.message);
@@ -1356,85 +1248,33 @@ async function handleCatalogAddChurch(supabase: SupabaseClient, params: Record<s
   const requestedStateCode = normUp(params.branch_state);
   const churchName = norm(params.name);
   const address = norm(params.address);
-  const stateLabel = norm(params.state_display_name) || String(params.branch_state || "");
+  const stateLabel = norm(params.state_display_name) || requestedStateCode;
   if (!countryCode || !requestedStateCode || !churchName) throw new Error("Country, state, and church name are required.");
-  const { data: country } = await supabase.from("directory_countries").select("id,branch_country_code").eq(
-    "branch_country_code",
-    countryCode,
-  ).maybeSingle();
+
+  const country = await resolveExistingDirectoryCountry(supabase, { branchCountryCode: countryCode });
   if (!country) throw new Error("Unknown country code. Add the country first.");
-  const cid = Number(country.id);
+  const state = await ensureDirectoryState(
+    supabase,
+    (t) => nextIntPk(supabase, t),
+    country.id,
+    country.branch_country_code,
+    stateLabel || requestedStateCode,
+  );
 
-  const { data: byCode } = await supabase.from("directory_states").select("id,branch_state_code").eq("country_id", cid).eq(
-    "branch_state_code",
-    requestedStateCode,
-  ).maybeSingle();
-
-  const canonical = await resolveExistingDirectoryState(supabase, cid, countryCode, stateLabel);
-
-  let state: { id: number };
-  let effectiveBranchState: string;
-
-  if (canonical) {
-    if (byCode && Number(byCode.id) !== canonical.id) {
-      state = { id: canonical.id };
-      effectiveBranchState = canonical.branch_state_code;
-    } else if (byCode) {
-      state = { id: Number(byCode.id) };
-      effectiveBranchState = normUp(byCode.branch_state_code);
-    } else {
-      state = { id: canonical.id };
-      effectiveBranchState = canonical.branch_state_code;
-    }
-  } else if (byCode) {
-    state = { id: Number(byCode.id) };
-    effectiveBranchState = normUp(byCode.branch_state_code);
-  } else {
-    const sid = await nextIntPk(supabase, "directory_states");
-    const { error: se } = await supabase.from("directory_states").insert({
-      id: sid,
-      country_id: cid,
-      name: norm(params.state_display_name) || requestedStateCode,
-      branch_state_code: requestedStateCode,
-    });
-    if (se) throw new Error(se.message);
-    state = { id: sid };
-    effectiveBranchState = requestedStateCode;
-  }
-
-  const { data: existingCh } = await supabase.from("churches").select("id,directory_branch_id").eq(
-    "branch_country",
-    countryCode,
-  ).eq("branch_state", effectiveBranchState).eq("name", churchName).maybeSingle();
-  if (existingCh) {
-    const ex = existingCh as { id: number; directory_branch_id?: number | null };
-    const { error: ue } = await supabase.from("churches").update({ address, is_active: 1 }).eq("id", ex.id);
-    if (ue) throw new Error(ue.message);
-    if (ex.directory_branch_id) {
-      await supabase.from("directory_branches").update({ name: churchName, address }).eq("id", ex.directory_branch_id);
-    }
-    await logActivity(supabase, admin, "catalog.church", "church", String(ex.id), `Updated church ${churchName}`, ip);
-    return { data: { id: ex.id } };
-  }
-  const bid = await nextIntPk(supabase, "directory_branches");
-  const { error: be } = await supabase.from("directory_branches").insert({
-    id: bid,
-    state_id: Number(state.id),
-    name: churchName,
+  await publishChurchToDirectory(supabase, (t) => nextIntPk(supabase, t), {
+    branchCountry: country.branch_country_code,
+    branchState: state.branch_state_code,
+    stateId: state.id,
+    siteName: churchName,
     address,
   });
-  if (be) throw new Error(be.message);
-  const { data: ch, error: ce } = await supabase.from("churches").insert({
-    branch_country: countryCode,
-    branch_state: effectiveBranchState,
-    name: churchName,
-    address,
-    directory_branch_id: bid,
-    is_active: 1,
-  }).select("id").single();
-  if (ce) throw new Error(ce.message);
+
+  const { data: ch } = await supabase.from("churches").select("id").eq("branch_country", country.branch_country_code).eq(
+    "branch_state",
+    state.branch_state_code,
+  ).eq("name", churchName).maybeSingle();
   await logActivity(supabase, admin, "catalog.church", "church", String(ch?.id ?? ""), `Added church ${churchName}`, ip);
-  return { data: ch };
+  return { data: ch || { id: null } };
 }
 
 async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {

@@ -206,6 +206,7 @@ export default function App() {
         bus_stop: form.busStop,
         branch_country: form.branchCountry,
         branch_state: effectiveBranchStateForPayload(form),
+        church_id: form.churchId ? Number(form.churchId) : null,
         satellite_site: String(form.satelliteSite || "").trim(),
         phone1: form.phone1,
         phone2: form.phone2,

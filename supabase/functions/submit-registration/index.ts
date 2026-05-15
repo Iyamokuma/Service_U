@@ -1,4 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  branchCodesFromChurchId,
+  canonicalizeRegistrationBranch,
+} from "../_shared/location_directory.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -77,9 +81,26 @@ Deno.serve(async (req) => {
     if (!row.first_name || !row.surname || !row.phone1) {
       return json(400, { error: "Missing required fields (name, phone)." });
     }
+    const churchId = body.church_id != null && body.church_id !== "" ? Number(body.church_id) : null;
+    if (Number.isFinite(churchId) && churchId! > 0) {
+      const fromChurch = await branchCodesFromChurchId(supabase, churchId!);
+      if (!fromChurch) return json(400, { error: "Invalid church / branch selection." });
+      row.branch_country = fromChurch.branch_country;
+      row.branch_state = fromChurch.branch_state;
+      row.satellite_site = fromChurch.satellite_site;
+    }
+
     if (!row.branch_country || !row.branch_state) {
       return json(400, { error: "Branch country and state are required." });
     }
+
+    const canonical = await canonicalizeRegistrationBranch(
+      supabase,
+      String(row.branch_country),
+      String(row.branch_state),
+    );
+    row.branch_country = canonical.branch_country;
+    row.branch_state = canonical.branch_state;
 
     const { data, error } = await supabase.from("registrations").insert(row).select("id").maybeSingle();
     if (error) return json(400, { error: error.message });
