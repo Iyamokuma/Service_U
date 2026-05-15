@@ -46,6 +46,19 @@ BEGIN
     UPDATE public.churches SET branch_state = canon_code
     WHERE upper(trim(branch_country)) = 'NG' AND trim(branch_state) = dup.branch_state_code;
 
+    DELETE FROM public.satellite_church_sites sat_old
+    WHERE upper(trim(sat_old.branch_country)) = 'NG'
+      AND trim(sat_old.branch_state) = dup.branch_state_code
+      AND EXISTS (
+        SELECT 1
+        FROM public.satellite_church_sites sat_keep
+        WHERE upper(trim(sat_keep.branch_country)) = 'NG'
+          AND upper(trim(sat_keep.branch_state)) = canon_code
+          AND trim(sat_keep.lga) = trim(sat_old.lga)
+          AND trim(sat_keep.site_name) = trim(sat_old.site_name)
+          AND sat_keep.id <> sat_old.id
+      );
+
     UPDATE public.satellite_church_sites SET branch_state = canon_code
     WHERE upper(trim(branch_country)) = 'NG' AND trim(branch_state) = dup.branch_state_code;
 

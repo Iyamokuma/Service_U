@@ -34,6 +34,22 @@ BEGIN
         AND upper(trim(ch.branch_country)) = upper(trim(dc.branch_country_code))
         AND trim(ch.branch_state) = rec.codes[i];
 
+      -- Drop duplicate-state satellite rows when canonical (country, state, lga, site) already exists
+      DELETE FROM public.satellite_church_sites sat_old
+      USING public.directory_countries dc
+      WHERE dc.id = rec.country_id
+        AND upper(trim(sat_old.branch_country)) = upper(trim(dc.branch_country_code))
+        AND trim(sat_old.branch_state) = rec.codes[i]
+        AND EXISTS (
+          SELECT 1
+          FROM public.satellite_church_sites sat_keep
+          WHERE upper(trim(sat_keep.branch_country)) = upper(trim(sat_old.branch_country))
+            AND upper(trim(sat_keep.branch_state)) = upper(canon_code)
+            AND trim(sat_keep.lga) = trim(sat_old.lga)
+            AND trim(sat_keep.site_name) = trim(sat_old.site_name)
+            AND sat_keep.id <> sat_old.id
+        );
+
       UPDATE public.satellite_church_sites sat
       SET branch_state = canon_code
       FROM public.directory_countries dc
