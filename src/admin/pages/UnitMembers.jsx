@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { isCountrySuperAdmin } from "../roles.js";
+import { branchStatesForCountry } from "../branchRegions.js";
 
 export function UnitMembers({ units }) {
   const toast = useToast();
@@ -11,7 +13,7 @@ export function UnitMembers({ units }) {
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ search: "", unit_id: "", sub_unit: "" });
+  const [filters, setFilters] = useState({ search: "", unit_id: "", sub_unit: "", filter_branch_state: "" });
 
   const subUnitChoices = useMemo(() => {
     const u = (units?.data || []).find((x) => Number(x.id) === Number(admin?.service_unit_id));
@@ -28,8 +30,10 @@ export function UnitMembers({ units }) {
           per_page: 25,
           viewer: admin,
           unit_id: isLeader ? admin?.service_unit_id : filters.unit_id,
+          filter_branch_state: isCountryAdmin ? filters.filter_branch_state : "",
         };
         if (isServiceUnitLeader && filters.sub_unit) body.sub_unit = filters.sub_unit;
+        if (isCountryAdmin && filters.sub_unit) body.sub_unit = filters.sub_unit;
         const res = await api.members(body);
         setRows(res.data || []);
         setPag(res.pagination || { page: 1, pages: 1, total: 0 });
@@ -50,10 +54,38 @@ export function UnitMembers({ units }) {
     <div className="sa-card">
       <div className="sa-filters">
         <input className="sa-input" placeholder="Search member name/email/phone" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
+        {isCountryAdmin && (
+          <select
+            className="sa-select"
+            value={filters.filter_branch_state}
+            onChange={(e) => setFilters((f) => ({ ...f, filter_branch_state: e.target.value }))}
+          >
+            <option value="">All states / regions</option>
+            {branchStatesForCountry(admin?.branch_country).map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
         {!isLeader && (
-          <select className="sa-select" value={filters.unit_id} onChange={(e) => setFilters((f) => ({ ...f, unit_id: e.target.value }))}>
+          <select
+            className="sa-select"
+            value={filters.unit_id}
+            onChange={(e) => setFilters((f) => ({ ...f, unit_id: e.target.value, sub_unit: "" }))}
+          >
             <option value="">All Units</option>
             {(units?.data || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
+        {(isCountryAdmin || isServiceUnitLeader) && filters.unit_id && (
+          <select className="sa-select" value={filters.sub_unit} onChange={(e) => setFilters((f) => ({ ...f, sub_unit: e.target.value }))}>
+            <option value="">All sub-units</option>
+            {((units?.data || []).find((u) => Number(u.id) === Number(filters.unit_id))?.sub_units || []).map((s) => (
+              <option key={s.id} value={s.name}>
+                {s.name}
+              </option>
+            ))}
           </select>
         )}
         {isServiceUnitLeader && (

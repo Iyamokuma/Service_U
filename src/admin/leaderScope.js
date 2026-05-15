@@ -1,3 +1,5 @@
+import { branchCountryLabel } from "./branchRegions.js";
+
 /** Human-readable service unit / sub-unit scope for leader dashboards (uses API-shaped admin). */
 export function leaderScopeLabel(admin) {
   if (!admin?.role) return "";
@@ -5,6 +7,10 @@ export function leaderScopeLabel(admin) {
   const s = String(admin.sub_unit_name || "").trim();
   const sat = String(admin.satellite_site || "").trim();
   if (admin.role === "data_entry_admin") return "All branches (data entry)";
+  if (admin.role === "country_super_admin") {
+    const cc = String(admin.branch_country || "").trim();
+    return cc ? branchCountryLabel(cc) : "Country";
+  }
   if (admin.role === "satellite_church_admin") {
     const cc = String(admin.branch_country || "").trim();
     const st = String(admin.branch_state || "").trim();
@@ -12,7 +18,17 @@ export function leaderScopeLabel(admin) {
     if (geo && sat) return `${geo} · ${sat}`;
     return geo || sat || "";
   }
-  if (admin.role === "service_unit_leader") return u;
+  if (admin.role === "service_unit_leader") {
+    const cc = String(admin.branch_country || "").trim();
+    const st = String(admin.branch_state || "").trim();
+    const sat = String(admin.satellite_site || "").trim();
+    const geo = [cc, st].filter(Boolean).join(" · ");
+    if (u && (geo || sat)) {
+      const branch = sat ? `${geo} · ${sat}` : geo;
+      return branch ? `${u} · ${branch}` : u;
+    }
+    return u || "Service unit";
+  }
   if (admin.role === "sub_unit_leader") {
     if (u && s) return `${u} · ${s}`;
     return u || s || "";

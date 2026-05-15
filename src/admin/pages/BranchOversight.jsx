@@ -2,25 +2,30 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { branchStatesForCountry, branchStateLabel } from "../branchRegions.js";
-import { isSupervisoryBranchRole } from "../roles.js";
+import { Modal } from "../components/Modal.jsx";
+import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
+import { branchCountryLabel, branchStatesForCountry, branchStateLabel } from "../branchRegions.js";
+import { isCountrySuperAdmin, isSupervisoryBranchRole } from "../roles.js";
+import { leaderScopeLabel } from "../leaderScope.js";
 import { RegistrationDetails, fmtDate, fullName } from "./Queue.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
 
 /**
- * Country / State supervisory roles: one screen with filters (no separate queue/members tabs).
- * View-only for application status — leaders perform status changes.
+ * Country / State supervisory: filter registrations in branch scope.
+ * Country admins can action application status; state admins are view-only.
  */
 export function BranchOversight({ units }) {
   const toast = useToast();
   const { admin } = useAdminAuth();
-  const isCountry = admin?.role === "country_super_admin";
+  const isCountry = isCountrySuperAdmin(admin?.role);
+  const canAction = isCountry;
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
+  const [statusModal, setStatusModal] = useState(null);
   const [filters, setFilters] = useState({
     search: "",
     unit_id: "",
@@ -76,12 +81,58 @@ export function BranchOversight({ units }) {
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
 
+  async function saveRowStatus(id, newStatus, notes, originalStatus) {
+    if (needsAcceptVerification(originalStatus, newStatus)) {
+      const row = rows.find((r) => r.id === id) || { id, status: originalStatus };
+      setStatusModal(null);
+      setAcceptVerifyModal({ ...row, _pendingNotes: notes });
+      return;
+    }
+    try {
+      await api.updateStatus(id, { status: newStatus, notes, viewer: admin });
+      toast("Status updated.", "success");
+      setStatusModal(null);
+      load(pag.page);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function doAcceptWithVerify(id, notes, verify) {
+    try {
+      await api.updateStatus(id, {
+        status: "accepted",
+        notes: notes || "",
+        viewer: admin,
+        ...(verify || {}),
+      });
+      toast("Application moved to accepted.", "success");
+      setAcceptVerifyModal(null);
+      load(pag.page);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
   if (!admin) return null;
+
+  const scopeLabel = leaderScopeLabel(admin);
 
   return (
     <>
       <p className="sa-text-muted sa-text-sm" style={{ marginBottom: 16, maxWidth: 720 }}>
-        Supervisory view: filter by branch, unit, and sub-unit. Application status changes are done by service unit leaders.
+        {isCountry ? (
+          <>
+            <strong>Country scope{scopeLabel ? ` · ${scopeLabel}` : ""}</strong>
+            {" — "}
+            Filter and update applications across {branchCountryLabel(admin.branch_country) || "your country"}.
+            Service units and sub-units are managed by Super / General Admin only.
+          </>
+        ) : (
+          <>
+            Supervisory view: filter by branch, unit, and sub-unit. Application status changes are done by service unit leaders.
+          </>
+        )}
       </p>
 
       {stats?.totals && (
@@ -234,7 +285,7 @@ export function BranchOversight({ units }) {
                   <th>Unit</th>
                   <th>Status</th>
                   <th>Submitted</th>
-                  <th />
+                  <th>{canAction ? "Actions" : ""}</th>
                 </tr>
               </thead>
               <tbody>
@@ -256,9 +307,27 @@ export function BranchOversight({ units }) {
                       </td>
                       <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
                       <td>
-                        <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
-                          {expanded === r.id ? "▲ Hide" : "▼ Details"}
-                        </button>
+                        <div className="sa-table-actions">
+                          <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                            {expanded === r.id ? "▲ Hide" : "▼ Details"}
+                          </button>
+                          {canAction && (
+                            <button
+                              type="button"
+                              className="sa-btn sa-btn-outline sa-btn-sm"
+                              onClick={() =>
+                                setStatusModal({
+                                  id: r.id,
+                                  status: r.status,
+                                  notes: r.notes || "",
+                                  originalStatus: r.status,
+                                })
+                              }
+                            >
+                              Update status
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                     {expanded === r.id && (
@@ -289,6 +358,66 @@ export function BranchOversight({ units }) {
           </div>
         )}
       </div>
+
+      <Modal
+        open={!!statusModal}
+        onClose={() => setStatusModal(null)}
+        title="Update application status"
+        size="sm"
+        footer={
+          <>
+            <button type="button" className="sa-btn sa-btn-outline" onClick={() => setStatusModal(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="sa-btn sa-btn-primary"
+              onClick={() => statusModal && updateRowStatus(statusModal.id, statusModal.status, statusModal.notes)}
+            >
+              Save
+            </button>
+          </>
+        }
+      >
+        {statusModal ? (
+          <>
+            <div className="sa-field">
+              <label className="sa-label">Status</label>
+              <select
+                className="sa-field-select"
+                value={statusModal.status}
+                onChange={(e) => setStatusModal((m) => ({ ...m, status: e.target.value }))}
+              >
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s === "in_progress" ? "In review" : s.replace("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">Notes (optional)</label>
+              <textarea
+                className="sa-textarea"
+                value={statusModal.notes}
+                onChange={(e) => setStatusModal((m) => ({ ...m, notes: e.target.value }))}
+                placeholder="Internal notes…"
+              />
+            </div>
+          </>
+        ) : null}
+      </Modal>
+
+      <AcceptVerifyModal
+        open={!!acceptVerifyModal}
+        candidateName={acceptVerifyModal ? fullName(acceptVerifyModal) : ""}
+        onClose={() => setAcceptVerifyModal(null)}
+        onConfirm={(verify) =>
+          acceptVerifyModal
+            ? doAcceptWithVerify(acceptVerifyModal.id, acceptVerifyModal._pendingNotes || "", verify)
+            : Promise.resolve()
+        }
+      />
     </>
   );
 }

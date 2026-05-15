@@ -42,7 +42,7 @@ const NAV_LEADER = [
       { id: "queue", label: "Intake Queue", icon: <ListIcon /> },
       { id: "members", label: "Members List", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
-      { id: "admins", label: "Team", icon: <UsersIcon /> },
+      { id: "admins", label: "Sub-Unit Admins", icon: <UsersIcon /> },
       { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
@@ -63,13 +63,26 @@ const NAV_SUB_UNIT = [
 ];
 
 /** Country / State supervisory: one data screen with filters (not separate queue/members nav). */
-const NAV_BRANCH_SUPERVISORY = [
+const NAV_COUNTRY_ADMIN = [
+  {
+    section: "Country",
+    items: [
+      { id: "overview", label: "Country analytics", icon: <GridIcon /> },
+      { id: "oversight", label: "Application queue", icon: <ListIcon /> },
+      { id: "members", label: "Unit members", icon: <UsersIcon /> },
+      { id: "admins", label: "Admin accounts", icon: <UsersIcon /> },
+      { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
+      { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
+      { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
+    ],
+  },
+];
+
+const NAV_STATE_SUPERVISORY = [
   {
     section: "Branch oversight",
     items: [
-      { id: "overview", label: "Country Analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Registrations & filters", icon: <ListIcon /> },
-      { id: "admins", label: "Admin Requests", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
@@ -136,9 +149,11 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
         ? NAV_SUB_UNIT
         : admin?.role === "service_unit_leader"
           ? NAV_LEADER
-          : admin?.role === "country_super_admin" || admin?.role === "state_super_admin"
-            ? NAV_BRANCH_SUPERVISORY
-            : NAV_LEADER;
+          : admin?.role === "country_super_admin"
+            ? NAV_COUNTRY_ADMIN
+            : admin?.role === "state_super_admin"
+              ? NAV_STATE_SUPERVISORY
+              : NAV_LEADER;
 
   return (
     <aside className="sa-sidebar">
