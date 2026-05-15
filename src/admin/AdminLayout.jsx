@@ -19,7 +19,7 @@ import { NotificationBell } from "./components/NotificationBell.jsx";
 import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
-import { isGlobalAdminRole, canEditBranchCatalog } from "./roles.js";
+import { isGlobalAdminRole, canEditBranchCatalog, isServiceUnitLeader } from "./roles.js";
 
 const PAGE_TITLES = {
   overview: "Overview",
@@ -65,7 +65,9 @@ export function AdminLayout() {
     if (!admin) return;
     if (admin.role === "country_super_admin") {
       setPage((p) =>
-        ["overview", "oversight", "admins", "announcements", "profile"].includes(p) ? p : "overview",
+        ["overview", "oversight", "members", "admins", "activity", "announcements", "profile"].includes(p)
+          ? p
+          : "overview",
       );
     } else if (admin.role === "state_super_admin") {
       setPage((p) => (["oversight", "announcements", "profile"].includes(p) ? p : "oversight"));
@@ -99,6 +101,12 @@ export function AdminLayout() {
         ].includes(p)
           ? p
           : "role-dashboard",
+      );
+    } else if (isServiceUnitLeader(admin.role)) {
+      setPage((p) =>
+        ["overview", "queue", "members", "admins", "announcements", "activity", "profile"].includes(p)
+          ? p
+          : "overview",
       );
     }
   }, [admin?.id, admin?.role]);

@@ -11,13 +11,23 @@ import {
   branchStatesForCountry,
   coerceStateForCountry,
 } from "../branchRegions.js";
-import { isRootSuperAdmin, isGlobalAdminRole } from "../roles.js";
+import {
+  isRootSuperAdmin,
+  isGlobalAdminRole,
+  isServiceUnitLeader,
+  isCountrySuperAdmin,
+  canCountryAdminManageRole,
+} from "../roles.js";
 
 const ROLES = [
   { value: "general_admin", label: "General Admin", desc: "Full global access except creating Super Admin accounts." },
   { value: "data_entry_admin", label: "Data Entry Admin", desc: "Global registration intake and updates; custom home dashboard; no platform settings." },
   { value: "super_admin", label: "Super Admin", desc: "Platform owner — full access including Super Admin accounts." },
-  { value: "country_super_admin", label: "Country Admin", desc: "Supervisory: one country, filters only, mostly view-only on intake." },
+  {
+    value: "country_super_admin",
+    label: "Country Admin",
+    desc: "Scoped to one country: view, filter, and action applications, members, admins, and audit within that country.",
+  },
   { value: "state_super_admin", label: "State Branch Admin", desc: "Supervisory: one state / satellites, filters only, mostly view-only on intake." },
   { value: "satellite_church_admin", label: "Satellite Pastor Admin", desc: "Pastoral oversight for one satellite: team leaders, unit requests, announcements, registrations in branch scope." },
   { value: "service_unit_leader", label: "Service Unit Leader", desc: "Can manage assigned service unit." },
@@ -91,7 +101,7 @@ export function AdminUsers({ data, units, reload }) {
   const isRootSuper = isRootSuperAdmin(me?.role);
   const isGlobalAdmin = isGlobalAdminRole(me?.role);
   const isCountryAdmin = me?.role === "country_super_admin";
-  const isServiceLeader = me?.role === "service_unit_leader";
+  const isServiceLeader = isServiceUnitLeader(me?.role);
   const isSatellitePastor = me?.role === "satellite_church_admin";
   const [showInactive, setShowInactive] = useState(false);
   const scopedAdmins = (data?.data ?? []).filter((a) => {
@@ -133,31 +143,6 @@ export function AdminUsers({ data, units, reload }) {
   async function save(form) {
     setSaving(true);
     try {
-      if (isCountryAdmin && !form.id) {
-        const requestedRole = form.role === "satellite_church_admin" ? "Satellite Church Admin" : "State Branch Admin";
-        const lines = [
-          `Admin creation request from Country Admin (${me.full_name}).`,
-          `Requested role: ${requestedRole}`,
-          `Full name: ${form.full_name || "—"}`,
-          `Username: ${form.username || "—"}`,
-          `Email: ${form.email || "—"}`,
-          `Country: ${form.branch_country || "—"}`,
-          `State: ${form.branch_state || "—"}`,
-          `Satellite/Assembly: ${form.satellite_site || "—"}`,
-          "",
-          "Please review and create this admin account if approved.",
-        ];
-        await api.createRequest({
-          from_admin_id: me.id,
-          from_name: me.full_name,
-          from_role: me.role,
-          message: lines.join("\n"),
-        });
-        toast("Request sent to Super Admin for review.", "success");
-        setModal(null);
-        reload();
-        return;
-      }
       const payload = { ...form, viewer: me };
       if (form.id) await api.updateAdmin(form.id, payload);
       else await api.createAdmin(payload);
@@ -196,11 +181,15 @@ export function AdminUsers({ data, units, reload }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontSize: 16, fontWeight: 700 }}>{isSatellitePastor ? "Team leaders" : "Admin Accounts"}</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 700 }}>
+            {isSatellitePastor ? "Team leaders" : isCountryAdmin ? "Country admin accounts" : "Admin Accounts"}
+          </h2>
           <p className="sa-text-muted sa-text-sm">
-            {isSatellitePastor
-              ? `${admins.length} leader account${admins.length !== 1 ? "s" : ""} under your satellite.`
-              : `${admins.length} visible / ${scopedAdmins.length} total administrator${scopedAdmins.length !== 1 ? "s" : ""}`}
+            {isCountryAdmin
+              ? `${admins.length} administrator${admins.length !== 1 ? "s" : ""} in ${branchCountryLabel(me?.branch_country) || "your country"}. Manage branch, state, service unit, and sub-unit admins. Service units and sub-units are created by Super / General Admin only.`
+              : isSatellitePastor
+                ? `${admins.length} leader account${admins.length !== 1 ? "s" : ""} under your satellite.`
+                : `${admins.length} visible / ${scopedAdmins.length} total administrator${scopedAdmins.length !== 1 ? "s" : ""}`}
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -239,9 +228,11 @@ export function AdminUsers({ data, units, reload }) {
             >
               {isCountryAdmin
                 ? "+ Request Branch/State Admin"
-                : isSatellitePastor
-                  ? "+ New team leader"
-                  : "+ New Admin"}
+                : isServiceLeader
+                  ? "+ New sub-unit admin"
+                  : isSatellitePastor
+                    ? "+ New team leader"
+                    : "+ New Admin"}
             </button>
           )}
         </div>
@@ -285,18 +276,23 @@ export function AdminUsers({ data, units, reload }) {
                     <td className="sa-text-muted">{fmtDate(a.last_login)}</td>
                     <td>
                       <div className="sa-table-actions">
-                        {!(a.role === "super_admin" && !isRootSuper) && !isCountryAdmin && (
+                        {!(a.role === "super_admin" && !isRootSuper) &&
+                          (!isCountryAdmin || canCountryAdminManageRole(a.role)) && (
                           <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
                             Edit
                           </button>
                         )}
-                        {a.id !== +me.id && !(a.role === "super_admin" && !isRootSuper) && !isCountryAdmin && (
+                        {a.id !== +me.id &&
+                          !(a.role === "super_admin" && !isRootSuper) &&
+                          (!isCountryAdmin || canCountryAdminManageRole(a.role)) && (
                           <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
                             {a.is_active ? "Deactivate" : "Activate"}
                           </button>
                         )}
                         {((isGlobalAdmin && a.id !== +me.id && (isRootSuper || a.role !== "super_admin")) ||
-                          (isSatellitePastor && a.id !== +me.id)) && (
+                          (isSatellitePastor && a.id !== +me.id) ||
+                          (isServiceLeader && a.id !== +me.id && a.role === "sub_unit_leader") ||
+                          (isCountryAdmin && a.id !== +me.id && canCountryAdminManageRole(a.role))) && (
                           <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
                             Delete
                           </button>
@@ -327,9 +323,9 @@ export function AdminUsers({ data, units, reload }) {
 function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
   const isRootSuper = isRootSuperAdmin(me?.role);
   const isGlobalAdmin = isGlobalAdminRole(me?.role);
-  const isCountryAdmin = me?.role === "country_super_admin";
+  const isCountryAdmin = isCountrySuperAdmin(me?.role);
   const isSatellitePastor = me?.role === "satellite_church_admin";
-  const isServiceLeader = me?.role === "service_unit_leader";
+  const isServiceLeader = isServiceUnitLeader(me?.role);
   const isEdit = !!data?.id;
   const emptyForm = useCallback(
     () => ({
@@ -338,7 +334,7 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
       email: "",
       password: "",
       role: isCountryAdmin
-        ? "state_super_admin"
+        ? "satellite_church_admin"
         : isServiceLeader
           ? "sub_unit_leader"
           : isSatellitePastor
@@ -415,10 +411,14 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
       open={open} onClose={onClose}
       title={
         isEdit
-          ? "Edit Admin Account"
-          : isSatellitePastor
-            ? "Create team leader"
-            : "Create Admin Account"
+          ? isServiceLeader
+            ? "Edit sub-unit admin"
+            : "Edit Admin Account"
+          : isServiceLeader
+            ? "Create sub-unit admin"
+            : isSatellitePastor
+              ? "Create team leader"
+              : "Create Admin Account"
       }
       size="md"
       footer={<>
@@ -452,6 +452,7 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
           <select
             className="sa-field-select"
             value={form.role}
+            disabled={isServiceLeader}
             onChange={(e) => {
               const role = e.target.value;
               const branchRoles = ["country_super_admin", "state_super_admin", "satellite_church_admin"];
@@ -475,7 +476,11 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
                   return true;
                 })
               : isCountryAdmin
-                ? ROLES.filter((r) => ["state_super_admin", "satellite_church_admin"].includes(r.value))
+                ? ROLES.filter((r) =>
+                    ["satellite_church_admin", "state_super_admin", "service_unit_leader", "sub_unit_leader"].includes(
+                      r.value,
+                    ),
+                  )
                 : isSatellitePastor
                   ? ROLES.filter((r) => ["service_unit_leader", "sub_unit_leader"].includes(r.value))
                   : ROLES.filter((r) => r.value === "sub_unit_leader")

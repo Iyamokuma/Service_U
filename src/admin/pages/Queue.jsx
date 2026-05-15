@@ -3,11 +3,20 @@ import { MONTHS as MONTHS_LONG } from "../../data.js";
 import { api } from "../api.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { Modal } from "../components/Modal.jsx";
+import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { isServiceUnitLeader } from "../roles.js";
+import { leaderScopeLabel } from "../leaderScope.js";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
 const SUB_UNIT_STATUS_TABS = ["all", "active", "inprogress", "rejected", "accepted", "archived", "overdue"];
+
+function queueStatusTabLabel(tab) {
+  if (tab === "inprogress") return "In review";
+  if (tab === "all") return "All";
+  return tab[0].toUpperCase() + tab.slice(1);
+}
 
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -104,9 +113,10 @@ export function RegistrationDetails({ r }) {
 export function Queue({ units }) {
   const toast = useToast();
   const { admin } = useAdminAuth();
-  const isServiceLeader = admin?.role === "service_unit_leader";
+  const isServiceLeader = isServiceUnitLeader(admin?.role);
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
   const isLeader = isServiceLeader || isSubUnitLeader;
+  const leaderScope = leaderScopeLabel(admin);
   const [rows, setRows] = useState([]);
   const [overdue, setOverdue] = useState([]);
   const [pag, setPag] = useState({ page: 1, per_page: 25, total: 0, pages: 1 });
@@ -191,15 +201,15 @@ export function Queue({ units }) {
 
   useEffect(() => {
     clearTimeout(debounce.current);
-    if (isSubUnitLeader && subUnitStatusTab === "overdue") return;
+    if ((isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue") return;
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
   }, [filters, subUnitTab, subUnitStatusTab, load, mergedQueueParams, isServiceLeader, isSubUnitLeader]);
 
   useEffect(() => {
-    const isSubUnitOverdue = isSubUnitLeader && subUnitStatusTab === "overdue";
-    if (!isSubUnitOverdue) return;
+    const isOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
+    if (!isOverdueTab) return;
     setLoading(true);
     api.overdueAlerts(admin)
       .then((r) => setOverdue(r.data || []))
@@ -211,8 +221,8 @@ export function Queue({ units }) {
   const gotoPage = (p) => load(mergedQueueParams(p));
 
   async function refreshAfterQueueAction(page = 1) {
-    const isSubUnitOverdue = isSubUnitLeader && subUnitStatusTab === "overdue";
-    if (isSubUnitOverdue) {
+    const isOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
+    if (isOverdueTab) {
       setLoading(true);
       try {
         const r = await api.overdueAlerts(admin);
@@ -275,7 +285,7 @@ export function Queue({ units }) {
       setAcceptVerifyModal(row);
       return;
     }
-    doAcceptWithVerify(row.id, "", null);
+    toast("Move the application to In review before accepting.", "error");
   }
 
   const unitOpts = units?.data ?? [];
@@ -290,6 +300,7 @@ export function Queue({ units }) {
   };
 
   const leaderActionDisabled = (row, target) => {
+    if (isServiceLeader && target === "archived") return true;
     if (row.status === "archived") return true;
     if (target === "archived") {
       return !["new", "in_progress", "accepted", "rejected"].includes(row.status);
@@ -302,14 +313,25 @@ export function Queue({ units }) {
     ? ["all", ...new Set(leaderSubUnitLabels)]
     : [];
   const showIntakeFilters = true;
-  const onOverdueTab =
-    isSubUnitLeader && subUnitStatusTab === "overdue";
+  const onOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
   const showMainTable = !onOverdueTab;
   const overdueRows = onOverdueTab ? overdue : [];
 
   return (
     <>
       <div className="sa-card">
+        {isServiceLeader && (
+          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingBottom: 12 }}>
+            <p className="sa-text-sm" style={{ margin: 0 }}>
+              <strong>Service unit intake</strong>
+              {leaderScope ? ` · ${leaderScope}` : ""}
+            </p>
+            <p className="sa-text-muted sa-text-xs" style={{ margin: "6px 0 0" }}>
+              Combined queue across all sub-units. Move applications to In review, Accepted, or Rejected.
+              Sub-unit names are managed by Super / General Admin only.
+            </p>
+          </div>
+        )}
         {isServiceLeader && (
           <div className="sa-card-body sa-unit-tab-row">
             {svcLeaderSubTabs.map((sub) => (
@@ -325,7 +347,7 @@ export function Queue({ units }) {
             ))}
           </div>
         )}
-        {isSubUnitLeader && (
+        {(isServiceLeader || isSubUnitLeader) && (
           <div className="sa-card-body sa-unit-tab-row">
             {SUB_UNIT_STATUS_TABS.map((tab) => (
               <button
@@ -333,9 +355,9 @@ export function Queue({ units }) {
                 type="button"
                 className={`sa-unit-tab-btn ${subUnitStatusTab === tab ? "is-active" : ""}`}
                 onClick={() => setSubUnitStatusTab(tab)}
-                title={tab === "inprogress" ? "In progress" : tab[0].toUpperCase() + tab.slice(1)}
+                title={queueStatusTabLabel(tab)}
               >
-                {tab === "inprogress" ? "In progress" : tab[0].toUpperCase() + tab.slice(1)}
+                {queueStatusTabLabel(tab)}
               </button>
             ))}
           </div>
@@ -343,13 +365,15 @@ export function Queue({ units }) {
         {onOverdueTab && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
             <span className="sa-text-muted sa-text-sm">
-              Your sub-unit · older than the overdue threshold in Settings
+              {isServiceLeader
+                ? "Your service unit · older than the overdue threshold in Settings"
+                : "Your sub-unit · older than the overdue threshold in Settings"}
             </span>
           </div>
         )}
         {showIntakeFilters && (
           <div className="sa-filters">
-            {!isLeader && (
+            {(!isLeader || isServiceLeader) && (
               <div className="sa-search" style={{ minWidth: 240 }}>
                 <span className="sa-search-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                 <input placeholder="Search name, email, phone…" value={filters.search} onChange={setFilter("search")} />
@@ -404,7 +428,7 @@ export function Queue({ units }) {
               Clear
             </button>
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
-              {isSubUnitLeader && subUnitStatusTab === "overdue"
+              {onOverdueTab
                 ? `${overdueRows.length} overdue`
                 : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
             </span>
@@ -435,7 +459,9 @@ export function Queue({ units }) {
                             <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => requestLeaderAccept(r)}>Accept</button>
                             <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
                             <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
-                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
+                            {!isServiceLeader && (
+                              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -472,7 +498,9 @@ export function Queue({ units }) {
                               <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => requestLeaderAccept(r)}>Accept</button>
                               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
                               <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
+                              {!isServiceLeader && (
                               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
+                            )}
                             </>
                           ) : (
                             <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "", row: r })}>Update</button>
@@ -498,7 +526,7 @@ export function Queue({ units }) {
       <StatusModal open={!!statusModal} data={statusModal} onClose={() => setStatusModal(null)} onSave={updateStatus} allowedStatus={allowedStatus} />
       <AcceptVerifyModal
         open={!!acceptVerifyModal}
-        row={acceptVerifyModal}
+        candidateName={acceptVerifyModal ? fullName(acceptVerifyModal) : ""}
         onClose={() => setAcceptVerifyModal(null)}
         onConfirm={(verify) =>
           acceptVerifyModal
@@ -510,108 +538,6 @@ export function Queue({ units }) {
   );
 }
 
-function AcceptVerifyModal({ open, row, onClose, onConfirm }) {
-  const [foundation, setFoundation] = useState(false);
-  const [baptism, setBaptism] = useState(false);
-  const [called, setCalled] = useState(false);
-  const [meet, setMeet] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setFoundation(false);
-      setBaptism(false);
-      setCalled(false);
-      setMeet(false);
-    }
-  }, [open, row?.id]);
-
-  async function submit() {
-    setSaving(true);
-    try {
-      await onConfirm({
-        verify_foundation_class: foundation,
-        verify_water_baptism: baptism,
-        verify_called_candidate: called,
-        verify_physical_meeting: meet,
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Both admin-action checkboxes must be ticked before moving.
-  const canMove = called && meet;
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Confirm candidate's criteria"
-      size="sm"
-      footer={
-        <>
-          <button type="button" className="sa-btn sa-btn-outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          <button type="button" className="sa-btn sa-btn-primary" onClick={submit} disabled={!canMove || saving}>
-            {saving ? "Moving…" : "Move"}
-          </button>
-        </>
-      }
-    >
-      {row ? (
-        <div className="sa-stack" style={{ gap: 20 }}>
-          {/* ── Section 1: Candidate's criteria (optional) ──────── */}
-          <div>
-            <p className="sa-verify-section-title">Has the candidate done these?</p>
-            <p className="sa-text-xs sa-text-muted" style={{ marginTop: 2, marginBottom: 10 }}>
-              These are optional — tick what applies for <strong>{fullName(row)}</strong>.
-            </p>
-            <div className="sa-stack" style={{ gap: 10 }}>
-              <label className="sa-check-row">
-                <input type="checkbox" checked={foundation} onChange={(e) => setFoundation(e.target.checked)} />
-                <span>Foundation Class</span>
-                <span className="sa-badge-optional">optional</span>
-              </label>
-              <label className="sa-check-row">
-                <input type="checkbox" checked={baptism} onChange={(e) => setBaptism(e.target.checked)} />
-                <span>Water Baptism</span>
-                <span className="sa-badge-optional">optional</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="sa-verify-divider" />
-
-          {/* ── Section 2: What the admin has done (required) ───── */}
-          <div>
-            <p className="sa-verify-section-title">Which of these have you done?</p>
-            <p className="sa-text-xs sa-text-muted" style={{ marginTop: 2, marginBottom: 10 }}>
-              Both are required before you can move this application.
-            </p>
-            <div className="sa-stack" style={{ gap: 10 }}>
-              <label className="sa-check-row">
-                <input type="checkbox" checked={called} onChange={(e) => setCalled(e.target.checked)} />
-                <span>Called the Candidate</span>
-              </label>
-              <label className="sa-check-row">
-                <input type="checkbox" checked={meet} onChange={(e) => setMeet(e.target.checked)} />
-                <span>Invited for a physical meeting in church</span>
-              </label>
-            </div>
-          </div>
-
-          {!canMove && (
-            <p className="sa-text-xs sa-text-muted" style={{ color: "var(--sa-warning, #d97706)", margin: 0 }}>
-              You must confirm both actions above to proceed.
-            </p>
-          )}
-        </div>
-      ) : null}
-    </Modal>
-  );
-}
 
 function StatusModal({ open, data, onClose, onSave, allowedStatus }) {
   const [status, setStatus] = useState("");

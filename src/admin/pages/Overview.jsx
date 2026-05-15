@@ -529,7 +529,18 @@ export function Overview({ units, setPage }) {
         <StatCard label="Total Registrations" value={totals.registrations} icon={<PeopleIcon />} iconClass="indigo" trend={`+${totals.this_week} this week`} />
         <StatCard label="Pending Review" value={totals.pending} icon={<ClockIcon />} iconClass="amber" />
         <StatCard label="Approved" value={totals.approved} icon={<CheckIcon />} iconClass="green" />
-        <StatCard label="Active Units" value={totals.active_units} icon={<LayerIcon />} iconClass="blue" />
+        {!isServiceLeader && (
+          <StatCard label="Active Units" value={totals.active_units} icon={<LayerIcon />} iconClass="blue" />
+        )}
+        {isServiceLeader && (
+          <StatCard
+            label="In review"
+            value={totals.in_progress_count ?? totals.waitlisted}
+            icon={<ClockIcon />}
+            iconClass="amber"
+            sub="Across all sub-units"
+          />
+        )}
       </div>
 
       {isSubUnitLeader && (
