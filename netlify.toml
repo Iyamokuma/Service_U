@@ -1,3 +1,8 @@
+# Netlify deploy: connect this repo (branch main). Set in Site → Environment variables:
+#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+# Optional: VITE_SUPABASE_FORM_SUBMIT_FN (default submit-registration)
+# DB + Edge Functions run on Supabase (supabase db push + functions deploy), not Netlify.
+
 [build]
   command = "npm run build"
   publish = "dist"
