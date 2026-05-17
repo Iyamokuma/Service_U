@@ -67,6 +67,75 @@ async function assertAdminEmailAvailable(
   if (taken) throw new Error("That email is already used by another admin account.");
 }
 
+const ROLES_REQUIRING_COUNTRY = new Set([
+  "country_super_admin",
+  "state_super_admin",
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+]);
+
+const ROLES_REQUIRING_STATE = new Set([
+  "state_super_admin",
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+]);
+
+function assertAdminLocationFields(role: string, branchCountry: string, branchState: string): void {
+  if (ROLES_REQUIRING_COUNTRY.has(role) && !branchCountry) {
+    throw new Error("Country is required for this admin role.");
+  }
+  if (ROLES_REQUIRING_STATE.has(role) && !branchState) {
+    throw new Error("State / region is required for this admin role.");
+  }
+  if (branchCountry && branchState) {
+    assertStateBelongsToCountry(branchCountry, branchState);
+  }
+}
+
+async function assertUniqueCountryAdmin(
+  supabase: SupabaseClient,
+  branchCountry: string,
+  excludeId?: number,
+): Promise<void> {
+  const cc = normUp(branchCountry);
+  if (!cc) return;
+  const { data, error } = await supabase.from("admins").select("id,full_name").eq("role", "country_super_admin").eq(
+    "branch_country",
+    cc,
+  ).eq("is_active", 1);
+  if (error) throw new Error(error.message);
+  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  if (taken) {
+    throw new Error(
+      `This country already has an active Country Admin (${(taken as { full_name?: string }).full_name || "existing account"}). Deactivate that account first or choose another country.`,
+    );
+  }
+}
+
+async function assertUniqueStateAdmin(
+  supabase: SupabaseClient,
+  branchCountry: string,
+  branchState: string,
+  excludeId?: number,
+): Promise<void> {
+  const cc = normUp(branchCountry);
+  const st = normUp(branchState);
+  if (!cc || !st) return;
+  const { data, error } = await supabase.from("admins").select("id,full_name").eq("role", "state_super_admin").eq(
+    "branch_country",
+    cc,
+  ).eq("branch_state", st).eq("is_active", 1);
+  if (error) throw new Error(error.message);
+  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  if (taken) {
+    throw new Error(
+      `This state already has an active State Branch Admin (${(taken as { full_name?: string }).full_name || "existing account"}). Deactivate that account first or choose another state.`,
+    );
+  }
+}
+
 function throwAdminPersistError(error: { message?: string }): never {
   const msg = String(error?.message || "");
   if (msg.includes("idx_admins_username_lower")) {
@@ -755,6 +824,16 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
     is_active: body.is_active !== undefined ? Number(body.is_active) : target.is_active,
   };
   if (body.password) patch.password = String(body.password);
+  const finalRole = norm(patch.role);
+  const finalCountry = normUp(patch.branch_country);
+  const finalState = normUp(patch.branch_state);
+  assertAdminLocationFields(finalRole, finalCountry, finalState);
+  if (finalRole === "country_super_admin") {
+    await assertUniqueCountryAdmin(supabase, finalCountry, targetId);
+  }
+  if (finalRole === "state_super_admin") {
+    await assertUniqueStateAdmin(supabase, finalCountry, finalState, targetId);
+  }
   const { error } = await supabase.from("admins").update(patch).eq("id", targetId);
   if (error) throw new Error(error.message);
   await logActivity(supabase, admin, "admin.update", "admin", String(targetId), "Updated admin", ip);

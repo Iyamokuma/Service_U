@@ -106,6 +106,67 @@ function shouldAutoFillCountryAdminUsername(username) {
   return !u || u === "country.admin" || /^[a-z]{2}\.country\.admin$/.test(u);
 }
 
+const ROLES_WITH_COUNTRY = [
+  "country_super_admin",
+  "state_super_admin",
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
+
+const ROLES_WITH_STATE = [
+  "state_super_admin",
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
+
+function occupiedCountryCodes(admins, excludeId) {
+  const set = new Set();
+  for (const a of admins || []) {
+    if (Number(a.is_active) !== 1) continue;
+    if (excludeId != null && Number(a.id) === Number(excludeId)) continue;
+    if (a.role === "country_super_admin" && a.branch_country) {
+      set.add(String(a.branch_country).toUpperCase());
+    }
+  }
+  return set;
+}
+
+function occupiedStateCodes(admins, countryCode, excludeId) {
+  const cc = String(countryCode || "").toUpperCase();
+  const set = new Set();
+  for (const a of admins || []) {
+    if (Number(a.is_active) !== 1) continue;
+    if (excludeId != null && Number(a.id) === Number(excludeId)) continue;
+    if (
+      a.role === "state_super_admin" &&
+      String(a.branch_country || "").toUpperCase() === cc &&
+      a.branch_state
+    ) {
+      set.add(String(a.branch_state).toUpperCase());
+    }
+  }
+  return set;
+}
+
+function validateAdminForm(form) {
+  if (ROLES_WITH_COUNTRY.includes(form.role) && !String(form.branch_country || "").trim()) {
+    return "Country is required for this role.";
+  }
+  if (ROLES_WITH_STATE.includes(form.role) && !String(form.branch_state || "").trim()) {
+    return "State / region is required for this role.";
+  }
+  if (form.role === "service_unit_leader" && !form.service_unit_id) {
+    return "Service unit is required.";
+  }
+  if (form.role === "sub_unit_leader") {
+    if (!form.service_unit_id) return "Service unit is required.";
+    if (!form.sub_unit_name) return "Sub-unit is required.";
+  }
+  return "";
+}
+
 export function AdminUsers({ data, units, reload }) {
   const toast = useToast();
   const { admin: me } = useAdminAuth();
@@ -152,6 +213,11 @@ export function AdminUsers({ data, units, reload }) {
   const [saving, setSaving] = useState(false);
 
   async function save(form) {
+    const validationMsg = validateAdminForm(form);
+    if (validationMsg) {
+      toast(validationMsg, "error");
+      return;
+    }
     setSaving(true);
     try {
       const payload = { ...form, viewer: me };
@@ -322,6 +388,7 @@ export function AdminUsers({ data, units, reload }) {
         open={!!modal}
         data={modal}
         unitList={unitList}
+        existingAdmins={data?.data ?? []}
         onClose={() => setModal(null)}
         onSave={save}
         saving={saving}
@@ -417,6 +484,17 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const selectedUnit = unitList.find((u) => Number(u.id) === Number(form.service_unit_id));
 
+  const takenCountries = occupiedCountryCodes(existingAdmins, isEdit ? form.id : null);
+  const countryOptions = BRANCH_COUNTRIES.filter((c) => {
+    if (form.role !== "country_super_admin" || isEdit) return true;
+    return !takenCountries.has(String(c.code).toUpperCase());
+  });
+  const takenStates = occupiedStateCodes(existingAdmins, form.branch_country, isEdit ? form.id : null);
+  const stateOptions = branchStatesForCountry(form.branch_country).filter((s) => {
+    if (form.role !== "state_super_admin" || isEdit) return true;
+    return !takenStates.has(String(s.code).toUpperCase());
+  });
+
   return (
     <Modal
       open={open} onClose={onClose}
@@ -478,15 +556,19 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
             disabled={isServiceLeader}
             onChange={(e) => {
               const role = e.target.value;
-              const branchRoles = ["country_super_admin", "state_super_admin", "satellite_church_admin"];
+              const geoRoles = ROLES_WITH_COUNTRY;
               setForm((f) => {
                 const next = {
                   ...f,
                   role,
                   service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? f.service_unit_id : "",
                   sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
-                  branch_country: branchRoles.includes(role) ? f.branch_country : "",
-                  branch_state: ["state_super_admin", "satellite_church_admin"].includes(role) ? f.branch_state : "",
+                  branch_country: geoRoles.includes(role)
+                    ? f.branch_country
+                    : isCountryAdmin
+                      ? me?.branch_country || ""
+                      : "",
+                  branch_state: ROLES_WITH_STATE.includes(role) ? f.branch_state : "",
                   satellite_site: role === "satellite_church_admin" ? f.satellite_site : "",
                 };
                 if (
@@ -533,7 +615,7 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
         </div>
       </div>
 
-      {["country_super_admin", "state_super_admin", "satellite_church_admin"].includes(form.role) && (
+      {ROLES_WITH_COUNTRY.includes(form.role) && (
         <div className="sa-form-row">
           <div className="sa-field">
             <label className="sa-label">Country <span className="sa-required">*</span></label>
@@ -553,28 +635,37 @@ function AdminModal({ open, data, unitList, onClose, onSave, saving, me }) {
                   return next;
                 });
               }}
-              disabled={isCountryAdmin}
+              disabled={isCountryAdmin || (form.role === "country_super_admin" && isEdit)}
             >
               <option value="">Select country</option>
-              {BRANCH_COUNTRIES.map((c) => (
+              {(form.role === "country_super_admin" && !isEdit ? countryOptions : BRANCH_COUNTRIES).map((c) => (
                 <option key={c.code} value={c.code}>{c.name}</option>
               ))}
             </select>
+            {form.role === "country_super_admin" && !isEdit && countryOptions.length === 0 && (
+              <div className="sa-field-hint">Every country already has an active Country Admin.</div>
+            )}
           </div>
-          {["state_super_admin", "satellite_church_admin"].includes(form.role) && (
+          {ROLES_WITH_STATE.includes(form.role) && (
             <div className="sa-field">
               <label className="sa-label">State / region <span className="sa-required">*</span></label>
               <select
                 className="sa-field-select"
                 value={form.branch_state}
                 onChange={(e) => setForm((f) => ({ ...f, branch_state: e.target.value }))}
-                disabled={!form.branch_country}
+                disabled={!form.branch_country || (form.role === "state_super_admin" && isEdit)}
               >
                 <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
-                {branchStatesForCountry(form.branch_country).map((s) => (
+                {(form.role === "state_super_admin" && !isEdit
+                  ? stateOptions
+                  : branchStatesForCountry(form.branch_country)
+                ).map((s) => (
                   <option key={s.code} value={s.code}>{s.name}</option>
                 ))}
               </select>
+              {form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0 && (
+                <div className="sa-field-hint">Every state in this country already has an active State Branch Admin.</div>
+              )}
             </div>
           )}
         </div>
