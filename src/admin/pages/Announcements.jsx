@@ -1,44 +1,76 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { canPostAnnouncements, isGlobalAdminRole } from "../roles.js";
+import { AnnouncementCreateModal } from "../components/AnnouncementCreateModal.jsx";
 
-function scopeHint(role) {
-  switch (role) {
-    case "sub_unit_leader":
-      return "Posts are visible only to admins in your sub-unit.";
-    case "service_unit_leader":
-    case "data_entry_admin":
-      return "Posts are visible only to admins for your service unit (whole unit, all sub-units).";
-    case "country_super_admin":
-      return "Posts are visible to admins in your country (country and state / satellite roles).";
-    case "state_super_admin":
-      return "Posts are visible to admins in your state, including satellite churches there.";
-    case "satellite_church_admin":
-      return "Satellite Pastor: posts reach admins scoped to your satellite site (same site label on their account).";
-    case "super_admin":
-    case "general_admin":
-      return "Platform-wide posts (no country set) are visible to Super and General admins only. Use the API with a country code if you need a country-targeted post.";
-    default:
-      return null;
-  }
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "draft", label: "Draft" },
+  { id: "scheduled", label: "Scheduled" },
+  { id: "archived", label: "Archived" },
+];
+
+function formatMedium(r) {
+  const e = Number(r.medium_email) === 1;
+  const s = Number(r.medium_sms) === 1;
+  if (e && s) return "Email, SMS";
+  if (e) return "Email";
+  if (s) return "SMS";
+  return "—";
 }
 
-function formatScope(r, unitNames) {
+function formatDestination(r, unitNames) {
+  const type = r.destination_type || "admins";
+  const cfg = r.destination_config && typeof r.destination_config === "object" ? r.destination_config : {};
+
+  if (type === "members") {
+    const m = cfg;
+    const parts = [
+      branchCountryLabel(m.branch_country),
+      m.branch_state ? branchStateLabel(m.branch_country, m.branch_state) : "",
+      m.satellite_site || "",
+      m.service_unit_id ? unitNames[Number(m.service_unit_id)] || `Unit #${m.service_unit_id}` : "",
+      m.sub_unit || "",
+    ].filter(Boolean);
+    return `Members · ${parts.join(" · ") || "All"}`;
+  }
+
+  if (type === "leaders") {
+    const l = cfg;
+    const mode =
+      l.mode === "sub_unit"
+        ? "Sub-unit leaders"
+        : l.mode === "service_unit"
+          ? "Service unit leaders"
+          : "All leaders";
+    const unit = l.service_unit_id ? unitNames[Number(l.service_unit_id)] : "";
+    const sub = l.sub_unit || "";
+    return ["Leaders", mode, unit, sub].filter(Boolean).join(" · ");
+  }
+
+  if (type === "admins") {
+    const roles = Array.isArray(cfg.roles) ? cfg.roles.join(", ") : "Admins";
+    return `Admins · ${roles}`;
+  }
+
   const uid = r.scope_unit_id != null ? Number(r.scope_unit_id) : 0;
   if (uid > 0) {
     const un = unitNames[uid] || `Unit #${uid}`;
     return r.scope_sub_unit ? `${un} · ${r.scope_sub_unit}` : `${un} (whole unit)`;
   }
   const country = r.branch_country ? branchCountryLabel(r.branch_country) : "";
-  const st = r.scope_branch_state
-    ? branchStateLabel(r.branch_country, r.scope_branch_state)
-    : "";
+  const st = r.scope_branch_state ? branchStateLabel(r.branch_country, r.scope_branch_state) : "";
   const sat = (r.scope_satellite_site || "").trim();
-  if (!country && !st && !sat) return "Platform-wide";
+  if (!country && !st && !sat) return "In-app (legacy)";
   return [country, st, sat].filter(Boolean).join(" · ") || "—";
+}
+
+function fmtDateTime(str) {
+  if (!str) return "—";
+  return new Date(str).toLocaleString();
 }
 
 export function Announcements() {
@@ -46,11 +78,12 @@ export function Announcements() {
   const { admin } = useAdminAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [tab, setTab] = useState("general");
+  const [showCreate, setShowCreate] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [unitNames, setUnitNames] = useState({});
+  const [unitList, setUnitList] = useState([]);
   const canCreate = canPostAnnouncements(admin?.role);
-  const hint = scopeHint(admin?.role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,8 +105,10 @@ export function Announcements() {
     api
       .units()
       .then((res) => {
+        const list = res?.data || [];
+        setUnitList(list);
         const m = {};
-        (res?.data || []).forEach((u) => {
+        list.forEach((u) => {
           m[u.id] = u.name;
         });
         setUnitNames(m);
@@ -81,13 +116,46 @@ export function Announcements() {
       .catch(() => {});
   }, []);
 
-  async function createAnnouncement() {
-    if (!title.trim() || !body.trim()) return;
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      const st = r.workflow_status || "sent";
+      if (tab === "general") return st === "sent";
+      if (tab === "draft") return st === "draft";
+      if (tab === "scheduled") return st === "scheduled";
+      if (tab === "archived") return st === "archived";
+      return true;
+    });
+  }, [rows, tab]);
+
+  async function handleCreate(payload, validationError) {
+    if (validationError) {
+      toast(validationError, "error");
+      return;
+    }
+    setSaving(true);
     try {
-      await api.createAnnouncement({ title: title.trim(), body: body.trim() });
-      setTitle("");
-      setBody("");
-      toast("Announcement created.", "success");
+      await api.createAnnouncement(payload);
+      toast(
+        payload.workflow_action === "draft"
+          ? "Draft saved."
+          : payload.workflow_action === "schedule"
+            ? "Announcement scheduled."
+            : "Announcement sent.",
+        "success",
+      );
+      setShowCreate(false);
+      load();
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runAction(id, body, successMsg) {
+    try {
+      await api.updateAnnouncement(id, body);
+      toast(successMsg, "success");
       load();
     } catch (e) {
       toast(e.message, "error");
@@ -105,91 +173,134 @@ export function Announcements() {
     }
   }
 
-  function canDeleteRow(r) {
+  function canManageRow(r) {
     if (isGlobalAdminRole(admin?.role)) return true;
     return Number(r.created_by_admin_id) === Number(admin?.id);
   }
 
-  return (
-    <div className="sa-card">
-      {canCreate && (
-        <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)" }}>
-          {hint ? (
-            <p className="sa-text-sm sa-text-muted" style={{ marginBottom: 12 }}>
-              {hint}
-            </p>
-          ) : null}
-          <div className="sa-form-row">
-            <div className="sa-field">
-              <label className="sa-label">Title</label>
-              <input
-                className="sa-input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Announcement title"
-              />
-            </div>
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">Message</label>
-            <textarea
-              className="sa-textarea"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Announcement body"
-            />
-          </div>
-          <button className="sa-btn sa-btn-primary" style={{ width: "auto" }} onClick={createAnnouncement}>
-            Create announcement
+  function renderActions(r) {
+    if (!canManageRow(r)) return "—";
+    const st = r.workflow_status || "sent";
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {st === "draft" && (
+          <>
+            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" onClick={() => runAction(r.id, { action: "send" }, "Sent.")}>
+              Send
+            </button>
+            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => runAction(r.id, { action: "archive" }, "Archived.")}>
+              Archive
+            </button>
+          </>
+        )}
+        {st === "scheduled" && (
+          <>
+            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" onClick={() => runAction(r.id, { action: "send" }, "Sent now.")}>
+              Send now
+            </button>
+            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => runAction(r.id, { action: "archive" }, "Archived.")}>
+              Archive
+            </button>
+          </>
+        )}
+        {st === "sent" && (
+          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => runAction(r.id, { action: "archive" }, "Archived.")}>
+            Archive
           </button>
-        </div>
-      )}
+        )}
+        <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAnnouncement(r.id)}>
+          Delete
+        </button>
+      </div>
+    );
+  }
 
-      <div className="sa-table-wrap">
-        {loading ? (
-          <div className="sa-loading">
-            <div className="sa-spinner" />
-            <span>Loading…</span>
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="sa-empty">
-            <div className="sa-empty-text">No announcements in your scope yet.</div>
-          </div>
-        ) : (
-          <table className="sa-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Scope</th>
-                <th>Title</th>
-                <th>Message</th>
-                <th>By</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{new Date(r.created_at).toLocaleString()}</td>
-                  <td>{formatScope(r, unitNames)}</td>
-                  <td>{r.title}</td>
-                  <td>{r.body}</td>
-                  <td>{r.created_by_name || "—"}</td>
-                  <td>
-                    {canDeleteRow(r) ? (
-                      <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAnnouncement(r.id)}>
-                        Delete
-                      </button>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Announcements</h2>
+          <p className="sa-text-muted sa-text-sm">
+            Broadcast to members, leaders, or admins by email and/or SMS. SMS delivery requires provider setup on the server.
+          </p>
+        </div>
+        {canCreate && (
+          <button type="button" className="sa-btn sa-btn-primary" onClick={() => setShowCreate(true)}>
+            + Create announcement
+          </button>
         )}
       </div>
-    </div>
+
+      <div className="sa-card">
+        <div className="sa-card-body sa-unit-tab-row">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`sa-unit-tab-btn ${tab === t.id ? "is-active" : ""}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="sa-table-wrap">
+          {loading ? (
+            <div className="sa-loading">
+              <div className="sa-spinner" />
+              <span>Loading…</span>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="sa-empty">
+              <div className="sa-empty-text">No announcements in this tab.</div>
+            </div>
+          ) : (
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th>Message title</th>
+                  <th>Destination</th>
+                  <th>Message</th>
+                  <th>Email / SMS</th>
+                  {tab === "general" && <th>Sent</th>}
+                  {tab === "scheduled" && <th>Scheduled for</th>}
+                  {tab === "draft" && <th>Last updated</th>}
+                  {tab === "archived" && <th>Archived</th>}
+                  <th>By</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id}>
+                    <td className="sa-fw-600">{r.title}</td>
+                    <td className="sa-text-sm sa-text-muted">{formatDestination(r, unitNames)}</td>
+                    <td style={{ maxWidth: 280 }}>{r.body}</td>
+                    <td>{formatMedium(r)}</td>
+                    {tab === "general" && <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.sent_at || r.created_at)}</td>}
+                    {tab === "scheduled" && (
+                      <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.scheduled_at)}</td>
+                    )}
+                    {tab === "draft" && <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.updated_at)}</td>}
+                    {tab === "archived" && <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.archived_at)}</td>}
+                    <td className="sa-text-sm">{r.created_by_name || "—"}</td>
+                    <td>{renderActions(r)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <AnnouncementCreateModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onSubmit={handleCreate}
+        saving={saving}
+        unitList={unitList}
+      />
+    </>
   );
 }

@@ -335,6 +335,8 @@ export async function dispatchAdminOp(
       return handleAnnouncements(supabase, admin);
     case "createAnnouncement":
       return handleCreateAnnouncement(supabase, params, admin, ip);
+    case "updateAnnouncement":
+      return handleUpdateAnnouncement(supabase, params, admin, ip);
     case "deleteAnnouncement":
       return handleDeleteAnnouncement(supabase, params, admin, ip);
     case "catalogList":
@@ -1176,59 +1178,197 @@ async function handleMarkAllNotificationsRead(supabase: SupabaseClient, admin: A
   return { ok: true };
 }
 
+function announcementVisibleToAdmin(r: Record<string, unknown>, admin: AdminRow): boolean {
+  if (Number(r.created_by_admin_id) === Number(admin.id)) return true;
+  const role = norm(admin.role);
+  if (["super_admin", "general_admin"].includes(role)) return true;
+  const status = norm(r.workflow_status) || "sent";
+  if (status !== "sent") return false;
+  const uid = Number(r.scope_unit_id || 0);
+  if (uid && Number(admin.service_unit_id) === uid) {
+    const su = norm(r.scope_sub_unit);
+    if (!su) return true;
+    if (role === "sub_unit_leader") return su === norm(admin.sub_unit_name);
+    return ["service_unit_leader", "data_entry_admin"].includes(role);
+  }
+  if (!norm(r.branch_country)) return false;
+  if (norm(r.branch_country) !== normUp(admin.branch_country)) return false;
+  const st = norm(r.scope_branch_state);
+  if (st && st !== normUp(admin.branch_state)) return false;
+  const sat = norm(r.scope_satellite_site);
+  if (sat && sat !== norm(admin.satellite_site)) return false;
+  return true;
+}
+
 async function handleAnnouncements(supabase: SupabaseClient, admin: AdminRow) {
   const { data, error } = await supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(
-    200,
+    500,
   );
   if (error) throw new Error(error.message);
-  const role = norm(admin.role);
-  const rows = (data || []).filter((r: Record<string, unknown>) => {
-    if (["super_admin", "general_admin"].includes(role)) return true;
-    const uid = Number(r.scope_unit_id || 0);
-    if (uid && Number(admin.service_unit_id) === uid) {
-      const su = norm(r.scope_sub_unit);
-      if (!su) return true;
-      if (role === "sub_unit_leader") return su === norm(admin.sub_unit_name);
-      return ["service_unit_leader", "data_entry_admin"].includes(role);
-    }
-    if (!norm(r.branch_country)) return false;
-    if (norm(r.branch_country) !== normUp(admin.branch_country)) return false;
-    const st = norm(r.scope_branch_state);
-    if (st && st !== normUp(admin.branch_state)) return false;
-    const sat = norm(r.scope_satellite_site);
-    if (sat && sat !== norm(admin.satellite_site)) return false;
-    return true;
-  });
+  const rows = (data || []).filter((r) => announcementVisibleToAdmin(r as Record<string, unknown>, admin));
   return { data: rows };
+}
+
+function parseAnnouncementDestination(body: Record<string, unknown>) {
+  const destinationType = norm(body.destination_type) || "admins";
+  if (!["members", "leaders", "admins"].includes(destinationType)) {
+    throw new Error("Invalid destination type.");
+  }
+  const cfg = (body.destination_config && typeof body.destination_config === "object")
+    ? body.destination_config as Record<string, unknown>
+    : {};
+  return { destinationType, destinationConfig: cfg };
+}
+
+function announcementScopeFromPayload(
+  admin: AdminRow,
+  destinationType: string,
+  destinationConfig: Record<string, unknown>,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const role = norm(admin.role);
+  const scope: Record<string, unknown> = {
+    branch_country: "",
+    scope_unit_id: null,
+    scope_sub_unit: "",
+    scope_branch_state: "",
+    scope_satellite_site: "",
+  };
+
+  if (destinationType === "members") {
+    const m = destinationConfig as Record<string, unknown>;
+    scope.branch_country = normUp(m.branch_country ?? body.branch_country);
+    scope.scope_branch_state = normUp(m.branch_state ?? "");
+    scope.scope_satellite_site = norm(m.satellite_site ?? "");
+    scope.scope_unit_id = m.service_unit_id ? Number(m.service_unit_id) : null;
+    scope.scope_sub_unit = norm(m.sub_unit ?? "");
+    return scope;
+  }
+
+  if (destinationType === "leaders") {
+    const l = destinationConfig as Record<string, unknown>;
+    const mode = norm(l.mode) || "all";
+    scope.branch_country = normUp(l.branch_country ?? admin.branch_country);
+    scope.scope_branch_state = normUp(l.branch_state ?? admin.branch_state);
+    if (mode === "service_unit" || mode === "sub_unit") {
+      scope.scope_unit_id = l.service_unit_id ? Number(l.service_unit_id) : Number(admin.service_unit_id) || null;
+    }
+    if (mode === "sub_unit") {
+      scope.scope_sub_unit = norm(l.sub_unit ?? admin.sub_unit_name);
+    }
+    return scope;
+  }
+
+  if (destinationType === "admins") {
+    const roles = Array.isArray((destinationConfig as { roles?: unknown }).roles)
+      ? ((destinationConfig as { roles: unknown[] }).roles).map((r) => norm(r)).filter(Boolean)
+      : [];
+    (destinationConfig as { roles?: string[] }).roles = roles;
+    scope.branch_country = normUp((destinationConfig as { branch_country?: string }).branch_country ?? "");
+    scope.scope_branch_state = normUp((destinationConfig as { branch_state?: string }).branch_state ?? "");
+    return scope;
+  }
+
+  return scope;
 }
 
 async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   const body = (params.body || {}) as Record<string, unknown>;
   const title = norm(body.title);
   const text = norm(body.body);
-  if (!title || !text) throw new Error("Title and body are required.");
-  const role = norm(admin.role);
+  if (!title || !text) throw new Error("Title and message are required.");
+
+  const mediumEmail = body.medium_email === true || body.medium_email === 1 || body.medium_email === "1" ? 1 : 0;
+  const mediumSms = body.medium_sms === true || body.medium_sms === 1 || body.medium_sms === "1" ? 1 : 0;
+  if (!mediumEmail && !mediumSms) throw new Error("Select at least one medium: Email or SMS.");
+
+  const action = norm(body.workflow_action) || "send";
+  const { destinationType, destinationConfig } = parseAnnouncementDestination(body);
+  const scopeFields = announcementScopeFromPayload(admin, destinationType, destinationConfig, body);
+
+  const now = new Date().toISOString();
+  let workflowStatus = "sent";
+  let scheduledAt: string | null = null;
+  let sentAt: string | null = now;
+
+  if (action === "draft") {
+    workflowStatus = "draft";
+    sentAt = null;
+  } else if (action === "schedule") {
+    const raw = norm(body.scheduled_at);
+    if (!raw) throw new Error("Scheduled date and time are required.");
+    const when = new Date(raw);
+    if (Number.isNaN(when.getTime())) throw new Error("Invalid schedule time.");
+    if (when.getTime() <= Date.now()) throw new Error("Schedule time must be in the future.");
+    workflowStatus = "scheduled";
+    scheduledAt = when.toISOString();
+    sentAt = null;
+  }
+
   const row: Record<string, unknown> = {
     title,
     body: text,
-    branch_country: normUp(admin.branch_country),
-    scope_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? Number(admin.service_unit_id) : null,
-    scope_sub_unit: role === "sub_unit_leader" ? norm(admin.sub_unit_name) : "",
-    scope_branch_state: ["state_super_admin", "satellite_church_admin"].includes(role)
-      ? normUp(admin.branch_state)
-      : "",
-    scope_satellite_site: role === "satellite_church_admin" ? norm(admin.satellite_site) : "",
+    ...scopeFields,
+    destination_type: destinationType,
+    destination_config: destinationConfig,
+    medium_email: mediumEmail,
+    medium_sms: mediumSms,
+    workflow_status: workflowStatus,
+    scheduled_at: scheduledAt,
+    sent_at: sentAt,
+    archived_at: null,
     created_by_admin_id: Number(admin.id),
     created_by_name: String(admin.full_name || ""),
   };
-  if (["super_admin", "general_admin"].includes(role)) {
-    row.branch_country = "";
-    row.scope_unit_id = null;
-  }
+
   const { data, error } = await supabase.from("announcements").insert(row).select("*").single();
   if (error) throw new Error(error.message);
   await logActivity(supabase, admin, "announcement.create", "announcement", String(data.id), title, ip);
   return { data };
+}
+
+async function handleUpdateAnnouncement(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  const id = Number(params.id);
+  const body = (params.body || {}) as Record<string, unknown>;
+  const { data: row } = await supabase.from("announcements").select("*").eq("id", id).maybeSingle();
+  if (!row) throw new Error("Announcement not found.");
+  if (!["super_admin", "general_admin"].includes(norm(admin.role)) && Number(row.created_by_admin_id) !== Number(admin.id)) {
+    throw new Error("Not allowed.");
+  }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const action = norm(body.action);
+
+  if (action === "archive") {
+    patch.workflow_status = "archived";
+    patch.archived_at = new Date().toISOString();
+  } else if (action === "send") {
+    patch.workflow_status = "sent";
+    patch.sent_at = new Date().toISOString();
+    patch.scheduled_at = null;
+  } else if (action === "schedule") {
+    const raw = norm(body.scheduled_at);
+    if (!raw) throw new Error("Scheduled date and time are required.");
+    const when = new Date(raw);
+    if (Number.isNaN(when.getTime())) throw new Error("Invalid schedule time.");
+    patch.workflow_status = "scheduled";
+    patch.scheduled_at = when.toISOString();
+    patch.sent_at = null;
+  } else if (action === "draft") {
+    patch.workflow_status = "draft";
+    patch.sent_at = null;
+    patch.scheduled_at = null;
+  }
+
+  if (body.title !== undefined) patch.title = norm(body.title);
+  if (body.body !== undefined) patch.body = norm(body.body);
+  if (body.medium_email !== undefined) patch.medium_email = body.medium_email ? 1 : 0;
+  if (body.medium_sms !== undefined) patch.medium_sms = body.medium_sms ? 1 : 0;
+
+  const { error } = await supabase.from("announcements").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+  await logActivity(supabase, admin, "announcement.update", "announcement", String(id), action || "update", ip);
+  return { data: { id, ...patch } };
 }
 
 async function handleDeleteAnnouncement(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
