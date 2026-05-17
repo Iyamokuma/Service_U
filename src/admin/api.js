@@ -237,6 +237,10 @@ export const api = {
     return adminFetch("createAnnouncement", { body });
   },
 
+  async updateAnnouncement(id, body) {
+    return adminFetch("updateAnnouncement", { id, body });
+  },
+
   async deleteAnnouncement(id) {
     return adminFetch("deleteAnnouncement", { id });
   },
