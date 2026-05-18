@@ -9,8 +9,10 @@ export function UnitMembers({ units }) {
   const toast = useToast();
   const { admin } = useAdminAuth();
   const isCountryAdmin = isCountrySuperAdmin(admin?.role);
+  const isStateAdmin = isStateSuperAdmin(admin?.role);
   const isLeader = ["service_unit_leader", "sub_unit_leader"].includes(admin?.role);
   const isServiceUnitLeader = admin?.role === "service_unit_leader";
+  const isSubUnitLeader = admin?.role === "sub_unit_leader";
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
@@ -33,8 +35,16 @@ export function UnitMembers({ units }) {
           unit_id: isLeader ? admin?.service_unit_id : filters.unit_id,
           filter_branch_state: isCountryAdmin ? filters.filter_branch_state : "",
         };
-        if (isServiceUnitLeader && filters.sub_unit) body.sub_unit = filters.sub_unit;
-        if (isCountryAdmin && filters.sub_unit) body.sub_unit = filters.sub_unit;
+        if (isSubUnitLeader && admin?.sub_unit_name) {
+          body.sub_unit = admin.sub_unit_name;
+        } else if (isServiceUnitLeader && filters.sub_unit) {
+          body.sub_unit = filters.sub_unit;
+        } else if (isCountryAdmin && filters.sub_unit) {
+          body.sub_unit = filters.sub_unit;
+        }
+        if (isStateAdmin && filters.filter_branch_state) {
+          body.filter_branch_state = filters.filter_branch_state;
+        }
         const res = await api.members(body);
         setRows(res.data || []);
         setPag(res.pagination || { page: 1, pages: 1, total: 0 });
@@ -44,15 +54,39 @@ export function UnitMembers({ units }) {
         setLoading(false);
       }
     },
-    [filters.search, filters.unit_id, filters.sub_unit, filters.filter_branch_state, admin, isLeader, isServiceUnitLeader, isCountryAdmin, isStateAdmin, toast]
+    [
+      filters.search,
+      filters.unit_id,
+      filters.sub_unit,
+      filters.filter_branch_state,
+      admin,
+      isLeader,
+      isServiceUnitLeader,
+      isSubUnitLeader,
+      isCountryAdmin,
+      isStateAdmin,
+      toast,
+    ]
   );
 
   useEffect(() => {
     load(1);
   }, [load]);
 
+  const unitName = (units?.data || []).find((u) => Number(u.id) === Number(admin?.service_unit_id))?.name;
+
   return (
-    <div className="sa-card">
+    <>
+      {isSubUnitLeader && (
+        <div style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Members list</h2>
+          <p className="sa-text-muted sa-text-sm" style={{ margin: 0 }}>
+            Approved members in <strong>{admin?.sub_unit_name || "your sub-unit"}</strong>
+            {unitName ? ` · ${unitName}` : ""}.
+          </p>
+        </div>
+      )}
+      <div className="sa-card">
       <div className="sa-filters">
         <input className="sa-input" placeholder="Search member name/email/phone" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
         {isCountryAdmin && (
@@ -136,6 +170,7 @@ export function UnitMembers({ units }) {
         </div>
       )}
     </div>
+    </>
   );
 }
 

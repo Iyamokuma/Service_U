@@ -33,7 +33,7 @@ export function ContactSection({ form, set, errors }) {
           label="Primary phone"
           required
           error={errors.phone1}
-          hint="Include country code if abroad."
+          hint="Primary identifier — one registration per phone. Include country code if abroad."
         >
           <TextInput
             type="tel"
@@ -66,7 +66,13 @@ export function ContactSection({ form, set, errors }) {
           />
         </Field>
 
-        <Field label="Email address" optional error={errors.email} span="2">
+        <Field
+          label="Email address"
+          optional
+          error={errors.email}
+          span="2"
+          hint="If provided, must be unique — one registration per email."
+        >
           <TextInput
             type="email"
             value={form.email}

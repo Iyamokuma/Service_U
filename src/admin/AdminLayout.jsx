@@ -94,6 +94,7 @@ export function AdminLayout() {
         [
           "role-dashboard",
           "data-locations",
+          "locations",
           "branch-catalog",
           "overview",
           "queue",
@@ -185,10 +186,12 @@ export function AdminLayout() {
         <div className="sa-content">
           {page === "role-dashboard" && <RoleDashboard setPage={setPage} />}
           {page === "data-locations" && admin?.role === "data_entry_admin" && <DataEntryLocationForm />}
-          {page === "branch-catalog" && canEditBranchCatalog(admin?.role) && <BranchCatalog />}
+          {(page === "locations" || page === "branch-catalog") && canEditBranchCatalog(admin?.role) && (
+            <BranchCatalog variant={page === "locations" ? "locations" : "catalog"} />
+          )}
           {page === "overview"  && <Overview units={units} setPage={setPage} />}
           {page === "queue"     && <Queue     units={units} />}
-          {(page === "units" || page === "locations") && (
+          {page === "units" && (
             <ServiceUnits data={units} reload={() => { loadUnits(); loadAdmins(); }} />
           )}
           {page === "members"   && <UnitMembers units={units} />}

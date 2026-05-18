@@ -24,7 +24,17 @@ function formatMedium(r) {
 
 function formatDestination(r, unitNames) {
   const type = r.destination_type || "admins";
-  const cfg = r.destination_config && typeof r.destination_config === "object" ? r.destination_config : {};
+  let cfg = {};
+  if (r.destination_config && typeof r.destination_config === "object") {
+    cfg = r.destination_config;
+  } else if (typeof r.destination_config === "string" && r.destination_config.trim()) {
+    try {
+      const parsed = JSON.parse(r.destination_config);
+      if (parsed && typeof parsed === "object") cfg = parsed;
+    } catch {
+      cfg = {};
+    }
+  }
 
   if (type === "members") {
     const m = cfg;
@@ -83,15 +93,19 @@ export function Announcements() {
   const [saving, setSaving] = useState(false);
   const [unitNames, setUnitNames] = useState({});
   const [unitList, setUnitList] = useState([]);
+  const [loadError, setLoadError] = useState("");
   const canCreate = canPostAnnouncements(admin?.role);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const res = await api.announcements();
-      setRows(res.data || []);
+      setRows(Array.isArray(res?.data) ? res.data : []);
     } catch (e) {
-      toast(e.message, "error");
+      const msg = e?.message || "Could not load announcements.";
+      setLoadError(msg);
+      toast?.(msg, "error");
     } finally {
       setLoading(false);
     }
@@ -251,6 +265,13 @@ export function Announcements() {
               <div className="sa-spinner" />
               <span>Loading…</span>
             </div>
+          ) : loadError ? (
+            <div className="sa-empty">
+              <div className="sa-empty-text">{loadError}</div>
+              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" style={{ marginTop: 12 }} onClick={() => load()}>
+                Retry
+              </button>
+            </div>
           ) : filtered.length === 0 ? (
             <div className="sa-empty">
               <div className="sa-empty-text">No announcements in this tab.</div>
@@ -294,13 +315,15 @@ export function Announcements() {
         </div>
       </div>
 
-      <AnnouncementCreateModal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        onSubmit={handleCreate}
-        saving={saving}
-        unitList={unitList}
-      />
+      {showCreate ? (
+        <AnnouncementCreateModal
+          open
+          onClose={() => setShowCreate(false)}
+          onSubmit={handleCreate}
+          saving={saving}
+          unitList={unitList}
+        />
+      ) : null}
     </>
   );
 }

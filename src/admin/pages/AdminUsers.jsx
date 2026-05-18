@@ -202,7 +202,8 @@ export function AdminUsers({ data, units, reload }) {
   const { admin: me } = useAdminAuth();
   const isRootSuper = isRootSuperAdmin(me?.role);
   const isGlobalAdmin = isGlobalAdminRole(me?.role);
-  const isCountryAdmin = me?.role === "country_super_admin";
+  const isCountryAdmin = isCountrySuperAdmin(me?.role);
+  const isStateAdmin = isStateSuperAdmin(me?.role);
   const isServiceLeader = isServiceUnitLeader(me?.role);
   const isSatellitePastor = me?.role === "satellite_church_admin";
   const [showInactive, setShowInactive] = useState(false);

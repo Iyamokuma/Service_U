@@ -13,11 +13,29 @@ import {
 } from "../catalogUtils.js";
 
 const TABS = [
-  { id: "all", label: "All" },
-  { id: "country", label: "Country" },
-  { id: "state", label: "State" },
-  { id: "satellite", label: "Satellite" },
+  { id: "satellite", label: "Satellite churches" },
+  { id: "all", label: "All branches" },
+  { id: "state", label: "States & regions" },
+  { id: "country", label: "Countries" },
 ];
+
+const PAGE_COPY = {
+  locations: {
+    title: "Locations",
+    subtitle:
+      "Countries, state branches, and satellite churches that power the public registration form. Activate or hide branches without removing history.",
+    loading: "Loading locations…",
+    error: "Could not load locations.",
+    cardTitle: "Directory",
+  },
+  catalog: {
+    title: "Branch directory",
+    subtitle: "Browse and manage the geographic directory used across admin and public registration.",
+    loading: "Loading branch directory…",
+    error: "Could not load the branch directory.",
+    cardTitle: "Branch directory",
+  },
+};
 
 const emptyFilters = () => ({
   continent: "",
@@ -42,11 +60,12 @@ function normalizeCatalog(raw) {
   };
 }
 
-export function BranchCatalog() {
+export function BranchCatalog({ variant = "catalog" }) {
+  const copy = PAGE_COPY[variant] || PAGE_COPY.catalog;
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState(null);
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState(variant === "locations" ? "satellite" : "all");
   const [filters, setFilters] = useState(() => emptyFilters());
   const [detail, setDetail] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -169,6 +188,35 @@ export function BranchCatalog() {
     return [...new Set(rows.map((r) => r.name))].sort((a, b) => a.localeCompare(b));
   }, [allRows, filters.country, filters.branch]);
 
+  const summary = useMemo(() => {
+    if (!catalog) return null;
+    const churches = catalog.churches || [];
+    const active = churches.filter((c) => Number(c.is_active) !== 0).length;
+    const membersTotal = Object.values(catalog.stats?.membersBySatellite || {}).reduce(
+      (n, v) => n + Number(v || 0),
+      0,
+    );
+    return {
+      countries: countryRows.length,
+      states: stateRows.length,
+      churches: churches.length,
+      active,
+      hidden: Math.max(0, churches.length - active),
+      members: membersTotal,
+    };
+  }, [catalog, countryRows, stateRows]);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (filters.continent) n += 1;
+    if (filters.country) n += 1;
+    if (filters.branch) n += 1;
+    if (filters.satellite) n += 1;
+    if (filters.status) n += 1;
+    if (filterSearch.trim()) n += 1;
+    return n;
+  }, [filters, filterSearch]);
+
   async function createLocation(payload) {
     if (!payload.continent || !payload.countryIso2 || !payload.stateName || !payload.lgaName) {
       toast("Select continent through LGA.", "error");
@@ -224,9 +272,11 @@ export function BranchCatalog() {
 
   if (loading && !catalog) {
     return (
-      <div className="sa-loading">
-        <div className="sa-spinner" />
-        <span>Loading branch directory…</span>
+      <div className="sa-locations-page">
+        <div className="sa-loading sa-locations-loading">
+          <div className="sa-spinner" />
+          <span>{copy.loading}</span>
+        </div>
       </div>
     );
   }
@@ -236,7 +286,7 @@ export function BranchCatalog() {
       <div className="sa-card">
         <div className="sa-card-body">
           <p className="sa-text-muted" style={{ marginBottom: 12 }}>
-            {loadError || "Could not load the branch directory."}
+            {loadError || copy.error}
           </p>
           <button type="button" className="sa-btn sa-btn-primary" onClick={() => load()}>
             Retry
@@ -260,17 +310,78 @@ export function BranchCatalog() {
   }
 
   return (
-    <>
-      <div className="sa-card">
-        <div className="sa-card-head" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
-          <span className="sa-card-title">Branch directory</span>
+    <div className="sa-locations-page">
+      <header className="sa-locations-hero">
+        <div className="sa-locations-hero-text">
+          <h2 className="sa-locations-title">{copy.title}</h2>
+          <p className="sa-locations-subtitle">{copy.subtitle}</p>
+        </div>
+        <div className="sa-locations-hero-actions">
+          <button type="button" className="sa-btn sa-btn-outline" disabled={busy} onClick={() => load()}>
+            Refresh
+          </button>
           <button type="button" className="sa-btn sa-btn-primary" onClick={() => setShowCreate(true)}>
-            + New location
+            + Add location
+          </button>
+        </div>
+      </header>
+
+      {summary ? (
+        <div className="sa-stat-grid sa-locations-stats">
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Countries</span>
+              <div className="sa-stat-icon indigo">🌍</div>
+            </div>
+            <div className="sa-stat-value">{summary.countries}</div>
+            <div className="sa-stat-trend">In directory</div>
+          </div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">States & branches</span>
+              <div className="sa-stat-icon blue">🗺</div>
+            </div>
+            <div className="sa-stat-value">{summary.states}</div>
+            <div className="sa-stat-trend">Regional branches</div>
+          </div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Satellite churches</span>
+              <div className="sa-stat-icon green">⛪</div>
+            </div>
+            <div className="sa-stat-value">{summary.churches}</div>
+            <div className="sa-stat-trend">
+              <strong>{summary.active}</strong> active · {summary.hidden} hidden
+            </div>
+          </div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Registrations</span>
+              <div className="sa-stat-icon amber">👥</div>
+            </div>
+            <div className="sa-stat-value">{summary.members}</div>
+            <div className="sa-stat-trend">Members linked to satellites</div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="sa-card sa-locations-card">
+        <div className="sa-card-head sa-locations-card-head">
+          <div>
+            <span className="sa-card-title">{copy.cardTitle}</span>
+            {activeFilterCount > 0 ? (
+              <span className="sa-locations-filter-badge">
+                {activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} applied
+              </span>
+            ) : null}
+          </div>
+          <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setFilters(emptyFilters())}>
+            Clear filters
           </button>
         </div>
 
         <div className="sa-card-body">
-          <div className="sa-filter-row" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <div className="sa-locations-filters">
             <div className="sa-field" style={{ margin: 0 }}>
               <label className="sa-label">Continent</label>
               <select
@@ -356,17 +467,28 @@ export function BranchCatalog() {
             </div>
           </div>
 
-          <div className="sa-unit-tab-row" style={{ marginBottom: 16 }}>
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`sa-unit-tab-btn${tab === t.id ? " is-active" : ""}`}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="sa-locations-table-toolbar">
+            <div className="sa-unit-tab-row" style={{ marginBottom: 0, flex: 1 }}>
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`sa-unit-tab-btn${tab === t.id ? " is-active" : ""}`}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <span className="sa-text-muted sa-text-sm sa-locations-result-count">
+              {tab === "country"
+                ? `${filteredCountries.length} countries`
+                : tab === "state"
+                  ? `${filteredStates.length} states`
+                  : tab === "satellite"
+                    ? `${filteredSatellites.length} satellites`
+                    : `${filteredAll.length} branches`}
+            </span>
           </div>
 
           <div className="sa-table-wrap">
@@ -608,17 +730,6 @@ export function BranchCatalog() {
             )}
           </div>
 
-          <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="sa-btn sa-btn-primary" onClick={() => setShowCreate(true)}>
-              Create location
-            </button>
-            <button type="button" className="sa-btn sa-btn-outline" disabled={busy} onClick={() => load()}>
-              Refresh
-            </button>
-            <button type="button" className="sa-btn sa-btn-ghost" onClick={() => setFilters(emptyFilters())}>
-              Clear filters
-            </button>
-          </div>
         </div>
       </div>
 
@@ -628,6 +739,6 @@ export function BranchCatalog() {
         onSubmit={createLocation}
         saving={busy}
       />
-    </>
+    </div>
   );
 }
