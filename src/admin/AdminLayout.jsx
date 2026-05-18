@@ -70,7 +70,11 @@ export function AdminLayout() {
           : "overview",
       );
     } else if (admin.role === "state_super_admin") {
-      setPage((p) => (["oversight", "announcements", "profile"].includes(p) ? p : "oversight"));
+      setPage((p) =>
+        ["overview", "oversight", "members", "admins", "activity", "announcements", "profile"].includes(p)
+          ? p
+          : "overview",
+      );
     } else if (admin.role === "satellite_church_admin") {
       setPage((p) =>
         [
@@ -125,8 +129,13 @@ export function AdminLayout() {
       return;
     }
     api
-      .requests({ status: "open", per_page: 1, page: 1 })
-      .then((r) => setOpenRequestCount(r.pagination?.total ?? 0))
+      .requests({ per_page: 500, page: 1 })
+      .then((r) => {
+        const pending = (r.data || []).filter(
+          (req) => req.status === "open" || req.status === "in_review",
+        ).length;
+        setOpenRequestCount(pending);
+      })
       .catch(() => {});
   }, [page, admin]);
 
@@ -145,7 +154,9 @@ export function AdminLayout() {
     (admin?.role === "service_unit_leader" ||
       admin?.role === "sub_unit_leader" ||
       admin?.role === "data_entry_admin" ||
-      admin?.role === "satellite_church_admin");
+      admin?.role === "satellite_church_admin" ||
+      admin?.role === "country_super_admin" ||
+      admin?.role === "state_super_admin");
 
   return (
     <div className="sa-root" data-theme={theme}>

@@ -353,6 +353,138 @@ a { color: inherit; }
   padding-right: 36px;
 }
 
+/* Searchable dropdown (integrated trigger + search + list) */
+.search-dropdown {
+  position: relative;
+  width: 100%;
+}
+.search-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding-right: 12px;
+}
+.search-dropdown-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.search-dropdown-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-dropdown-value.is-placeholder {
+  color: var(--ink-4);
+}
+.search-dropdown-chevron {
+  flex-shrink: 0;
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+  transition: transform .15s ease;
+}
+.search-dropdown-chevron.is-open {
+  transform: rotate(180deg);
+}
+.search-dropdown-panel {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.search-dropdown-search {
+  position: relative;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+.search-dropdown-search-input {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 8px 36px 8px 12px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.search-dropdown-search-input::placeholder {
+  color: var(--ink-4);
+}
+.search-dropdown-search-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.search-dropdown-search-icon {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+.search-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.search-dropdown-empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.search-dropdown-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.search-dropdown-option:hover,
+.search-dropdown-option:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.search-dropdown-option.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.search-dropdown-option-label {
+  font-weight: 500;
+  line-height: 1.35;
+}
+.search-dropdown-option-meta {
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.35;
+  font-weight: 400;
+}
+.search-dropdown-option.is-selected .search-dropdown-option-meta {
+  color: color-mix(in oklab, var(--accent-ink) 70%, var(--ink-3));
+}
+
 .error-msg {
   font-size: 12px;
   color: var(--danger);

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MONTHS as MONTHS_LONG } from "../../data.js";
 import { api } from "../api.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
@@ -124,22 +124,26 @@ export function Queue({ units }) {
   const [expanded, setExpanded] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
   const [acceptVerifyModal, setAcceptVerifyModal] = useState(null);
-  const [filters, setFilters] = useState({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
-  const [subUnitTab, setSubUnitTab] = useState("all");
+  const [filters, setFilters] = useState({
+    search: "",
+    unit_id: "",
+    sub_unit: "",
+    status: "",
+    sex: "",
+    from: "",
+    to: "",
+    sort: "submitted_at",
+    dir: "DESC",
+  });
   const [subUnitStatusTab, setSubUnitStatusTab] = useState("all");
   const [leaderSubUnitLabels, setLeaderSubUnitLabels] = useState([]);
   const debounce = useRef(null);
 
   const mergedQueueParams = useCallback(
     (page = 1) => {
-      const subUnitForQueue = (() => {
-        if (isSubUnitLeader) return admin?.sub_unit_name || admin?.sub_unit || "";
-        if (isServiceLeader) {
-          if (subUnitTab === "all") return "";
-          return subUnitTab;
-        }
-        return subUnitTab === "all" ? "" : subUnitTab;
-      })();
+      const subUnitForQueue = isSubUnitLeader
+        ? admin?.sub_unit_name || admin?.sub_unit || ""
+        : filters.sub_unit || "";
       const scoped = {
         ...filters,
         page,
@@ -148,10 +152,7 @@ export function Queue({ units }) {
         unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
         sub_unit: subUnitForQueue,
       };
-      if (isServiceLeader) {
-        delete scoped.overdue_only;
-        scoped.status = "";
-      } else if (isSubUnitLeader) {
+      if (isServiceLeader || isSubUnitLeader) {
         delete scoped.overdue_only;
         switch (subUnitStatusTab) {
           case "active":
@@ -175,7 +176,7 @@ export function Queue({ units }) {
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, subUnitTab, subUnitStatusTab]
+    [filters, admin, isServiceLeader, isSubUnitLeader, subUnitStatusTab]
   );
 
   useEffect(() => {
@@ -187,7 +188,7 @@ export function Queue({ units }) {
 
   useEffect(() => {
     setExpanded(null);
-  }, [subUnitTab, subUnitStatusTab]);
+  }, [filters.sub_unit, subUnitStatusTab]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -205,7 +206,7 @@ export function Queue({ units }) {
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
-  }, [filters, subUnitTab, subUnitStatusTab, load, mergedQueueParams, isServiceLeader, isSubUnitLeader]);
+  }, [filters, subUnitStatusTab, load, mergedQueueParams, isServiceLeader, isSubUnitLeader]);
 
   useEffect(() => {
     const isOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
@@ -215,7 +216,7 @@ export function Queue({ units }) {
       .then((r) => setOverdue(r.data || []))
       .catch(() => setOverdue([]))
       .finally(() => setLoading(false));
-  }, [isServiceLeader, isSubUnitLeader, subUnitTab, subUnitStatusTab, admin]);
+  }, [isServiceLeader, isSubUnitLeader, filters.sub_unit, subUnitStatusTab, admin]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const gotoPage = (p) => load(mergedQueueParams(p));
@@ -309,9 +310,19 @@ export function Queue({ units }) {
     return !allowedStatus(row.status).includes(target);
   };
 
-  const svcLeaderSubTabs = isServiceLeader
-    ? ["all", ...new Set(leaderSubUnitLabels)]
-    : [];
+  const leaderSubUnitOptions = useMemo(() => {
+    if (!isServiceLeader) return [];
+    const unit = (units?.data || []).find((u) => Number(u.id) === Number(admin?.service_unit_id));
+    const fromCatalog = (unit?.sub_units || []).map((s) => s.name).filter(Boolean);
+    return [...new Set([...fromCatalog, ...leaderSubUnitLabels])].sort((a, b) => a.localeCompare(b));
+  }, [isServiceLeader, units?.data, admin?.service_unit_id, leaderSubUnitLabels]);
+
+  const globalSubUnitOptions = useMemo(() => {
+    if (isLeader) return [];
+    const unit = unitOpts.find((u) => String(u.id) === String(filters.unit_id));
+    return (unit?.sub_units || []).map((s) => s.name).filter(Boolean);
+  }, [isLeader, unitOpts, filters.unit_id]);
+
   const showIntakeFilters = true;
   const onOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
   const showMainTable = !onOverdueTab;
@@ -330,21 +341,6 @@ export function Queue({ units }) {
               Combined queue across all sub-units. Move applications to In review, Accepted, or Rejected.
               Sub-unit names are managed by Super / General Admin only.
             </p>
-          </div>
-        )}
-        {isServiceLeader && (
-          <div className="sa-card-body sa-unit-tab-row">
-            {svcLeaderSubTabs.map((sub) => (
-              <button
-                key={sub}
-                type="button"
-                className={`sa-unit-tab-btn ${subUnitTab === sub ? "is-active" : ""}`}
-                onClick={() => setSubUnitTab(sub)}
-                title={sub === "all" ? "All sub-units" : sub}
-              >
-                {sub === "all" ? "All sub-units" : sub}
-              </button>
-            ))}
           </div>
         )}
         {(isServiceLeader || isSubUnitLeader) && (
@@ -380,9 +376,40 @@ export function Queue({ units }) {
               </div>
             )}
             {!isLeader && (
-              <select className="sa-select" value={filters.unit_id} onChange={setFilter("unit_id")}>
+              <select
+                className="sa-select"
+                value={filters.unit_id}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, unit_id: e.target.value, sub_unit: "" }))
+                }
+              >
                 <option value="">All Units</option>
                 {unitOpts.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            )}
+            {isServiceLeader && (
+              <select
+                className="sa-select"
+                value={filters.sub_unit}
+                onChange={setFilter("sub_unit")}
+                aria-label="Filter by sub-unit"
+              >
+                <option value="">All sub-units</option>
+                {leaderSubUnitOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!isLeader && filters.unit_id && (
+              <select className="sa-select" value={filters.sub_unit} onChange={setFilter("sub_unit")}>
+                <option value="">All sub-units</option>
+                {globalSubUnitOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
             )}
             {!isLeader && (
@@ -422,7 +449,17 @@ export function Queue({ units }) {
               type="button"
               className="sa-btn sa-btn-outline sa-btn-sm"
               onClick={() => {
-                setFilters({ search: "", unit_id: "", status: "", sex: "", from: "", to: "", sort: "submitted_at", dir: "DESC" });
+                setFilters({
+                  search: "",
+                  unit_id: "",
+                  sub_unit: "",
+                  status: "",
+                  sex: "",
+                  from: "",
+                  to: "",
+                  sort: "submitted_at",
+                  dir: "DESC",
+                });
               }}
             >
               Clear

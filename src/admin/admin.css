@@ -380,6 +380,12 @@
 .sa-table tr:last-child td { border-bottom: none; }
 .sa-table tr:hover td { background: #f8fafc; }
 .sa-table-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+.sa-table tr.sa-row-clickable { cursor: pointer; }
+.sa-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px 24px;
+}
 
 /* ── Badges ───────────────────────────────────────────────── */
 .sa-badge {

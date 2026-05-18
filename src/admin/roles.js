@@ -1,5 +1,25 @@
 /** Shared role checks for admin UI and API. */
 
+export function roleDisplayLabel(role) {
+  if (!role) return "—";
+  const labels = {
+    super_admin: "Super Admin",
+    general_admin: "General Admin",
+    data_entry_admin: "Data Entry Admin",
+    country_super_admin: "Country Admin",
+    state_super_admin: "State Branch Admin",
+    satellite_church_admin: "Satellite Pastor Admin",
+    service_unit_leader: "Service Unit Leader",
+    sub_unit_leader: "Sub-Unit Leader",
+  };
+  if (labels[role]) return labels[role];
+  return String(role)
+    .split("_")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ""))
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function isRootSuperAdmin(role) {
   return role === "super_admin";
 }
@@ -20,6 +40,10 @@ export function canEditBranchCatalog(role) {
 
 export function isCountrySuperAdmin(role) {
   return role === "country_super_admin";
+}
+
+export function isStateSuperAdmin(role) {
+  return role === "state_super_admin";
 }
 
 export function isSupervisoryBranchRole(role) {

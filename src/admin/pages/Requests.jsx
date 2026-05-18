@@ -8,6 +8,7 @@ import {
 } from "../branchRegions.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { roleDisplayLabel } from "../roles.js";
 
 function parsePayload(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -36,6 +37,38 @@ function ServiceUnitProposalSummary({ payload }) {
         From branch {String(payload.branchCountry || "—")} / {String(payload.branchState || "—")}
         {payload.satelliteSite ? ` · ${payload.satelliteSite}` : ""}
       </div>
+    </div>
+  );
+}
+
+function AdminAccountProposalSummary({ payload }) {
+  if (!payload?.admin) return null;
+  const a = payload.admin;
+  const cc = a.branch_country ? branchCountryLabel(a.branch_country) : "—";
+  const st = a.branch_state && a.branch_country ? branchStateLabel(a.branch_country, a.branch_state) : a.branch_state || "";
+  return (
+    <div className="sa-text-sm" style={{ lineHeight: 1.45, maxWidth: 420 }}>
+      <div>
+        <span className="sa-text-muted">Name:</span> {a.full_name || "—"}
+      </div>
+      <div>
+        <span className="sa-text-muted">Username:</span> {a.username || "—"}
+      </div>
+      <div>
+        <span className="sa-text-muted">Email:</span> {a.email || "—"}
+      </div>
+      <div>
+        <span className="sa-text-muted">Role:</span> {roleDisplayLabel(a.role)}
+      </div>
+      {(a.branch_country || a.branch_state || a.satellite_site) && (
+        <div style={{ marginTop: 6 }} className="sa-text-muted">
+          Scope: {cc}
+          {st ? ` · ${st}` : ""}
+          {a.satellite_site ? ` · ${a.satellite_site}` : ""}
+          {a.service_unit_id ? ` · unit #${a.service_unit_id}` : ""}
+          {a.sub_unit_name ? ` · ${a.sub_unit_name}` : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -108,13 +141,34 @@ export function Requests() {
     }
   };
 
-  const mark = async (id, status, requestType) => {
+  const requestTypeLabel = (r) => {
+    if (r.request_type === "location_catalog") return "Location proposal";
+    if (r.request_type === "service_unit_proposal") return "Service unit proposal";
+    if (r.request_type === "admin_account") return "Admin account";
+    return (r.request_type || "general").replace(/_/g, " ");
+  };
+
+  const statusLabel = (status) => {
+    if (status === "in_review") return "In review";
+    return status;
+  };
+
+  const isTerminal = (status) => status === "rejected" || status === "resolved";
+
+  const approve = async (r) => {
     try {
-      await api.updateRequest(id, { status });
-      if (status === "approved" && requestType === "location_catalog") {
-        toast("Branches are live on the registration form for that country and region.", "success");
+      if (r.request_type === "service_unit_proposal") {
+        await api.approveServiceUnitProposal(r.id);
+        toast("Service unit created. Request marked resolved.", "success");
       } else {
-        toast("Request updated.", "success");
+        await api.updateRequest(r.id, { status: "approved" });
+        if (r.request_type === "location_catalog") {
+          toast("Branches are live on the registration form for that country and region.", "success");
+        } else if (r.request_type === "admin_account") {
+          toast("Admin account created and is now active.", "success");
+        } else {
+          toast("Request approved.", "success");
+        }
       }
       load();
     } catch (e) {
@@ -122,10 +176,20 @@ export function Requests() {
     }
   };
 
-  const approveServiceUnit = async (id) => {
+  const reject = async (id) => {
     try {
-      await api.approveServiceUnitProposal(id);
-      toast("Service unit created and sub-units added. Request marked resolved.", "success");
+      await api.updateRequest(id, { status: "rejected" });
+      toast("Request rejected.", "success");
+      load();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  };
+
+  const resolve = async (id) => {
+    try {
+      await api.updateRequest(id, { status: "resolved" });
+      toast("Request marked resolved.", "success");
       load();
     } catch (e) {
       toast(e.message, "error");
@@ -157,6 +221,7 @@ export function Requests() {
             <tr>
               <th>Date</th>
               <th>From</th>
+              <th>Role</th>
               <th>Type</th>
               <th>Details</th>
               <th>Status</th>
@@ -168,54 +233,67 @@ export function Requests() {
               const p = parsePayload(r.payload);
               const isLoc = r.request_type === "location_catalog";
               const isUnit = r.request_type === "service_unit_proposal";
+              const isAdminAcct = r.request_type === "admin_account";
               return (
                 <tr key={r.id}>
                   <td>{new Date(r.created_at).toLocaleString()}</td>
                   <td>{r.from_name}</td>
                   <td>
-                    <span className={`sa-badge ${r.from_role}`}>
-                      {isLoc
-                        ? "Location proposal"
-                        : isUnit
-                          ? "Service unit proposal"
-                          : (r.request_type || "general").replace(/_/g, " ")}
-                    </span>
+                    <span className={`sa-badge ${r.from_role || "general"}`}>{roleDisplayLabel(r.from_role)}</span>
+                  </td>
+                  <td>
+                    <span className="sa-badge open">{requestTypeLabel(r)}</span>
                   </td>
                   <td>
                     {isLoc && p ? (
                       <LocationProposalSummary payload={p} />
                     ) : isUnit && p ? (
                       <ServiceUnitProposalSummary payload={p} />
+                    ) : isAdminAcct && p ? (
+                      <AdminAccountProposalSummary payload={p} />
                     ) : (
                       <span className="sa-text-sm">{r.message}</span>
                     )}
                   </td>
                   <td>
-                    <span className={`sa-badge ${r.status}`}>{r.status}</span>
+                    <span className={`sa-badge ${r.status}`}>{statusLabel(r.status)}</span>
                   </td>
                   <td>
                     {isSuper ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
-                        {isUnit && r.status === "open" ? (
-                          <button
-                            type="button"
-                            className="sa-btn sa-btn-primary sa-btn-sm"
-                            onClick={() => approveServiceUnit(r.id)}
-                          >
-                            Approve &amp; create unit
-                          </button>
-                        ) : null}
-                        <select
-                          className="sa-select"
-                          value={r.status}
-                          onChange={(e) => mark(r.id, e.target.value, r.request_type)}
+                      <div className="sa-table-actions">
+                        <button
+                          type="button"
+                          className="sa-btn sa-btn-primary sa-btn-sm"
+                          disabled={
+                            isTerminal(r.status) ||
+                            r.status === "approved" ||
+                            (isUnit && r.status !== "open") ||
+                            (isAdminAcct && r.status !== "in_review")
+                          }
+                          onClick={() => approve(r)}
                         >
-                          <option value="open">open</option>
-                          <option value="in_review">in_review</option>
-                          <option value="approved">approved</option>
-                          <option value="resolved">resolved</option>
-                          <option value="rejected">rejected</option>
-                        </select>
+                          {isUnit
+                            ? "Approve & create unit"
+                            : isAdminAcct
+                              ? "Approve & create admin"
+                              : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          className="sa-btn sa-btn-danger sa-btn-sm"
+                          disabled={isTerminal(r.status) || r.status === "rejected"}
+                          onClick={() => reject(r.id)}
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          className="sa-btn sa-btn-outline sa-btn-sm"
+                          disabled={isTerminal(r.status)}
+                          onClick={() => resolve(r.id)}
+                        >
+                          Mark as resolved
+                        </button>
                       </div>
                     ) : (
                       "—"
@@ -226,7 +304,7 @@ export function Requests() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan="6" style={{ textAlign: "center", padding: "20px" }}>
+                <td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>
                   No requests found.
                 </td>
               </tr>

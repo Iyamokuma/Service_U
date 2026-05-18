@@ -140,6 +140,14 @@ export const api = {
     return adminFetch("updateUnit", { id, body });
   },
 
+  async unitDeleteInfo(id) {
+    return adminFetch("unitDeleteInfo", { id });
+  },
+
+  async subDeleteInfo(id) {
+    return adminFetch("subDeleteInfo", { id });
+  },
+
   async deleteUnit(id) {
     return adminFetch("deleteUnit", { id });
   },
@@ -267,5 +275,9 @@ export const api = {
 
   async catalogDeleteChurch(id) {
     return adminFetch("catalogDeleteChurch", { id });
+  },
+
+  async catalogCreateLocation(body) {
+    return adminFetch("catalogCreateLocation", { body });
   },
 };

@@ -1,4 +1,4 @@
-import { branchCountryLabel } from "./branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 
 /** Human-readable service unit / sub-unit scope for leader dashboards (uses API-shaped admin). */
 export function leaderScopeLabel(admin) {
@@ -10,6 +10,12 @@ export function leaderScopeLabel(admin) {
   if (admin.role === "country_super_admin") {
     const cc = String(admin.branch_country || "").trim();
     return cc ? branchCountryLabel(cc) : "Country";
+  }
+  if (admin.role === "state_super_admin") {
+    const cc = String(admin.branch_country || "").trim();
+    const st = String(admin.branch_state || "").trim();
+    if (cc && st) return `${branchCountryLabel(cc)} · ${branchStateLabel(cc, st)}`;
+    return cc ? branchCountryLabel(cc) : "State";
   }
   if (admin.role === "satellite_church_admin") {
     const cc = String(admin.branch_country || "").trim();
