@@ -78,3 +78,26 @@ export function isPhone(v) {
   const digits = v.replace(/[^\d]/g, "");
   return digits.length >= 7 && digits.length <= 15;
 }
+
+/** Digits-only phone for duplicate checks (must match server normalization). */
+export function normalizePhoneDigits(v) {
+  return String(v ?? "").replace(/\D/g, "");
+}
+
+export function normalizeEmailKey(v) {
+  const e = String(v ?? "").trim().toLowerCase();
+  return e || "";
+}
+
+/** Map submit-registration duplicate errors to contact field keys. */
+export function registrationSubmitFieldErrors(message) {
+  const msg = String(message || "");
+  const lower = msg.toLowerCase();
+  if (lower.includes("phone number")) {
+    return { phone1: msg };
+  }
+  if (lower.includes("email address")) {
+    return { email: msg };
+  }
+  return {};
+}

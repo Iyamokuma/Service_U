@@ -9,19 +9,33 @@ function adminToken() {
   }
 }
 
-async function adminFetch(op, params = {}) {
+async function adminFetch(op, params = {}, { timeoutMs = 30000 } = {}) {
   const jwt = adminToken();
   if (!jwt) throw new Error("Unauthorized");
 
-  const res = await fetch(`${functionsBaseUrl()}/admin-api`, {
-    method: "POST",
-    headers: {
-      ...supabaseAnonHeaders(),
-      "Content-Type": "application/json",
-      "X-Admin-Jwt": jwt,
-    },
-    body: JSON.stringify({ op, params }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res;
+  try {
+    res = await fetch(`${functionsBaseUrl()}/admin-api`, {
+      method: "POST",
+      headers: {
+        ...supabaseAnonHeaders(),
+        "Content-Type": "application/json",
+        "X-Admin-Jwt": jwt,
+      },
+      body: JSON.stringify({ op, params }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("Request timed out. Check your connection and try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   let body = null;
   try {

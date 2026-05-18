@@ -1494,7 +1494,14 @@ async function handleAnnouncements(supabase: SupabaseClient, admin: AdminRow) {
   const { data, error } = await supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(
     500,
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    const msg = String(error.message || "");
+    const code = String((error as { code?: string }).code || "");
+    if (code === "42P01" || /relation .* does not exist/i.test(msg)) {
+      return { data: [] };
+    }
+    throw new Error(msg);
+  }
   const rows = (data || []).filter((r) => announcementVisibleToAdmin(r as Record<string, unknown>, admin));
   return { data: rows };
 }

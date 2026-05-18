@@ -10,7 +10,7 @@ import {
   validateChurchLocation,
 } from "./sections/ChurchLocationSection.jsx";
 import { ServiceUnitSection } from "./sections/ServiceUnitSection.jsx";
-import { SERVICE_UNITS, isEmail, isPhone } from "./data.js";
+import { SERVICE_UNITS, isEmail, isPhone, registrationSubmitFieldErrors } from "./data.js";
 import { shrinkPhotoDataUrl } from "./photoCompress.js";
 import { isSupabaseSubmitConfigured, submitRegistration } from "./registrationSubmit.js";
 import { fetchServiceUnitsCatalog } from "./serviceUnitsCatalog.js";
@@ -110,6 +110,7 @@ export default function App() {
   const [submitted, setSubmitted] = useState(false);
   const [done, setDone] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [submitFieldErrors, setSubmitFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -125,6 +126,14 @@ export default function App() {
   const set = useCallback((key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
     setTouched((t) => ({ ...t, [key]: true }));
+    if (key === "phone1" || key === "phone2" || key === "email") {
+      setSubmitFieldErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
   }, []);
 
   const setSilent = useCallback((key, value) => {
@@ -134,13 +143,16 @@ export default function App() {
   const allErrors = useMemo(() => validate(form, serviceUnits), [form, serviceUnits]);
 
   const errors = useMemo(() => {
-    if (submitted) return allErrors;
-    const shown = {};
-    for (const k of Object.keys(allErrors)) {
-      if (touched[k]) shown[k] = allErrors[k];
+    const base = submitted ? allErrors : {};
+    const shown = { ...submitFieldErrors };
+    if (!submitted) {
+      for (const k of Object.keys(allErrors)) {
+        if (touched[k]) shown[k] = allErrors[k];
+      }
+      return shown;
     }
-    return shown;
-  }, [allErrors, touched, submitted]);
+    return { ...base, ...submitFieldErrors };
+  }, [allErrors, touched, submitted, submitFieldErrors]);
 
   const isValid = Object.keys(allErrors).length === 0;
 
@@ -171,6 +183,7 @@ export default function App() {
   async function onSubmit(e) {
     e.preventDefault();
     setSaveError("");
+    setSubmitFieldErrors({});
     const validationErrors = validate(form, serviceUnits);
     setSubmitted(true);
     if (Object.keys(validationErrors).length > 0) {
@@ -247,7 +260,17 @@ export default function App() {
       try {
         await submitRegistration(payload);
       } catch (err) {
-        setSaveError(err?.message || "Could not submit your registration right now. Please try again.");
+        const msg = err?.message || "Could not submit your registration right now. Please try again.";
+        const fieldErrs = registrationSubmitFieldErrors(msg);
+        if (Object.keys(fieldErrs).length) {
+          setSubmitFieldErrors(fieldErrs);
+          setSubmitted(true);
+          requestAnimationFrame(() => {
+            firstValidationErrorEl()?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+          });
+        } else {
+          setSaveError(msg);
+        }
         return;
       }
       setDone(true);

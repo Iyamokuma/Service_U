@@ -3,6 +3,11 @@ import {
   branchCodesFromChurchId,
   canonicalizeRegistrationBranch,
 } from "../_shared/location_directory.ts";
+import {
+  assertRegistrationIdentityAvailable,
+  registrationIdentityColumns,
+  registrationIdentityConflictMessage,
+} from "../_shared/registration_identity.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -102,8 +107,28 @@ Deno.serve(async (req) => {
     row.branch_country = canonical.branch_country;
     row.branch_state = canonical.branch_state;
 
-    const { data, error } = await supabase.from("registrations").insert(row).select("id").maybeSingle();
-    if (error) return json(400, { error: error.message });
+    await assertRegistrationIdentityAvailable(
+      supabase,
+      String(row.phone1),
+      row.phone2 != null ? String(row.phone2) : null,
+      row.email != null ? String(row.email) : null,
+    );
+
+    const identity = registrationIdentityColumns(
+      String(row.phone1),
+      row.phone2 != null ? String(row.phone2) : null,
+      row.email != null ? String(row.email) : null,
+    );
+
+    const { data, error } = await supabase
+      .from("registrations")
+      .insert({ ...row, ...identity })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      const friendly = registrationIdentityConflictMessage(error);
+      return json(400, { error: friendly || error.message });
+    }
 
     return json(200, { ok: true, id: data?.id });
   } catch (err) {

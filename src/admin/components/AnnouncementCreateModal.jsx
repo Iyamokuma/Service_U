@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
 import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
-import { SearchableSelect } from "./SearchableSelect.jsx";
-import { satelliteSitesForBranch } from "../satelliteSites.js";
+import { SearchableDropdown } from "./SearchableDropdown.jsx";
 
 const ADMIN_ROLE_OPTIONS = [
   { value: "general_admin", label: "General Admin" },
@@ -30,7 +29,28 @@ const emptyForm = () => ({
   admins: { roles: ["general_admin"], branch_country: "", branch_state: "" },
 });
 
-export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitList }) {
+function branchSatelliteOptions(churches, branchCountry, branchState) {
+  const cc = String(branchCountry || "").trim().toUpperCase();
+  const st = String(branchState || "").trim().toUpperCase();
+  if (!cc || !st) return [];
+  const byName = new Map();
+  for (const ch of churches || []) {
+    if (String(ch.branch_country || "").toUpperCase() !== cc) continue;
+    if (String(ch.branch_state || "").toUpperCase() !== st) continue;
+    const name = String(ch.name || "").trim();
+    if (!name || byName.has(name)) continue;
+    byName.set(name, String(ch.address || "").trim());
+  }
+  return [...byName.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, address]) => ({
+      value: name,
+      label: name,
+      meta: address,
+    }));
+}
+
+export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitList = [] }) {
   const [form, setForm] = useState(emptyForm);
   const [churches, setChurches] = useState([]);
 
@@ -42,13 +62,63 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, [open]);
 
-  const satellites = useMemo(
-    () => satelliteSitesForBranch(churches, form.members.branch_country, form.members.branch_state),
-    [churches, form.members.branch_country, form.members.branch_state],
+  const countryOptions = useMemo(
+    () => BRANCH_COUNTRIES.map((c) => ({ value: c.code, label: c.name })),
+    [],
   );
 
-  const selectedUnit = unitList.find((u) => Number(u.id) === Number(form.members.service_unit_id));
-  const leaderUnit = unitList.find((u) => Number(u.id) === Number(form.leaders.service_unit_id));
+  const memberStateOptions = useMemo(() => {
+    if (!form.members.branch_country) return [];
+    return [
+      { value: "", label: "All states" },
+      ...branchStatesForCountry(form.members.branch_country).map((s) => ({
+        value: s.code,
+        label: s.name,
+      })),
+    ];
+  }, [form.members.branch_country]);
+
+  const memberSatelliteOptions = useMemo(() => {
+    const rows = branchSatelliteOptions(churches, form.members.branch_country, form.members.branch_state);
+    return [{ value: "", label: "All satellites" }, ...rows];
+  }, [churches, form.members.branch_country, form.members.branch_state]);
+
+  const unitOptions = useMemo(
+    () => [
+      { value: "", label: "All units" },
+      ...unitList.map((u) => ({ value: String(u.id), label: u.name })),
+    ],
+    [unitList],
+  );
+
+  const memberSubUnitOptions = useMemo(() => {
+    const unit = unitList.find((u) => Number(u.id) === Number(form.members.service_unit_id));
+    return [
+      { value: "", label: "All sub-units" },
+      ...(unit?.sub_units || []).map((s) => ({ value: s.name, label: s.name })),
+    ];
+  }, [unitList, form.members.service_unit_id]);
+
+  const leaderModeOptions = useMemo(
+    () => LEADER_MODES.map((m) => ({ value: m.value, label: m.label })),
+    [],
+  );
+
+  const leaderUnitOptions = useMemo(
+    () => [
+      { value: "", label: "Select unit" },
+      ...unitList.map((u) => ({ value: String(u.id), label: u.name })),
+    ],
+    [unitList],
+  );
+
+  const leaderSubUnitOptions = useMemo(() => {
+    const unit = unitList.find((u) => Number(u.id) === Number(form.leaders.service_unit_id));
+    return [
+      { value: "", label: "Select sub-unit" },
+      ...(unit?.sub_units || []).map((s) => ({ value: s.name, label: s.name })),
+    ];
+  }, [unitList, form.leaders.service_unit_id]);
 
   function buildPayload(workflow_action) {
     const destination_type = form.destination_type;
@@ -104,9 +174,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
 
   const setDest = (type) => setForm((f) => ({ ...f, destination_type: type }));
 
+  if (!open) return null;
+
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       title="Create announcement"
       size="lg"
@@ -170,181 +242,171 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       </div>
 
       {form.destination_type === "members" && (
-        <div className="sa-form-row" style={{ marginTop: 12 }}>
-          <div className="sa-field">
-            <label className="sa-label">Country <span className="sa-required">*</span></label>
-            <select
-              className="sa-field-select"
-              value={form.members.branch_country}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  members: { ...f.members, branch_country: e.target.value, branch_state: "", satellite_site: "" },
-                }))
-              }
-            >
-              <option value="">Select country</option>
-              {BRANCH_COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">State</label>
-            <select
-              className="sa-field-select"
-              value={form.members.branch_state}
-              disabled={!form.members.branch_country}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  members: { ...f.members, branch_state: e.target.value, satellite_site: "" },
-                }))
-              }
-            >
-              <option value="">All states</option>
-              {branchStatesForCountry(form.members.branch_country).map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">Satellite / branch</label>
-            <SearchableSelect
-              value={form.members.satellite_site}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, members: { ...f.members, satellite_site: e.target.value } }))
-              }
-              options={satellites}
-              disabled={!form.members.branch_country || !form.members.branch_state}
-              placeholder={
-                !form.members.branch_country
-                  ? "Select country first"
-                  : !form.members.branch_state
-                    ? "Select state first"
-                    : "All satellites"
-              }
-              searchPlaceholder="Search satellites…"
-              emptyMessage="No satellites in this state"
-              searchAriaLabel="Filter satellites"
-            />
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">Service unit</label>
-            <select
-              className="sa-field-select"
-              value={form.members.service_unit_id}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  members: { ...f.members, service_unit_id: e.target.value, sub_unit: "" },
-                }))
-              }
-            >
-              <option value="">All units</option>
-              {unitList.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {form.members.service_unit_id ? (
-            <div className="sa-field">
-              <label className="sa-label">Sub-unit</label>
-              <select
-                className="sa-field-select"
-                value={form.members.sub_unit}
-                onChange={(e) => setForm((f) => ({ ...f, members: { ...f.members, sub_unit: e.target.value } }))}
-              >
-                <option value="">All sub-units</option>
-                {(selectedUnit?.sub_units || []).map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+        <section className="sa-ann-scope" aria-label="Member audience">
+          <div className="sa-ann-scope-title">Audience scope</div>
+          <div className="sa-ann-scope-grid">
+            <div className="sa-field" style={{ marginBottom: 0 }}>
+              <label className="sa-label">Country <span className="sa-required">*</span></label>
+              <SearchableDropdown
+                value={form.members.branch_country}
+                onChange={(code) =>
+                  setForm((f) => ({
+                    ...f,
+                    members: { ...f.members, branch_country: code, branch_state: "", satellite_site: "" },
+                  }))
+                }
+                options={countryOptions}
+                placeholder="Select country"
+                searchPlaceholder="Search country"
+                emptyMessage="No countries match"
+                ariaLabel="Country"
+              />
             </div>
-          ) : null}
-        </div>
+            <div className="sa-field" style={{ marginBottom: 0 }}>
+              <label className="sa-label">State / region</label>
+              <SearchableDropdown
+                value={form.members.branch_state}
+                onChange={(code) =>
+                  setForm((f) => ({
+                    ...f,
+                    members: { ...f.members, branch_state: code, satellite_site: "" },
+                  }))
+                }
+                options={memberStateOptions}
+                disabled={!form.members.branch_country}
+                placeholder={form.members.branch_country ? "All states" : "Select country first"}
+                searchPlaceholder="Search state"
+                emptyMessage="No states match"
+                ariaLabel="State / region"
+              />
+            </div>
+            <div className="sa-field" style={{ marginBottom: 0 }}>
+              <label className="sa-label">Satellite / branch</label>
+              <SearchableDropdown
+                value={form.members.satellite_site}
+                onChange={(site) => setForm((f) => ({ ...f, members: { ...f.members, satellite_site: site } }))}
+                options={memberSatelliteOptions}
+                disabled={!form.members.branch_country || !form.members.branch_state}
+                placeholder={
+                  !form.members.branch_country
+                    ? "Select country first"
+                    : !form.members.branch_state
+                      ? "Select state first"
+                      : "All satellites"
+                }
+                searchPlaceholder="Search by name or address"
+                emptyMessage="No branches match"
+                ariaLabel="Satellite / branch"
+              />
+            </div>
+            <div className="sa-field" style={{ marginBottom: 0 }}>
+              <label className="sa-label">Service unit</label>
+              <SearchableDropdown
+                value={form.members.service_unit_id ? String(form.members.service_unit_id) : ""}
+                onChange={(id) =>
+                  setForm((f) => ({
+                    ...f,
+                    members: { ...f.members, service_unit_id: id, sub_unit: "" },
+                  }))
+                }
+                options={unitOptions}
+                placeholder="All units"
+                searchPlaceholder="Search service unit"
+                emptyMessage="No units match"
+                ariaLabel="Service unit"
+              />
+            </div>
+            {form.members.service_unit_id ? (
+              <div className="sa-field" style={{ marginBottom: 0 }}>
+                <label className="sa-label">Sub-unit</label>
+                <SearchableDropdown
+                  value={form.members.sub_unit}
+                  onChange={(name) => setForm((f) => ({ ...f, members: { ...f.members, sub_unit: name } }))}
+                  options={memberSubUnitOptions}
+                  placeholder="All sub-units"
+                  searchPlaceholder="Search sub-unit"
+                  emptyMessage="No sub-units match"
+                  ariaLabel="Sub-unit"
+                />
+              </div>
+            ) : null}
+          </div>
+          <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
+            Narrow the audience step by step. Leave optional fields on “All” to include everyone in the previous level.
+          </p>
+        </section>
       )}
 
       {form.destination_type === "leaders" && (
-        <div style={{ marginTop: 12 }}>
-          <div className="sa-field">
+        <section className="sa-ann-scope" aria-label="Leader audience">
+          <div className="sa-ann-scope-title">Leader audience</div>
+          <div className="sa-field" style={{ marginBottom: 14 }}>
             <label className="sa-label">Leaders</label>
-            <select
-              className="sa-field-select"
+            <SearchableDropdown
               value={form.leaders.mode}
-              onChange={(e) =>
+              onChange={(mode) =>
                 setForm((f) => ({
                   ...f,
-                  leaders: { ...f.leaders, mode: e.target.value, sub_unit: "" },
+                  leaders: { ...f.leaders, mode, service_unit_id: "", sub_unit: "" },
                 }))
               }
-            >
-              {LEADER_MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+              options={leaderModeOptions}
+              placeholder="Select audience"
+              searchPlaceholder="Search option"
+              emptyMessage="No options"
+              ariaLabel="Leader audience type"
+            />
             <div className="sa-field-hint">
-              If sub-unit is left empty with “service unit leaders only”, only service unit leaders receive it.
+              Service unit only: unit leaders. Sub-unit: pick a unit and sub-unit for sub-unit leaders.
             </div>
           </div>
           {form.leaders.mode !== "all" && (
-            <div className="sa-form-row" style={{ marginTop: 10 }}>
-              <div className="sa-field">
-                <label className="sa-label">Service unit</label>
-                <select
-                  className="sa-field-select"
-                  value={form.leaders.service_unit_id}
-                  onChange={(e) =>
+            <div className="sa-ann-scope-grid">
+              <div className="sa-field" style={{ marginBottom: 0 }}>
+                <label className="sa-label">
+                  Service unit {form.leaders.mode !== "all" ? <span className="sa-required">*</span> : null}
+                </label>
+                <SearchableDropdown
+                  value={form.leaders.service_unit_id ? String(form.leaders.service_unit_id) : ""}
+                  onChange={(id) =>
                     setForm((f) => ({
                       ...f,
-                      leaders: { ...f.leaders, service_unit_id: e.target.value, sub_unit: "" },
+                      leaders: { ...f.leaders, service_unit_id: id, sub_unit: "" },
                     }))
                   }
-                >
-                  <option value="">Select unit</option>
-                  {unitList.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
+                  options={leaderUnitOptions}
+                  placeholder="Select unit"
+                  searchPlaceholder="Search service unit"
+                  emptyMessage="No units match"
+                  ariaLabel="Service unit"
+                />
               </div>
               {form.leaders.mode === "sub_unit" && (
-                <div className="sa-field">
-                  <label className="sa-label">Sub-unit</label>
-                  <select
-                    className="sa-field-select"
+                <div className="sa-field" style={{ marginBottom: 0 }}>
+                  <label className="sa-label">
+                    Sub-unit <span className="sa-required">*</span>
+                  </label>
+                  <SearchableDropdown
                     value={form.leaders.sub_unit}
-                    onChange={(e) => setForm((f) => ({ ...f, leaders: { ...f.leaders, sub_unit: e.target.value } }))}
-                  >
-                    <option value="">Select sub-unit</option>
-                    {(leaderUnit?.sub_units || []).map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(name) => setForm((f) => ({ ...f, leaders: { ...f.leaders, sub_unit: name } }))}
+                    options={leaderSubUnitOptions}
+                    disabled={!form.leaders.service_unit_id}
+                    placeholder={form.leaders.service_unit_id ? "Select sub-unit" : "Select unit first"}
+                    searchPlaceholder="Search sub-unit"
+                    emptyMessage="No sub-units match"
+                    ariaLabel="Sub-unit"
+                  />
                 </div>
               )}
             </div>
           )}
-        </div>
+        </section>
       )}
 
       {form.destination_type === "admins" && (
-        <div className="sa-field" style={{ marginTop: 12 }}>
-          <label className="sa-label">Admin roles</label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+        <section className="sa-ann-scope" aria-label="Admin audience">
+          <div className="sa-ann-scope-title">Admin roles</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {ADMIN_ROLE_OPTIONS.map((r) => (
               <label key={r.value} className="sa-field-toggle" style={{ cursor: "pointer" }}>
                 <input
@@ -363,7 +425,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               </label>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
       <div className="sa-form-row" style={{ marginTop: 16 }}>
@@ -396,7 +458,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             value={form.scheduled_at}
             onChange={(e) => setForm((f) => ({ ...f, scheduled_at: e.target.value }))}
           />
-          <div className="sa-field-hint">Use Schedule button below, or Send now to publish immediately.</div>
+          <div className="sa-field-hint">Use Schedule below, or Send now to publish immediately.</div>
         </div>
       </div>
     </Modal>

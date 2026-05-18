@@ -18,8 +18,7 @@ const NAV_SUPER = [
   {
     section: "Manage",
     items: [
-      { id: "locations", label: "Locations", icon: <LayersIcon /> },
-      { id: "branch-catalog", label: "Branch directory", icon: <MapPinIcon /> },
+      { id: "locations", label: "Locations", icon: <MapPinIcon /> },
     ],
   },
   {
@@ -99,7 +98,7 @@ const NAV_DATA_ENTRY = [
     items: [
       { id: "role-dashboard", label: "Home", icon: <HomeIcon /> },
       { id: "data-locations", label: "New locations", icon: <LayersIcon /> },
-      { id: "branch-catalog", label: "Branch directory", icon: <MapPinIcon /> },
+      { id: "locations", label: "Locations", icon: <MapPinIcon /> },
       { id: "overview", label: "Overview", icon: <GridIcon /> },
       { id: "queue", label: "Application Queue", icon: <ListIcon /> },
       { id: "members", label: "Unit Members", icon: <UsersIcon /> },
