@@ -78,11 +78,15 @@ const NAV_COUNTRY_ADMIN = [
   },
 ];
 
-const NAV_STATE_SUPERVISORY = [
+const NAV_STATE_ADMIN = [
   {
-    section: "Branch oversight",
+    section: "State",
     items: [
-      { id: "oversight", label: "Registrations & filters", icon: <ListIcon /> },
+      { id: "overview", label: "State analytics", icon: <GridIcon /> },
+      { id: "oversight", label: "Application queue", icon: <ListIcon /> },
+      { id: "members", label: "Unit members", icon: <UsersIcon /> },
+      { id: "admins", label: "Admin accounts", icon: <UsersIcon /> },
+      { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
@@ -152,7 +156,7 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
           : admin?.role === "country_super_admin"
             ? NAV_COUNTRY_ADMIN
             : admin?.role === "state_super_admin"
-              ? NAV_STATE_SUPERVISORY
+              ? NAV_STATE_ADMIN
               : NAV_LEADER;
 
   return (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Field } from "../components/Field.jsx";
+import { SearchableDropdown } from "../components/SearchableDropdown.jsx";
 import { SectionHead } from "./SectionHead.jsx";
 import {
   BRANCH_COUNTRIES,
@@ -36,8 +37,6 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   const silent = setSilent || set;
   const [catalog, setCatalog] = useState([]);
   const [loadErr, setLoadErr] = useState("");
-  const [churchFilter, setChurchFilter] = useState("");
-
   const [dirCountries, setDirCountries] = useState([]);
   const [dirStates, setDirStates] = useState([]);
   const [dirStatesLoading, setDirStatesLoading] = useState(false);
@@ -191,16 +190,25 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     const cc = norm(form.branchCountry);
     const st = norm(effectiveState);
     if (!cc || !st) return [];
-    let rows = catalog.filter((c) => norm(c.branch_country) === cc && norm(c.branch_state) === st);
-    const q = churchFilter.trim().toLowerCase();
-    if (q) {
-      rows = rows.filter(
-        (c) =>
-          String(c.name || "").toLowerCase().includes(q) || String(c.address || "").toLowerCase().includes(q),
-      );
-    }
-    return rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  }, [catalog, form.branchCountry, effectiveState, churchFilter]);
+    return catalog
+      .filter((c) => norm(c.branch_country) === cc && norm(c.branch_state) === st)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [catalog, form.branchCountry, effectiveState]);
+
+  const churchOptions = useMemo(
+    () =>
+      churchesForPick.map((c) => ({
+        value: String(c.id),
+        label: String(c.name || "").trim() || "Unnamed branch",
+        meta: String(c.address || "").trim(),
+      })),
+    [churchesForPick],
+  );
+
+  const stateOptions = useMemo(
+    () => stateList.map((s) => ({ value: s.code, label: s.name })),
+    [stateList],
+  );
 
   const onCountryChange = (e) => {
     const v = e.target.value;
@@ -208,18 +216,15 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     set("branchState", "");
     set("churchId", "");
     set("satelliteSite", "");
-    setChurchFilter("");
   };
 
-  const onStateChange = (e) => {
-    set("branchState", e.target.value);
+  const onStateChange = (code) => {
+    set("branchState", code);
     set("churchId", "");
     set("satelliteSite", "");
-    setChurchFilter("");
   };
 
-  const onChurchChange = (e) => {
-    const id = e.target.value;
+  const onChurchChange = (id) => {
     if (!id) {
       set("churchId", "");
       set("satelliteSite", "");
@@ -232,9 +237,6 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     set("branchState", norm(row.branch_state));
     set("satelliteSite", String(row.name || "").trim());
   };
-
-  const selectState = errors.churchState ? "error" : effectiveState ? "valid" : undefined;
-  const selectChurch = errors.churchSelect ? "error" : form.churchId ? "valid" : undefined;
 
   const stateLineLabel = useMemo(() => {
     const row = stateList.find((s) => norm(s.code) === norm(effectiveState));
@@ -269,21 +271,18 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
 
         {!singleStateMode && (
           <Field label="State / region" required error={errors.churchState} hint="State where your branch is located.">
-            <select
-              className="select"
+            <SearchableDropdown
               value={form.branchState}
               onChange={onStateChange}
+              options={stateOptions}
               disabled={!form.branchCountry}
-              aria-invalid={!!errors.churchState}
-              data-state={selectState}
-            >
-              <option value="">{form.branchCountry ? "Select state" : "Select country first"}</option>
-              {stateList.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              placeholder={form.branchCountry ? "Select" : "Select country first"}
+              searchPlaceholder="Search state"
+              emptyMessage="No states match your search"
+              invalid={!!errors.churchState}
+              valid={!!effectiveState && !errors.churchState}
+              ariaLabel="State / region"
+            />
           </Field>
         )}
 
@@ -298,43 +297,32 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
               : "Pick the branch name as listed in the directory."
           }
         >
-          <input
-            type="search"
-            className="input"
-            placeholder="Filter by name or address…"
-            value={churchFilter}
-            onChange={(e) => setChurchFilter(e.target.value)}
-            disabled={!form.branchCountry || (!singleStateMode && !form.branchState)}
-            style={{ marginBottom: 8 }}
-            aria-label="Filter churches"
-          />
-          <select
-            className="select"
+          <SearchableDropdown
             value={form.churchId}
             onChange={onChurchChange}
+            options={churchOptions}
             disabled={
               !form.branchCountry ||
               (!singleStateMode && !form.branchState) ||
               (useDirectory && dirStatesLoading)
             }
-            data-state={selectChurch}
-          >
-            <option value="">
-              {!form.branchCountry
+            placeholder={
+              !form.branchCountry
                 ? "Select country first"
                 : !singleStateMode && !form.branchState
                   ? "Select state first"
-                  : churchesForPick.length
-                    ? "Select your church / branch"
-                    : "No branches found for this area"}
-            </option>
-            {churchesForPick.map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name}
-                {c.address ? ` — ${c.address.slice(0, 80)}${c.address.length > 80 ? "…" : ""}` : ""}
-              </option>
-            ))}
-          </select>
+                  : useDirectory && dirStatesLoading
+                    ? "Loading regions…"
+                    : churchOptions.length
+                      ? "Select"
+                      : "No branches found for this area"
+            }
+            searchPlaceholder="Search by name or address"
+            emptyMessage="No branches match your search"
+            invalid={!!errors.churchSelect}
+            valid={!!form.churchId && !errors.churchSelect}
+            ariaLabel="Church / branch"
+          />
         </Field>
 
         {form.churchId && form.satelliteSite && (

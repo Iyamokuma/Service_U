@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
-import { isCountrySuperAdmin } from "../roles.js";
+import { isCountrySuperAdmin, isStateSuperAdmin } from "../roles.js";
 import { branchStatesForCountry } from "../branchRegions.js";
 
 export function UnitMembers({ units }) {
@@ -44,7 +44,7 @@ export function UnitMembers({ units }) {
         setLoading(false);
       }
     },
-    [filters.search, filters.unit_id, filters.sub_unit, filters.filter_branch_state, admin, isLeader, isServiceUnitLeader, isCountryAdmin, toast]
+    [filters.search, filters.unit_id, filters.sub_unit, filters.filter_branch_state, admin, isLeader, isServiceUnitLeader, isCountryAdmin, isStateAdmin, toast]
   );
 
   useEffect(() => {

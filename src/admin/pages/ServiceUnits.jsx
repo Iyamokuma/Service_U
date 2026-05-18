@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api.js";
-import { Modal, ConfirmModal } from "../components/Modal.jsx";
+import { Modal } from "../components/Modal.jsx";
+import { DeleteConfirmWithMath } from "../components/DeleteConfirmWithMath.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 export function ServiceUnits({ data, reload }) {
@@ -12,7 +13,21 @@ export function ServiceUnits({ data, reload }) {
   const [subModal, setSubModal] = useState(null);
   const [delUnit, setDelUnit] = useState(null);
   const [delSub, setDelSub] = useState(null);
+  const [delUnitInfo, setDelUnitInfo] = useState(null);
+  const [delSubInfo, setDelSubInfo] = useState(null);
+  const [allAdmins, setAllAdmins] = useState([]);
   const [saving, setSaving] = useState(false);
+
+  const loadAdmins = useCallback(() => {
+    api
+      .admins()
+      .then((r) => setAllAdmins(r.data || []))
+      .catch(() => setAllAdmins([]));
+  }, []);
+
+  useEffect(() => {
+    loadAdmins();
+  }, [loadAdmins]);
 
   async function saveUnit(form) {
     setSaving(true);
@@ -58,14 +73,32 @@ export function ServiceUnits({ data, reload }) {
     }
   }
 
+  async function openDeleteUnit(unit) {
+    setDelUnit(unit);
+    setDelUnitInfo(null);
+    try {
+      const info = await api.unitDeleteInfo(unit.id);
+      setDelUnitInfo(info);
+    } catch (e) {
+      toast(e.message, "error");
+      setDelUnit(null);
+    }
+  }
+
   async function confirmDeleteUnit() {
+    if (!delUnit) return;
+    setSaving(true);
     try {
       await api.deleteUnit(delUnit.id);
       toast("Unit deleted.", "success");
       setDelUnit(null);
+      setDelUnitInfo(null);
+      loadAdmins();
       reload();
     } catch (e) {
       toast(e.message, "error");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -84,14 +117,32 @@ export function ServiceUnits({ data, reload }) {
     }
   }
 
+  async function openDeleteSub(sub) {
+    setDelSub(sub);
+    setDelSubInfo(null);
+    try {
+      const info = await api.subDeleteInfo(sub.id);
+      setDelSubInfo(info);
+    } catch (e) {
+      toast(e.message, "error");
+      setDelSub(null);
+    }
+  }
+
   async function confirmDeleteSub() {
+    if (!delSub) return;
+    setSaving(true);
     try {
       await api.deleteSub(delSub.id);
       toast("Sub-unit deleted.", "success");
       setDelSub(null);
+      setDelSubInfo(null);
+      loadAdmins();
       reload();
     } catch (e) {
       toast(e.message, "error");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -134,7 +185,7 @@ export function ServiceUnits({ data, reload }) {
                 <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setUnitModal(unit)}>
                   Edit
                 </button>
-                <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDelUnit(unit)}>
+                <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => openDeleteUnit(unit)}>
                   Delete
                 </button>
               </div>
@@ -156,7 +207,7 @@ export function ServiceUnits({ data, reload }) {
                       <button className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setSubModal({ ...sub })}>
                         Edit
                       </button>
-                      <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => setDelSub(sub)}>
+                      <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => openDeleteSub(sub)}>
                         ✕
                       </button>
                     </div>
@@ -171,32 +222,66 @@ export function ServiceUnits({ data, reload }) {
         ))}
       </div>
 
-      <UnitModal open={!!unitModal} data={unitModal} onClose={() => setUnitModal(null)} onSave={saveUnit} saving={saving} />
+      <UnitModal
+        open={!!unitModal}
+        data={unitModal}
+        unitAdmins={
+          unitModal?.id
+            ? allAdmins.filter(
+                (a) =>
+                  Number(a.service_unit_id) === Number(unitModal.id) &&
+                  (a.role === "service_unit_leader" || a.role === "sub_unit_leader"),
+              )
+            : []
+        }
+        subUnits={unitModal?.id ? units.find((u) => Number(u.id) === Number(unitModal.id))?.sub_units || [] : []}
+        onClose={() => setUnitModal(null)}
+        onSave={saveUnit}
+        onAdminChange={() => {
+          loadAdmins();
+          reload();
+        }}
+        saving={saving}
+      />
 
       <SubModal open={!!subModal} data={subModal} onClose={() => setSubModal(null)} onSave={saveSub} saving={saving} />
 
-      <ConfirmModal
-        open={!!delUnit}
-        onClose={() => setDelUnit(null)}
+      <DeleteConfirmWithMath
+        open={!!delUnit && !!delUnitInfo}
+        onClose={() => {
+          setDelUnit(null);
+          setDelUnitInfo(null);
+        }}
         onConfirm={confirmDeleteUnit}
-        title="Delete Service Unit"
-        message={`Delete "${delUnit?.name}"? All sub-units will be removed. This cannot be undone.`}
-        danger
+        title="Delete service unit"
+        busy={saving}
+        confirmLabel="Delete unit"
+        message={`Delete "${delUnitInfo?.name || delUnit?.name}"?\n\nThis unit has ${delUnitInfo?.memberCount ?? 0} unit member${delUnitInfo?.memberCount === 1 ? "" : "s"}. All sub-units will be removed. This cannot be undone.\n\nAre you really sure?`}
       />
 
-      <ConfirmModal
-        open={!!delSub}
-        onClose={() => setDelSub(null)}
+      <DeleteConfirmWithMath
+        open={!!delSub && !!delSubInfo}
+        onClose={() => {
+          setDelSub(null);
+          setDelSubInfo(null);
+        }}
         onConfirm={confirmDeleteSub}
-        title="Delete Sub-unit"
-        message={`Delete sub-unit "${delSub?.name}"?`}
-        danger
+        title="Delete sub-unit"
+        busy={saving}
+        confirmLabel="Delete sub-unit"
+        message={`Delete "${delSubInfo?.name || delSub?.name}"?\n\nThis sub-unit has ${delSubInfo?.memberCount ?? 0} member${delSubInfo?.memberCount === 1 ? "" : "s"}. All members will be removed. This cannot be undone.\n\nAre you really sure?`}
       />
     </>
   );
 }
 
-function UnitModal({ open, data, onClose, onSave, saving }) {
+function roleLabel(role) {
+  if (role === "service_unit_leader") return "Service unit leader";
+  if (role === "sub_unit_leader") return "Sub-unit leader";
+  return role;
+}
+
+function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave, onAdminChange, saving }) {
   const emptyCreateForm = useCallback(
     () => ({
       name: "",
@@ -210,11 +295,21 @@ function UnitModal({ open, data, onClose, onSave, saving }) {
   );
   const [form, setForm] = useState(() => emptyCreateForm());
   const [wizardStep, setWizardStep] = useState(0);
+  const [showAddLeader, setShowAddLeader] = useState(false);
+  const [addLeaderForm, setAddLeaderForm] = useState({
+    role: "sub_unit_leader",
+    full_name: "",
+    username: "",
+    email: "",
+    password: "",
+    sub_unit_name: "",
+  });
 
   useEffect(() => {
     if (!open) {
       setForm(emptyCreateForm());
       setWizardStep(0);
+      setShowAddLeader(false);
       return;
     }
     if (data?.id) {
@@ -239,6 +334,71 @@ function UnitModal({ open, data, onClose, onSave, saving }) {
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const isCreate = !form.id;
+  const leaders = unitAdmins || [];
+  const subs = subUnits || [];
+  const hasUnitLeader = leaders.some((a) => a.role === "service_unit_leader");
+
+  async function removeAdminAccount(admin) {
+    if (!window.confirm(`Remove admin “${admin.full_name}” (${admin.username})?`)) return;
+    try {
+      await api.deleteAdmin(admin.id);
+      onAdminChange?.();
+    } catch (e) {
+      /* toast from parent if needed */
+      window.alert(e.message);
+    }
+  }
+
+  async function saveNewLeader(e) {
+    e.preventDefault();
+    if (!form.id) return;
+    const body = {
+      full_name: addLeaderForm.full_name.trim(),
+      username: addLeaderForm.username.trim(),
+      email: addLeaderForm.email.trim(),
+      password: addLeaderForm.password,
+      role: addLeaderForm.role,
+      service_unit_id: form.id,
+      sub_unit_name: addLeaderForm.role === "sub_unit_leader" ? addLeaderForm.sub_unit_name : "",
+      is_active: 1,
+    };
+    if (!body.full_name || !body.username || !body.email || !body.password) {
+      window.alert("Fill all leader account fields.");
+      return;
+    }
+    if (body.role === "service_unit_leader" && hasUnitLeader) {
+      window.alert("This unit already has a service unit leader. Remove or reassign the existing one first.");
+      return;
+    }
+    if (body.role === "sub_unit_leader" && !body.sub_unit_name) {
+      window.alert("Select a sub-unit for this leader.");
+      return;
+    }
+    try {
+      await api.createAdmin(body);
+      setShowAddLeader(false);
+      setAddLeaderForm({
+        role: "sub_unit_leader",
+        full_name: "",
+        username: "",
+        email: "",
+        password: "",
+        sub_unit_name: "",
+      });
+      onAdminChange?.();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  }
+
+  async function reassignSubLeader(admin, subUnitName) {
+    try {
+      await api.updateAdmin(admin.id, { sub_unit_name: subUnitName });
+      onAdminChange?.();
+    } catch (e) {
+      window.alert(e.message);
+    }
+  }
 
   function goNext() {
     if (!String(form.name || "").trim()) return;
@@ -287,7 +447,7 @@ function UnitModal({ open, data, onClose, onSave, saving }) {
       open={open}
       onClose={onClose}
       title={form.id ? "Edit Service Unit" : "New Service Unit"}
-      size="md"
+      size="lg"
       footer={isCreate ? (wizardStep === 0 ? createFooterStep0 : createFooterStep1) : editFooter}
     >
       {isCreate ? (
@@ -366,9 +526,179 @@ function UnitModal({ open, data, onClose, onSave, saving }) {
               <option value={0}>Inactive</option>
             </select>
           </div>
+
+          <UnitAdminsPanel
+            unitAdmins={unitAdmins}
+            subUnits={subUnits}
+            showAddLeader={showAddLeader}
+            setShowAddLeader={setShowAddLeader}
+            addLeaderForm={addLeaderForm}
+            setAddLeaderForm={setAddLeaderForm}
+            hasUnitLeader={hasUnitLeader}
+            onRemove={removeAdminAccount}
+            onReassign={reassignSubLeader}
+            onSaveLeader={saveNewLeader}
+          />
         </>
       )}
     </Modal>
+  );
+}
+
+function UnitAdminsPanel({
+  unitAdmins,
+  subUnits,
+  showAddLeader,
+  setShowAddLeader,
+  addLeaderForm,
+  setAddLeaderForm,
+  hasUnitLeader,
+  onRemove,
+  onReassign,
+  onSaveLeader,
+}) {
+  return (
+    <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--sa-border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span className="sa-label" style={{ margin: 0 }}>
+          Leaders &amp; admins for this unit
+        </span>
+        <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setShowAddLeader((v) => !v)}>
+          {showAddLeader ? "Cancel" : "+ Add admin"}
+        </button>
+      </div>
+
+      {unitAdmins.length === 0 ? (
+        <p className="sa-text-sm sa-text-muted">No leader accounts linked to this unit yet.</p>
+      ) : (
+        <div className="sa-table-wrap" style={{ maxHeight: 220 }}>
+          <table className="sa-table" style={{ fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Sub-unit</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unitAdmins.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <div>{a.full_name}</div>
+                    <div className="sa-text-muted sa-text-sm">{a.username}</div>
+                  </td>
+                  <td>{roleLabel(a.role)}</td>
+                  <td>
+                    {a.role === "sub_unit_leader" ? (
+                      <select
+                        className="sa-field-select"
+                        style={{ minWidth: 140, padding: "4px 8px", fontSize: 12 }}
+                        value={a.sub_unit_name || ""}
+                        onChange={(e) => onReassign(a, e.target.value)}
+                      >
+                        <option value="">—</option>
+                        {subUnits.map((s) => (
+                          <option key={s.id} value={s.name}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td>
+                    <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => onRemove(a)}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showAddLeader ? (
+        <form onSubmit={onSaveLeader} style={{ marginTop: 14, padding: 12, background: "var(--sa-surface-2, #f8fafc)", borderRadius: 8 }}>
+          <div className="sa-field">
+            <label className="sa-label">Role</label>
+            <select
+              className="sa-field-select"
+              value={addLeaderForm.role}
+              onChange={(e) => setAddLeaderForm((f) => ({ ...f, role: e.target.value }))}
+            >
+              <option value="sub_unit_leader">Sub-unit leader</option>
+              <option value="service_unit_leader" disabled={hasUnitLeader}>
+                Service unit leader{hasUnitLeader ? " (already assigned)" : ""}
+              </option>
+            </select>
+          </div>
+          {addLeaderForm.role === "sub_unit_leader" && (
+            <div className="sa-field">
+              <label className="sa-label">Sub-unit</label>
+              <select
+                className="sa-field-select"
+                value={addLeaderForm.sub_unit_name}
+                onChange={(e) => setAddLeaderForm((f) => ({ ...f, sub_unit_name: e.target.value }))}
+                required
+              >
+                <option value="">Select sub-unit</option>
+                {subUnits.map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="sa-form-row">
+            <div className="sa-field">
+              <label className="sa-label">Full name</label>
+              <input
+                className="sa-input"
+                value={addLeaderForm.full_name}
+                onChange={(e) => setAddLeaderForm((f) => ({ ...f, full_name: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">Username</label>
+              <input
+                className="sa-input"
+                value={addLeaderForm.username}
+                onChange={(e) => setAddLeaderForm((f) => ({ ...f, username: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">Email</label>
+            <input
+              className="sa-input"
+              type="email"
+              value={addLeaderForm.email}
+              onChange={(e) => setAddLeaderForm((f) => ({ ...f, email: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">Password</label>
+            <input
+              className="sa-input"
+              type="password"
+              value={addLeaderForm.password}
+              onChange={(e) => setAddLeaderForm((f) => ({ ...f, password: e.target.value }))}
+              required
+            />
+          </div>
+          <button type="submit" className="sa-btn sa-btn-primary sa-btn-sm">
+            Create admin account
+          </button>
+        </form>
+      ) : null}
+    </div>
   );
 }
 

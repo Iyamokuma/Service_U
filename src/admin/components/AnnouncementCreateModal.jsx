@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
 import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { SearchableSelect } from "./SearchableSelect.jsx";
+import { satelliteSitesForBranch } from "../satelliteSites.js";
 
 const ADMIN_ROLE_OPTIONS = [
   { value: "general_admin", label: "General Admin" },
@@ -40,18 +42,10 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, [open]);
 
-  const satellites = useMemo(() => {
-    const cc = String(form.members.branch_country || "").toUpperCase();
-    const st = String(form.members.branch_state || "").toUpperCase();
-    const names = new Set();
-    for (const ch of churches) {
-      if (cc && String(ch.branch_country || "").toUpperCase() !== cc) continue;
-      if (st && String(ch.branch_state || "").toUpperCase() !== st) continue;
-      const n = String(ch.name || "").trim();
-      if (n) names.add(n);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [churches, form.members.branch_country, form.members.branch_state]);
+  const satellites = useMemo(
+    () => satelliteSitesForBranch(churches, form.members.branch_country, form.members.branch_state),
+    [churches, form.members.branch_country, form.members.branch_state],
+  );
 
   const selectedUnit = unitList.find((u) => Number(u.id) === Number(form.members.service_unit_id));
   const leaderUnit = unitList.find((u) => Number(u.id) === Number(form.leaders.service_unit_id));
@@ -220,19 +214,24 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           </div>
           <div className="sa-field">
             <label className="sa-label">Satellite / branch</label>
-            <select
-              className="sa-field-select"
+            <SearchableSelect
               value={form.members.satellite_site}
-              disabled={!form.members.branch_country}
-              onChange={(e) => setForm((f) => ({ ...f, members: { ...f.members, satellite_site: e.target.value } }))}
-            >
-              <option value="">All satellites</option>
-              {satellites.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              onChange={(e) =>
+                setForm((f) => ({ ...f, members: { ...f.members, satellite_site: e.target.value } }))
+              }
+              options={satellites}
+              disabled={!form.members.branch_country || !form.members.branch_state}
+              placeholder={
+                !form.members.branch_country
+                  ? "Select country first"
+                  : !form.members.branch_state
+                    ? "Select state first"
+                    : "All satellites"
+              }
+              searchPlaceholder="Search satellites…"
+              emptyMessage="No satellites in this state"
+              searchAriaLabel="Filter satellites"
+            />
           </div>
           <div className="sa-field">
             <label className="sa-label">Service unit</label>

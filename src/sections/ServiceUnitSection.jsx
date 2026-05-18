@@ -4,7 +4,7 @@ import { SectionHead } from "./SectionHead.jsx";
 import { SERVICE_UNITS } from "../data.js";
 
 export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS }) {
-  const selected = units.find((u) => u.id === form.unitId);
+  const selected = units.find((u) => Number(u.id) === Number(form.unitId));
   const hasSubs = !!selected?.subs?.length;
 
   const rows = [];
@@ -51,7 +51,7 @@ export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS })
       <div className="unit-list">
         {rows.map((row, rIdx) => {
           const rowContainsSelectedWithSubs =
-            hasSubs && row.some((u) => u.id === selected.id);
+            hasSubs && row.some((u) => Number(u.id) === Number(selected.id));
           return (
             <Fragment key={rIdx}>
               {row.map(renderUnit)}
