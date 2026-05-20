@@ -1547,6 +1547,7 @@ function announcementScopeFromPayload(
     const mode = norm(l.mode) || "all";
     scope.branch_country = normUp(l.branch_country ?? admin.branch_country);
     scope.scope_branch_state = normUp(l.branch_state ?? admin.branch_state);
+    scope.scope_satellite_site = norm(l.satellite_site ?? "");
     if (mode === "service_unit" || mode === "sub_unit") {
       scope.scope_unit_id = l.service_unit_id ? Number(l.service_unit_id) : Number(admin.service_unit_id) || null;
     }
@@ -1563,6 +1564,7 @@ function announcementScopeFromPayload(
     (destinationConfig as { roles?: string[] }).roles = roles;
     scope.branch_country = normUp((destinationConfig as { branch_country?: string }).branch_country ?? "");
     scope.scope_branch_state = normUp((destinationConfig as { branch_state?: string }).branch_state ?? "");
+    scope.scope_satellite_site = norm((destinationConfig as { satellite_site?: string }).satellite_site ?? "");
     return scope;
   }
 

@@ -58,6 +58,11 @@ function formatDestination(r, unitNames) {
 
   if (type === "leaders") {
     const l = cfg;
+    const geo = [
+      branchCountryLabel(l.branch_country),
+      l.branch_state ? branchStateLabel(l.branch_country, l.branch_state) : "",
+      l.satellite_site || "",
+    ].filter(Boolean);
     const mode =
       l.mode === "sub_unit"
         ? "Sub-unit leaders"
@@ -66,19 +71,25 @@ function formatDestination(r, unitNames) {
           : "All leaders";
     const unit = l.service_unit_id ? unitNames[Number(l.service_unit_id)] : "";
     const sub = l.sub_unit || "";
-    return ["Leaders", mode, unit, sub].filter(Boolean).join(" · ");
+    return ["Leaders", ...geo, mode, unit, sub].filter(Boolean).join(" · ");
   }
 
   if (type === "admins") {
+    const geo = [
+      branchCountryLabel(cfg.branch_country),
+      cfg.branch_state ? branchStateLabel(cfg.branch_country, cfg.branch_state) : "",
+      cfg.satellite_site || "",
+    ].filter(Boolean);
     const raw = Array.isArray(cfg.roles) ? cfg.roles.filter(Boolean).map(String) : [];
-    if (raw.length === 0) return "Admins · All admins";
-    const selected = new Set(raw.map((role) => role.trim()));
-    const allSelected = ADMIN_DEST_ROLE_KEYS.every((key) => selected.has(key));
-    if (allSelected && selected.size <= ADMIN_DEST_ROLE_KEYS.length) {
-      return "Admins · All admins";
+    let rolePart = "All admins";
+    if (raw.length > 0) {
+      const selected = new Set(raw.map((role) => role.trim()));
+      const allSelected = ADMIN_DEST_ROLE_KEYS.every((key) => selected.has(key));
+      if (!(allSelected && selected.size <= ADMIN_DEST_ROLE_KEYS.length)) {
+        rolePart = raw.map((key) => ADMIN_DEST_LABELS[key] || key.replace(/_/g, " ")).join(", ");
+      }
     }
-    const labels = raw.map((key) => ADMIN_DEST_LABELS[key] || key.replace(/_/g, " "));
-    return `Admins · ${labels.join(", ")}`;
+    return ["Admins", ...geo, rolePart].filter(Boolean).join(" · ");
   }
 
   const uid = r.scope_unit_id != null ? Number(r.scope_unit_id) : 0;

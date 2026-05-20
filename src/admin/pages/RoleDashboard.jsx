@@ -25,12 +25,18 @@ export function RoleDashboard({ setPage }) {
               <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("data-locations")}>
                 Propose new location
               </button>
+              {/* <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("overview")}>
+                Overview
+              </button>
               <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("queue")}>
                 Application queue
               </button>
+              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("members")}>
+                Unit members
+              </button>
               <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("requests")}>
                 My requests
-              </button>
+              </button> */}
             </div>
           </div>
         </div>

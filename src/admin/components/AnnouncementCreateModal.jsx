@@ -25,9 +25,78 @@ const emptyForm = () => ({
   medium_sms: false,
   scheduled_at: "",
   members: { branch_country: "", branch_state: "", satellite_site: "", service_unit_id: "", sub_unit: "" },
-  leaders: { mode: "all", branch_country: "", branch_state: "", service_unit_id: "", sub_unit: "" },
-  admins: { roles: ["general_admin"], branch_country: "", branch_state: "" },
+  leaders: { mode: "all", branch_country: "", branch_state: "", satellite_site: "", service_unit_id: "", sub_unit: "" },
+  admins: { roles: ["general_admin"], branch_country: "", branch_state: "", satellite_site: "" },
 });
+
+function AudienceGeoScope({ scope, onScopeChange, churches, countryOptions, requireCountry }) {
+  const stateOptions = useMemo(() => {
+    if (!scope.branch_country) return [];
+    return [
+      { value: "", label: "All states" },
+      ...branchStatesForCountry(scope.branch_country).map((s) => ({
+        value: s.code,
+        label: s.name,
+      })),
+    ];
+  }, [scope.branch_country]);
+
+  const satelliteOptions = useMemo(() => {
+    const rows = branchSatelliteOptions(churches, scope.branch_country, scope.branch_state);
+    return [{ value: "", label: "All satellites" }, ...rows];
+  }, [churches, scope.branch_country, scope.branch_state]);
+
+  return (
+    <div className="sa-ann-scope-grid">
+      <div className="sa-field" style={{ marginBottom: 0 }}>
+        <label className="sa-label">
+          Country {requireCountry ? <span className="sa-required">*</span> : null}
+        </label>
+        <SearchableDropdown
+          value={scope.branch_country}
+          onChange={(code) => onScopeChange({ branch_country: code, branch_state: "", satellite_site: "" })}
+          options={countryOptions}
+          placeholder="Select country"
+          searchPlaceholder="Search country"
+          emptyMessage="No countries match"
+          ariaLabel="Country"
+        />
+      </div>
+      <div className="sa-field" style={{ marginBottom: 0 }}>
+        <label className="sa-label">State / region</label>
+        <SearchableDropdown
+          value={scope.branch_state}
+          onChange={(code) => onScopeChange({ branch_state: code, satellite_site: "" })}
+          options={stateOptions}
+          disabled={!scope.branch_country}
+          placeholder={scope.branch_country ? "All states" : "Select country first"}
+          searchPlaceholder="Search state"
+          emptyMessage="No states match"
+          ariaLabel="State / region"
+        />
+      </div>
+      <div className="sa-field" style={{ marginBottom: 0 }}>
+        <label className="sa-label">Satellite / branch</label>
+        <SearchableDropdown
+          value={scope.satellite_site}
+          onChange={(site) => onScopeChange({ satellite_site: site })}
+          options={satelliteOptions}
+          disabled={!scope.branch_country || !scope.branch_state}
+          placeholder={
+            !scope.branch_country
+              ? "Select country first"
+              : !scope.branch_state
+                ? "Select state first"
+                : "All satellites"
+          }
+          searchPlaceholder="Search by name or address"
+          emptyMessage="No branches match"
+          ariaLabel="Satellite / branch"
+        />
+      </div>
+    </div>
+  );
+}
 
 function branchSatelliteOptions(churches, branchCountry, branchState) {
   const cc = String(branchCountry || "").trim().toUpperCase();
@@ -68,22 +137,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     () => BRANCH_COUNTRIES.map((c) => ({ value: c.code, label: c.name })),
     [],
   );
-
-  const memberStateOptions = useMemo(() => {
-    if (!form.members.branch_country) return [];
-    return [
-      { value: "", label: "All states" },
-      ...branchStatesForCountry(form.members.branch_country).map((s) => ({
-        value: s.code,
-        label: s.name,
-      })),
-    ];
-  }, [form.members.branch_country]);
-
-  const memberSatelliteOptions = useMemo(() => {
-    const rows = branchSatelliteOptions(churches, form.members.branch_country, form.members.branch_state);
-    return [{ value: "", label: "All satellites" }, ...rows];
-  }, [churches, form.members.branch_country, form.members.branch_state]);
 
   const unitOptions = useMemo(
     () => [
@@ -151,6 +204,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return "Select a country for member announcements.";
     }
     if (form.destination_type === "leaders") {
+      if (!form.leaders.branch_country) return "Select a country for leader announcements.";
       if (form.leaders.mode === "service_unit" && !form.leaders.service_unit_id) {
         return "Select a service unit for leader targeting.";
       }
@@ -159,8 +213,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         if (!form.leaders.sub_unit) return "Select a sub-unit for sub-unit leader targeting.";
       }
     }
-    if (form.destination_type === "admins" && (!form.admins.roles || form.admins.roles.length === 0)) {
-      return "Select at least one admin role.";
+    if (form.destination_type === "admins") {
+      if (!form.admins.branch_country) return "Select a country for admin announcements.";
+      if (!form.admins.roles || form.admins.roles.length === 0) return "Select at least one admin role.";
     }
     return "";
   }
@@ -259,61 +314,14 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       {form.destination_type === "members" && (
         <section className="sa-ann-scope" aria-label="Member audience">
           <div className="sa-ann-scope-title">Audience scope</div>
-          <div className="sa-ann-scope-grid">
-            <div className="sa-field" style={{ marginBottom: 0 }}>
-              <label className="sa-label">Country <span className="sa-required">*</span></label>
-              <SearchableDropdown
-                value={form.members.branch_country}
-                onChange={(code) =>
-                  setForm((f) => ({
-                    ...f,
-                    members: { ...f.members, branch_country: code, branch_state: "", satellite_site: "" },
-                  }))
-                }
-                options={countryOptions}
-                placeholder="Select country"
-                searchPlaceholder="Search country"
-                emptyMessage="No countries match"
-                ariaLabel="Country"
-              />
-            </div>
-            <div className="sa-field" style={{ marginBottom: 0 }}>
-              <label className="sa-label">State / region</label>
-              <SearchableDropdown
-                value={form.members.branch_state}
-                onChange={(code) =>
-                  setForm((f) => ({
-                    ...f,
-                    members: { ...f.members, branch_state: code, satellite_site: "" },
-                  }))
-                }
-                options={memberStateOptions}
-                disabled={!form.members.branch_country}
-                placeholder={form.members.branch_country ? "All states" : "Select country first"}
-                searchPlaceholder="Search state"
-                emptyMessage="No states match"
-                ariaLabel="State / region"
-              />
-            </div>
-            <div className="sa-field" style={{ marginBottom: 0 }}>
-              <label className="sa-label">Satellite / branch</label>
-              <SearchableDropdown
-                value={form.members.satellite_site}
-                onChange={(site) => setForm((f) => ({ ...f, members: { ...f.members, satellite_site: site } }))}
-                options={memberSatelliteOptions}
-                disabled={!form.members.branch_country || !form.members.branch_state}
-                placeholder={
-                  !form.members.branch_country
-                    ? "Select country first"
-                    : !form.members.branch_state
-                      ? "Select state first"
-                      : "All satellites"
-                }
-                searchPlaceholder="Search by name or address"
-                emptyMessage="No branches match"
-                ariaLabel="Satellite / branch"
-              />
-            </div>
+          <AudienceGeoScope
+            scope={form.members}
+            onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
+            churches={churches}
+            countryOptions={countryOptions}
+            requireCountry
+          />
+          <div className="sa-ann-scope-grid" style={{ marginTop: 14 }}>
             <div className="sa-field" style={{ marginBottom: 0 }}>
               <label className="sa-label">Service unit</label>
               <SearchableDropdown
@@ -354,7 +362,18 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
 
       {form.destination_type === "leaders" && (
         <section className="sa-ann-scope" aria-label="Leader audience">
-          <div className="sa-ann-scope-title">Leader audience</div>
+          <div className="sa-ann-scope-title">Audience scope</div>
+          <AudienceGeoScope
+            scope={form.leaders}
+            onScopeChange={(patch) => setForm((f) => ({ ...f, leaders: { ...f.leaders, ...patch } }))}
+            churches={churches}
+            countryOptions={countryOptions}
+            requireCountry
+          />
+          <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 14 }}>
+            Narrow geography step by step. Leave optional fields on “All” to include everyone in the previous level.
+          </p>
+          <div className="sa-ann-scope-title">Leader type</div>
           <div className="sa-field" style={{ marginBottom: 14 }}>
             <label className="sa-label">Leaders</label>
             <SearchableDropdown
@@ -420,7 +439,18 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
 
       {form.destination_type === "admins" && (
         <section className="sa-ann-scope" aria-label="Admin audience">
-          <div className="sa-ann-scope-title">Admin audience</div>
+          <div className="sa-ann-scope-title">Audience scope</div>
+          <AudienceGeoScope
+            scope={form.admins}
+            onScopeChange={(patch) => setForm((f) => ({ ...f, admins: { ...f.admins, ...patch } }))}
+            churches={churches}
+            countryOptions={countryOptions}
+            requireCountry
+          />
+          <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 14 }}>
+            Narrow geography step by step. Leave optional fields on “All” to include everyone in the previous level.
+          </p>
+          <div className="sa-ann-scope-title">Admin roles</div>
           <p className="sa-field-hint" style={{ marginTop: 0, marginBottom: 12 }}>
             Tick all boxes to reach every admin tier, or limit to selected roles only.
           </p>
