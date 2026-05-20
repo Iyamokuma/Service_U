@@ -33,7 +33,17 @@ export function ServiceUnits({ data, reload }) {
     setSaving(true);
     try {
       if (form.id) {
-        await api.updateUnit(form.id, form);
+        await api.updateUnit(form.id, {
+          name: form.name,
+          description: form.description || "",
+          coordinator: form.coordinator || "",
+          sort_order: form.sort_order ?? 0,
+          is_active: form.is_active,
+          overdue_threshold_days:
+            form.overdue_threshold_days === "" || form.overdue_threshold_days == null
+              ? null
+              : form.overdue_threshold_days,
+        });
         toast("Unit updated.", "success");
       } else {
         const fn = String(form.leader_full_name || "").trim();
@@ -321,6 +331,7 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
         coordinator: data.coordinator || "",
         sort_order: data.sort_order ?? 0,
         is_active: data.is_active ?? 1,
+        overdue_threshold_days: data.overdue_threshold_days ?? "",
         leader_full_name: "",
         leader_username: "",
         leader_email: "",
@@ -525,6 +536,25 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
               <option value={1}>Active</option>
               <option value={0}>Inactive</option>
             </select>
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">Overdue threshold override (days)</label>
+            <input
+              className="sa-input"
+              type="number"
+              min={1}
+              max={30}
+              placeholder="Use global default from Settings"
+              value={form.overdue_threshold_days === null || form.overdue_threshold_days === undefined ? "" : form.overdue_threshold_days}
+              onChange={(e) => {
+                const v = e.target.value;
+                setForm((f) => ({
+                  ...f,
+                  overdue_threshold_days: v === "" ? null : Math.min(30, Math.max(1, Number(v))),
+                }));
+              }}
+            />
+            <div className="sa-field-hint">Leave blank to use the global default (1–30 days). Applies to this unit only.</div>
           </div>
 
           <UnitAdminsPanel

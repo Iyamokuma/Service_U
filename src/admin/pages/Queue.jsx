@@ -10,12 +10,22 @@ import { isServiceUnitLeader } from "../roles.js";
 import { leaderScopeLabel } from "../leaderScope.js";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
-const SUB_UNIT_STATUS_TABS = ["all", "active", "inprogress", "rejected", "accepted", "archived", "overdue"];
+const QUEUE_STATUS_TABS = ["all", "new", "inprogress", "accepted", "rejected", "archived", "overdue"];
 
 function queueStatusTabLabel(tab) {
-  if (tab === "inprogress") return "In review";
   if (tab === "all") return "All";
-  return tab[0].toUpperCase() + tab.slice(1);
+  if (tab === "new") return "New";
+  if (tab === "inprogress") return "In Progress";
+  if (tab === "accepted") return "Accepted";
+  if (tab === "rejected") return "Rejected";
+  if (tab === "archived") return "Archived";
+  if (tab === "overdue") return "Overdue";
+  return tab;
+}
+
+function pipelineStatusLabel(st) {
+  if (st === "in_progress") return "In Progress";
+  return String(st || "new").replace(/_/g, " ");
 }
 
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -118,7 +128,6 @@ export function Queue({ units }) {
   const isLeader = isServiceLeader || isSubUnitLeader;
   const leaderScope = leaderScopeLabel(admin);
   const [rows, setRows] = useState([]);
-  const [overdue, setOverdue] = useState([]);
   const [pag, setPag] = useState({ page: 1, per_page: 25, total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -152,31 +161,33 @@ export function Queue({ units }) {
         unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
         sub_unit: subUnitForQueue,
       };
-      if (isServiceLeader || isSubUnitLeader) {
-        delete scoped.overdue_only;
-        switch (subUnitStatusTab) {
-          case "active":
-            scoped.status = "active";
-            break;
-          case "inprogress":
-            scoped.status = "in_progress";
-            break;
-          case "rejected":
-          case "accepted":
-          case "archived":
-            scoped.status = subUnitStatusTab;
-            break;
-          case "overdue":
-            scoped.status = "";
-            scoped.overdue_only = true;
-            break;
-          default:
-            scoped.status = "";
-        }
+      delete scoped.overdue_only;
+      switch (statusTab) {
+        case "new":
+          scoped.status = "new";
+          break;
+        case "inprogress":
+          scoped.status = "in_progress";
+          break;
+        case "accepted":
+          scoped.status = "accepted";
+          break;
+        case "rejected":
+          scoped.status = "rejected";
+          break;
+        case "archived":
+          scoped.status = "archived";
+          break;
+        case "overdue":
+          scoped.status = "";
+          scoped.overdue_only = true;
+          break;
+        default:
+          scoped.status = isLeader ? "" : filters.status || "";
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, subUnitStatusTab]
+    [filters, admin, isServiceLeader, isSubUnitLeader, statusTab, isLeader]
   );
 
   useEffect(() => {
@@ -188,7 +199,7 @@ export function Queue({ units }) {
 
   useEffect(() => {
     setExpanded(null);
-  }, [filters.sub_unit, subUnitStatusTab]);
+  }, [filters.sub_unit, statusTab]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -202,40 +213,16 @@ export function Queue({ units }) {
 
   useEffect(() => {
     clearTimeout(debounce.current);
-    if ((isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue") return;
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
-  }, [filters, subUnitStatusTab, load, mergedQueueParams, isServiceLeader, isSubUnitLeader]);
-
-  useEffect(() => {
-    const isOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
-    if (!isOverdueTab) return;
-    setLoading(true);
-    api.overdueAlerts(admin)
-      .then((r) => setOverdue(r.data || []))
-      .catch(() => setOverdue([]))
-      .finally(() => setLoading(false));
-  }, [isServiceLeader, isSubUnitLeader, filters.sub_unit, subUnitStatusTab, admin]);
+  }, [filters, statusTab, load, mergedQueueParams]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const gotoPage = (p) => load(mergedQueueParams(p));
 
   async function refreshAfterQueueAction(page = 1) {
-    const isOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
-    if (isOverdueTab) {
-      setLoading(true);
-      try {
-        const r = await api.overdueAlerts(admin);
-        setOverdue(r.data || []);
-      } catch {
-        setOverdue([]);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      load(mergedQueueParams(page));
-    }
+    load(mergedQueueParams(page));
   }
 
   // Called by StatusModal for non-leader admins.
@@ -286,7 +273,7 @@ export function Queue({ units }) {
       setAcceptVerifyModal(row);
       return;
     }
-    toast("Move the application to In review before accepting.", "error");
+    toast("Move the application to In Progress before accepting.", "error");
   }
 
   const unitOpts = units?.data ?? [];
@@ -324,9 +311,9 @@ export function Queue({ units }) {
   }, [isLeader, unitOpts, filters.unit_id]);
 
   const showIntakeFilters = true;
-  const onOverdueTab = (isSubUnitLeader || isServiceLeader) && subUnitStatusTab === "overdue";
-  const showMainTable = !onOverdueTab;
-  const overdueRows = onOverdueTab ? overdue : [];
+  const onOverdueTab = statusTab === "overdue";
+  const tableRows = rows;
+  const tableColSpan = (isLeader ? 6 : 9) + (onOverdueTab ? 1 : 0);
 
   return (
     <>
@@ -338,32 +325,29 @@ export function Queue({ units }) {
               {leaderScope ? ` · ${leaderScope}` : ""}
             </p>
             <p className="sa-text-muted sa-text-xs" style={{ margin: "6px 0 0" }}>
-              Combined queue across all sub-units. Move applications to In review, Accepted, or Rejected.
+              Combined queue across all sub-units. Move applications to In Progress, Accepted, or Rejected.
               Sub-unit names are managed by Super / General Admin only.
             </p>
           </div>
         )}
-        {(isServiceLeader || isSubUnitLeader) && (
-          <div className="sa-card-body sa-unit-tab-row">
-            {SUB_UNIT_STATUS_TABS.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                className={`sa-unit-tab-btn ${subUnitStatusTab === tab ? "is-active" : ""}`}
-                onClick={() => setSubUnitStatusTab(tab)}
-                title={queueStatusTabLabel(tab)}
-              >
-                {queueStatusTabLabel(tab)}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="sa-card-body sa-unit-tab-row">
+          {QUEUE_STATUS_TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`sa-unit-tab-btn ${statusTab === tab ? "is-active" : ""}`}
+              onClick={() => setStatusTab(tab)}
+              title={queueStatusTabLabel(tab)}
+            >
+              {queueStatusTabLabel(tab)}
+            </button>
+          ))}
+        </div>
         {onOverdueTab && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
             <span className="sa-text-muted sa-text-sm">
-              {isServiceLeader
-                ? "Your service unit · older than the overdue threshold in Settings"
-                : "Your sub-unit · older than the overdue threshold in Settings"}
+              Overdue is not a status — records stay New or In Progress and appear here once past the threshold (Settings).
+              Sorted by days beyond threshold, highest first.
             </span>
           </div>
         )}
@@ -412,10 +396,14 @@ export function Queue({ units }) {
                 ))}
               </select>
             )}
-            {!isLeader && (
+            {!isLeader && statusTab === "all" && (
               <select className="sa-select" value={filters.status} onChange={setFilter("status")}>
                 <option value="">All Statuses</option>
-                {STATUSES.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {pipelineStatusLabel(s)}
+                  </option>
+                ))}
               </select>
             )}
             <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
@@ -466,7 +454,7 @@ export function Queue({ units }) {
             </button>
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
               {onOverdueTab
-                ? `${overdueRows.length} overdue`
+                ? `${pag.total} overdue`
                 : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
             </span>
           </div>
@@ -475,79 +463,134 @@ export function Queue({ units }) {
         <div className="sa-table-wrap">
           {loading ? (
             <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div>
-          ) : onOverdueTab ? (
-            overdueRows.length === 0 ? (
-              <div className="sa-empty"><div className="sa-empty-icon">✓</div><div className="sa-empty-text">No overdue applications for your unit.</div></div>
-            ) : (
-              <table className="sa-table">
-                <thead><tr><th>#</th><th>Name</th><th>Sub-unit</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {overdueRows.map((r) => (
-                    <Fragment key={r.id}>
-                      <tr>
-                        <td className="sa-text-muted">{r.id}</td>
-                        <td><div className="sa-fw-600">{fullName(r)}</div></td>
-                        <td>{r.sub_unit || "—"}</td>
-                        <td><span className={`sa-badge ${r.status}`}>{r.status.replace("_", " ")}</span></td>
-                        <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
-                        <td>
-                          <div className="sa-table-actions">
-                            <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"} Details</button>
-                            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => requestLeaderAccept(r)}>Accept</button>
-                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
-                            <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
-                            {!isServiceLeader && (
-                              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {expanded === r.id && (
-                        <tr className="sa-detail-row"><td colSpan={6}><RegistrationDetails r={r} /></td></tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            )
-          ) : showMainTable && rows.length === 0 ? (
-            <div className="sa-empty"><div className="sa-empty-icon">📋</div><div className="sa-empty-text">No registrations found.</div></div>
-          ) : showMainTable ? (
+          ) : tableRows.length === 0 ? (
+            <div className="sa-empty">
+              <div className="sa-empty-icon">{onOverdueTab ? "✓" : "📋"}</div>
+              <div className="sa-empty-text">
+                {onOverdueTab ? "No overdue applications in your scope." : "No registrations found."}
+              </div>
+            </div>
+          ) : (
             <table className="sa-table">
-              <thead><tr><th>#</th><th>Photo</th><th>Name</th><th>Unit</th><th>Phone</th><th>Email</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  {!isLeader && <th>Photo</th>}
+                  <th>Name</th>
+                  {isLeader ? <th>Sub-unit</th> : <th>Unit</th>}
+                  {!isLeader && (
+                    <>
+                      <th>Phone</th>
+                      <th>Email</th>
+                    </>
+                  )}
+                  <th>Status</th>
+                  <th>Submitted</th>
+                  {onOverdueTab ? <th>Days overdue</th> : null}
+                  <th>Actions</th>
+                </tr>
+              </thead>
               <tbody>
-                {rows.map((r) => (
+                {tableRows.map((r) => (
                   <Fragment key={r.id}>
-                    <tr style={{ cursor: "pointer" }}>
+                    <tr className={onOverdueTab ? "sa-row-overdue" : undefined} style={!isLeader ? { cursor: "pointer" } : undefined}>
                       <td className="sa-text-muted">{r.id}</td>
-                      <td>{r.photo_path ? <img src={r.photo_path} className="sa-photo" alt="" /> : <div className="sa-photo-placeholder">{(r.first_name?.[0] || "?").toUpperCase()}</div>}</td>
-                      <td><div className="sa-fw-600">{fullName(r)}</div>{r.other_names && <div className="sa-text-sm sa-text-muted">{r.other_names}</div>}</td>
-                      <td><div>{r.unit_name}</div>{r.sub_unit && <div className="sa-text-sm sa-text-muted">{r.sub_unit}</div>}</td>
-                      <td>{r.phone1}</td>
-                      <td className="sa-truncate">{r.email || "—"}</td>
-                      <td><span className={`sa-badge ${r.status}`}>{r.status}</span></td>
+                      {!isLeader && (
+                        <td>
+                          {r.photo_path ? (
+                            <img src={r.photo_path} className="sa-photo" alt="" />
+                          ) : (
+                            <div className="sa-photo-placeholder">{(r.first_name?.[0] || "?").toUpperCase()}</div>
+                          )}
+                        </td>
+                      )}
+                      <td>
+                        <div className="sa-fw-600">{fullName(r)}</div>
+                        {!isLeader && r.other_names && <div className="sa-text-sm sa-text-muted">{r.other_names}</div>}
+                      </td>
+                      {isLeader ? (
+                        <td>{r.sub_unit || "—"}</td>
+                      ) : (
+                        <td>
+                          <div>{r.unit_name}</div>
+                          {r.sub_unit && <div className="sa-text-sm sa-text-muted">{r.sub_unit}</div>}
+                        </td>
+                      )}
+                      {!isLeader && (
+                        <>
+                          <td>{r.phone1}</td>
+                          <td className="sa-truncate">{r.email || "—"}</td>
+                        </>
+                      )}
+                      <td>
+                        <span className={`sa-badge ${r.status}`}>{pipelineStatusLabel(r.status)}</span>
+                      </td>
                       <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
+                      {onOverdueTab ? (
+                        <td className="sa-fw-600">{Number(r.days_overdue ?? 0)}</td>
+                      ) : null}
                       <td>
                         <div className="sa-table-actions">
-                          <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? "▲" : "▼"}</button>
+                          <button
+                            type="button"
+                            className="sa-btn sa-btn-ghost sa-btn-sm"
+                            onClick={() => setExpanded(expanded === r.id ? null : r.id)}
+                          >
+                            {expanded === r.id ? "▲" : "▼"}
+                            {isLeader ? " Details" : ""}
+                          </button>
                           {isLeader ? (
                             <>
-                              <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" disabled={leaderActionDisabled(r, "accepted")} onClick={() => requestLeaderAccept(r)}>Accept</button>
-                              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "in_progress")} onClick={() => quickLeaderStatus(r.id, "in_progress")}>In progress</button>
-                              <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={leaderActionDisabled(r, "rejected")} onClick={() => quickLeaderStatus(r.id, "rejected")}>Reject</button>
+                              <button
+                                type="button"
+                                className="sa-btn sa-btn-primary sa-btn-sm"
+                                disabled={leaderActionDisabled(r, "accepted")}
+                                onClick={() => requestLeaderAccept(r)}
+                              >
+                                Accept
+                              </button>
+                              <button
+                                type="button"
+                                className="sa-btn sa-btn-outline sa-btn-sm"
+                                disabled={leaderActionDisabled(r, "in_progress")}
+                                onClick={() => quickLeaderStatus(r.id, "in_progress")}
+                              >
+                                In progress
+                              </button>
+                              <button
+                                type="button"
+                                className="sa-btn sa-btn-danger sa-btn-sm"
+                                disabled={leaderActionDisabled(r, "rejected")}
+                                onClick={() => quickLeaderStatus(r.id, "rejected")}
+                              >
+                                Reject
+                              </button>
                               {!isServiceLeader && (
-                              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={leaderActionDisabled(r, "archived")} onClick={() => quickLeaderStatus(r.id, "archived")}>Archive</button>
-                            )}
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-outline sa-btn-sm"
+                                  disabled={leaderActionDisabled(r, "archived")}
+                                  onClick={() => quickLeaderStatus(r.id, "archived")}
+                                >
+                                  Archive
+                                </button>
+                              )}
                             </>
                           ) : (
-                            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "", row: r })}>Update</button>
+                            <button
+                              type="button"
+                              className="sa-btn sa-btn-outline sa-btn-sm"
+                              onClick={() => setStatusModal({ id: r.id, status: r.status, notes: r.notes || "", row: r })}
+                            >
+                              Update
+                            </button>
                           )}
                         </div>
                       </td>
                     </tr>
                     {expanded === r.id && (
                       <tr className="sa-detail-row">
-                        <td colSpan={9}>
+                        <td colSpan={tableColSpan}>
                           <RegistrationDetails r={r} />
                         </td>
                       </tr>
@@ -556,7 +599,7 @@ export function Queue({ units }) {
                 ))}
               </tbody>
             </table>
-          ) : null}
+          )}
         </div>
       </div>
 

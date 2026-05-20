@@ -8,6 +8,14 @@ import {
   resolveExistingDirectoryState,
 } from "./location_directory.ts";
 import { applyRegistrationScopeQuery, canAccessRegistration } from "./registration_scope.ts";
+import {
+  clampOverdueDays,
+  clearOverdueEscalation,
+  enrichRowOverdue,
+  isOpenPipelineStatus,
+  loadOverdueConfig,
+  processOverdueEscalations,
+} from "./overdue.ts";
 
 type AdminRow = Record<string, unknown>;
 type Ctx = { admin: AdminRow; ip: string };
@@ -582,20 +590,46 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
   const asc = normUp(params.dir) === "ASC";
   q = q.order(sortKey, { ascending: asc });
 
+  const role = norm(admin.role);
+  const leaderRoles = ["service_unit_leader", "sub_unit_leader", "satellite_church_admin"];
+  if (leaderRoles.includes(role)) {
+    try {
+      await processOverdueEscalations(supabase);
+    } catch {
+      /* do not block queue */
+    }
+  }
+
+  if (params.overdue_only) {
+    let oq = supabase.from("registrations").select("*").in("status", ["new", "in_progress"]);
+    oq = applyRegistrationScopeQuery(oq, admin);
+    if (params.unit_id) oq = oq.eq("unit_id", Number(params.unit_id));
+    if (params.sub_unit) oq = oq.eq("sub_unit", norm(params.sub_unit));
+    if (params.sex) oq = oq.eq("sex", norm(params.sex));
+    if (params.from) oq = oq.gte("submitted_at", `${norm(params.from)}T00:00:00.000Z`);
+    if (params.to) oq = oq.lte("submitted_at", `${norm(params.to)}T23:59:59.999Z`);
+    if (params.search) {
+      const r = norm(params.search).replace(/%/g, "").slice(0, 120);
+      if (r) oq = oq.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
+    }
+    if (norm(params.filter_branch_state)) oq = oq.eq("branch_state", normUp(params.filter_branch_state));
+    const { data: rawOverdue, error: oErr } = await oq.limit(8000);
+    if (oErr) throw new Error(oErr.message);
+    const { globalDays, unitThresholds } = await loadOverdueConfig(supabase);
+    const now = Date.now();
+    let rows = (rawOverdue || [])
+      .map((r: Record<string, unknown>) => enrichRowOverdue(r, globalDays, unitThresholds, now))
+      .filter((r) => r.is_overdue);
+    rows.sort((a, b) => Number(b.days_overdue) - Number(a.days_overdue));
+    const total = rows.length;
+    const slice = rows.slice(from, Math.min(rows.length, from + perPage));
+    const pages = Math.max(1, Math.ceil(total / perPage));
+    return { data: slice, pagination: { page, per_page: perPage, total, pages } };
+  }
+
   const { data, error, count } = await q.range(from, to);
   if (error) throw new Error(error.message);
-  let rows = data || [];
-  if (params.overdue_only) {
-    const { data: settings } = await supabase.from("app_settings").select("overdue_threshold_hours").eq("id", 1).maybeSingle();
-    const th = Number(settings?.overdue_threshold_hours ?? 72);
-    const now = Date.now();
-    rows = rows.filter((r: Record<string, unknown>) => {
-      const st = normStatus(r.status);
-      if (!["new", "in_progress"].includes(st)) return false;
-      const t = new Date(String(r.submitted_at || "")).getTime();
-      return (now - t) / (1000 * 60 * 60) >= th;
-    });
-  }
+  let rows = (data || []) as Record<string, unknown>[];
   const total = typeof count === "number" ? count : rows.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   return { data: rows, pagination: { page, per_page: perPage, total, pages } };
@@ -622,10 +656,27 @@ async function handleStats(supabase: SupabaseClient, params: Record<string, unkn
   if (error) throw new Error(error.message);
   const rows = (rowsRaw || []) as Record<string, unknown>[];
 
-  const { data: settings } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
-  const overdueTh = Number(settings?.overdue_threshold_hours ?? 72);
+  const { globalDays, unitThresholds } = await loadOverdueConfig(supabase);
   const now = Date.now();
-  const msTh = overdueTh * 3600000;
+  const enriched = rows.map((r) => enrichRowOverdue(r, globalDays, unitThresholds, now));
+  const overdueOpen = enriched.filter((r) => r.is_overdue);
+  let overdue_critical = 0;
+  for (const r of overdueOpen) {
+    const submittedMs = new Date(String(r.submitted_at || "")).getTime();
+    const th = Number(r.overdue_threshold_days) || globalDays;
+    const crossedMs = submittedMs + th * 86400000;
+    if (now - crossedMs >= 24 * 3600000) overdue_critical = 1;
+  }
+
+  const bySubOverdue: Record<string, number> = {};
+  overdueOpen.forEach((r) => {
+    const label = String(r.sub_unit || "No sub-unit").trim() || "No sub-unit";
+    bySubOverdue[label] = (bySubOverdue[label] || 0) + 1;
+  });
+  const top_overdue_units = Object.entries(bySubOverdue)
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 
   const totals: Record<string, number> = {
     registrations: rows.length,
@@ -635,12 +686,10 @@ async function handleStats(supabase: SupabaseClient, params: Record<string, unkn
     waitlisted: rows.filter((r) => normStatus(r.status) === "in_progress").length,
     approved: rows.filter((r) => normStatus(r.status) === "accepted").length,
     rejected: rows.filter((r) => normStatus(r.status) === "rejected").length,
-    overdue_count: rows.filter((r) => {
-      const st = normStatus(r.status);
-      if (!["new", "in_progress"].includes(st)) return false;
-      return now - new Date(String(r.submitted_at || "")).getTime() >= msTh;
-    }).length,
-    overdue_threshold_hours: overdueTh,
+    overdue_count: overdueOpen.length,
+    overdue_critical,
+    overdue_threshold_days: globalDays,
+    overdue_threshold_hours: globalDays * 24,
     active_members: rows.filter((r) => normStatus(r.status) === "accepted").length,
     this_week: rows.filter((r) => {
       const t = new Date(String(r.submitted_at || "")).getTime();
@@ -719,7 +768,7 @@ async function handleStats(supabase: SupabaseClient, params: Record<string, unkn
   }).limit(10);
 
   return {
-    totals: { ...totals, status_distribution, top_overdue_units: [] as { label: string; count: number }[] },
+    totals: { ...totals, status_distribution, top_overdue_units },
     by_unit,
     by_sex,
     trend,
@@ -772,6 +821,9 @@ async function handleUpdateStatus(
   }
   const { error } = await supabase.from("registrations").update(patch).eq("id", id);
   if (error) throw new Error(error.message);
+  if (!isOpenPipelineStatus(nextStatus)) {
+    await clearOverdueEscalation(supabase, String(id));
+  }
   await logActivity(
     supabase,
     admin,
@@ -837,13 +889,22 @@ async function handleCreateUnit(supabase: SupabaseClient, params: Record<string,
 async function handleUpdateUnit(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
   const body = (params.body || {}) as Record<string, unknown>;
-  const { error } = await supabase.from("service_units").update({
+  const unitPatch: Record<string, unknown> = {
     name: norm(body.name),
     description: norm(body.description),
     coordinator: norm(body.coordinator),
     sort_order: Number(body.sort_order ?? 0),
     is_active: Number(body.is_active ?? 1),
-  }).eq("id", params.id);
+  };
+  if (body.overdue_threshold_days !== undefined) {
+    const raw = body.overdue_threshold_days;
+    if (raw === null || raw === "" || raw === "null") {
+      unitPatch.overdue_threshold_days = null;
+    } else {
+      unitPatch.overdue_threshold_days = clampOverdueDays(raw, 3);
+    }
+  }
+  const { error } = await supabase.from("service_units").update(unitPatch).eq("id", params.id);
   if (error) throw new Error(error.message);
   await logActivity(supabase, admin, "unit.update", "unit", String(params.id), "Updated unit", ip);
   return { data: { id: params.id, ...body } };
@@ -1298,17 +1359,35 @@ async function handleApproveServiceUnitProposal(
 async function handleSettings(supabase: SupabaseClient) {
   const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
   if (error) throw new Error(error.message);
-  return { data: data || { templates: {}, overdue_threshold_hours: 72, permissions: {} } };
+  const row = data || { templates: {}, overdue_threshold_hours: 72, overdue_threshold_days: 3, permissions: {} };
+  const days = clampOverdueDays(
+    row.overdue_threshold_days ?? Math.ceil(Number(row.overdue_threshold_hours ?? 72) / 24),
+    3,
+  );
+  return {
+    data: {
+      ...row,
+      overdue_threshold_days: days,
+      overdue_threshold_hours: days * 24,
+    },
+  };
 }
 
 async function handleUpdateSettings(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
   const body = (params.body || {}) as Record<string, unknown>;
   const { data: cur } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+  const days = clampOverdueDays(
+    body.overdue_threshold_days ?? body.overdue_threshold_hours != null
+      ? Math.ceil(Number(body.overdue_threshold_hours) / 24)
+      : cur?.overdue_threshold_days ?? 3,
+    3,
+  );
   const next = {
     id: 1,
     templates: { ...(cur?.templates as object || {}), ...(body.templates as object || {}) },
-    overdue_threshold_hours: Number(body.overdue_threshold_hours ?? cur?.overdue_threshold_hours ?? 72),
+    overdue_threshold_days: days,
+    overdue_threshold_hours: days * 24,
     permissions: { ...(cur?.permissions as object || {}), ...(body.permissions as object || {}) },
   };
   const { error } = await supabase.from("app_settings").upsert(next);
@@ -1427,18 +1506,7 @@ async function handleSubUnitQueuesByUnit(supabase: SupabaseClient, admin: AdminR
 }
 
 async function handleOverdueAlerts(supabase: SupabaseClient, admin: AdminRow) {
-  const { data: settings } = await supabase.from("app_settings").select("overdue_threshold_hours").eq("id", 1).maybeSingle();
-  const th = Number(settings?.overdue_threshold_hours ?? 72);
-  const now = Date.now();
-  let q = supabase.from("registrations").select("*").in("status", ["new", "in_progress"]);
-  q = applyRegistrationScopeQuery(q, admin);
-  if (norm(admin.role) === "sub_unit_leader") q = q.eq("sub_unit", norm(admin.sub_unit_name));
-  const { data: rows, error } = await q.limit(500);
-  if (error) throw new Error(error.message);
-  const out = (rows || []).filter((r: Record<string, unknown>) =>
-    now - new Date(String(r.submitted_at || "")).getTime() >= th * 3600000
-  );
-  return { data: out };
+  return handleQueue(supabase, { overdue_only: true, page: 1, per_page: 500, viewer: admin }, admin);
 }
 
 async function handleNotifications(supabase: SupabaseClient, admin: AdminRow) {

@@ -501,6 +501,18 @@
 }
 .sa-table tr:last-child td { border-bottom: none; }
 .sa-table tr:hover td { background: #f8fafc; }
+.sa-table tr.sa-row-overdue td {
+  background: #fffbeb;
+}
+.sa-table tr.sa-row-overdue:hover td {
+  background: #fef3c7;
+}
+.sa-root[data-theme="dark"] .sa-table tr.sa-row-overdue td {
+  background: rgba(245, 158, 11, 0.12);
+}
+.sa-root[data-theme="dark"] .sa-table tr.sa-row-overdue:hover td {
+  background: rgba(245, 158, 11, 0.2);
+}
 .sa-table-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
 .sa-table tr.sa-row-clickable { cursor: pointer; }
 .sa-detail-grid {
@@ -2883,6 +2895,60 @@
   font-size: 12px;
   cursor: pointer;
   padding: 0;
+}
+.sa-dash-stat.is-overdue-zero {
+  border-color: #86efac;
+  background: linear-gradient(145deg, #ecfdf5 0%, #f0fdf4 100%);
+}
+.sa-dash-stat.is-overdue-zero .sa-dash-stat-value {
+  color: #15803d;
+}
+.sa-dash-overdue-zero {
+  margin-right: 6px;
+  font-size: 1.15em;
+  font-weight: 800;
+}
+.sa-dash-stat.is-overdue-amber {
+  border-color: #fcd34d;
+  background: linear-gradient(145deg, #fffbeb 0%, #fef3c7 100%);
+}
+.sa-dash-stat.is-overdue-amber .sa-dash-stat-value {
+  color: #b45309;
+}
+.sa-dash-stat.is-overdue-critical {
+  border-color: #fca5a5;
+  background: linear-gradient(145deg, #fef2f2 0%, #fee2e2 100%);
+}
+.sa-dash-stat.is-overdue-critical .sa-dash-stat-value {
+  color: #b91c1c;
+}
+.sa-stat-card--overdue-zero {
+  border-color: #86efac;
+  background: linear-gradient(145deg, #ecfdf5 0%, #f0fdf4 55%, #fff 100%);
+}
+.sa-stat-card--overdue-zero .sa-stat-value--overdue-ok {
+  color: #15803d;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sa-stat-card--overdue-amber {
+  border-color: #fcd34d;
+  background: linear-gradient(145deg, #fffbeb 0%, #fef3c7 55%, #fff 100%);
+}
+.sa-stat-card--overdue-amber .sa-stat-value {
+  color: #b45309;
+}
+.sa-stat-card--overdue-critical {
+  border-color: #fca5a5;
+  background: linear-gradient(145deg, #fef2f2 0%, #fee2e2 55%, #fff 100%);
+}
+.sa-stat-card--overdue-critical .sa-stat-value {
+  color: #b91c1c;
+}
+.sa-overdue-check {
+  font-weight: 800;
+  line-height: 1;
 }
 .sa-dash-overdue-link:hover {
   text-decoration: underline;

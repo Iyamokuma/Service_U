@@ -44,13 +44,30 @@ export function Settings() {
 
         <h3 style={{ margin: "20px 0 12px" }}>Overdue &amp; alerts</h3>
         <p className="sa-text-sm sa-text-muted" style={{ maxWidth: 640, lineHeight: 1.55, marginBottom: 14 }}>
-          Applications in <strong>New</strong> or <strong>In progress</strong> are marked <strong>overdue</strong> after this many hours without a status change.
-          The relevant <strong>service unit</strong> and <strong>sub-unit leaders</strong> get one in-app notification per application (until it moves forward), and an email if Resend is configured on the server (<code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code>).
+          Overdue is <strong>not a status</strong>. Records stay <strong>New</strong> or <strong>In Progress</strong> and also appear on the
+          Overdue queue tab once they pass this threshold (1–30 days). Override per service unit on Service Units.
+          Sub-unit leaders are notified in-app and by email when configured (<code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code>);
+          escalations go to the service unit leader after 24 hours and the satellite pastor after 48 hours with no action.
         </p>
         <div className="sa-form-row">
           <div className="sa-field">
-            <label className="sa-label">Overdue threshold (hours)</label>
-            <input className="sa-input" type="number" min="1" step="1" value={settings.overdue_threshold_hours} onChange={(e) => setSettings((s) => ({ ...s, overdue_threshold_hours: Number(e.target.value || 1) }))} />
+            <label className="sa-label">Global overdue threshold (days)</label>
+            <input
+              className="sa-input"
+              type="number"
+              min={1}
+              max={30}
+              step={1}
+              value={settings.overdue_threshold_days ?? Math.max(1, Math.round((settings.overdue_threshold_hours || 72) / 24))}
+              onChange={(e) => {
+                const days = Math.min(30, Math.max(1, Number(e.target.value || 1)));
+                setSettings((s) => ({
+                  ...s,
+                  overdue_threshold_days: days,
+                  overdue_threshold_hours: days * 24,
+                }));
+              }}
+            />
           </div>
         </div>
 

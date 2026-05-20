@@ -123,7 +123,9 @@ function SuperAdminOverview({ units, setPage, admin }) {
 
   const accDelta = (totals.accepted_this_month ?? 0) - (totals.accepted_prev_month ?? 0);
   const rejDelta = (totals.rejected_this_month ?? 0) - (totals.rejected_prev_month ?? 0);
-  const th = totals.overdue_threshold_hours ?? 72;
+  const thDays = totals.overdue_threshold_days ?? Math.max(1, Math.round((totals.overdue_threshold_hours ?? 72) / 24));
+  const overdueCardState =
+    (totals.overdue_count ?? 0) === 0 ? "zero" : totals.overdue_critical ? "critical" : "amber";
 
   const branchOpts = data.branch_options ?? [];
 
@@ -254,7 +256,7 @@ function SuperAdminOverview({ units, setPage, admin }) {
           <span className="sa-dash-alert-icon" aria-hidden>⚠</span>
           <div className="sa-dash-alert-text">
             <strong>{totals.overdue_count}</strong> overdue application{totals.overdue_count !== 1 ? "s" : ""} across visible scope
-            {filterParams.filter_country || filterParams.filter_unit_id ? "" : " — action required"} (threshold: {th}h in Settings).
+            {filterParams.filter_country || filterParams.filter_unit_id ? "" : " — action required"} (threshold: {thDays} day{thDays !== 1 ? "s" : ""} in Settings).
           </div>
           <button type="button" className="sa-btn sa-btn-sm sa-dash-alert-btn" onClick={() => setPage?.("queue")}>
             View queue
@@ -281,8 +283,8 @@ function SuperAdminOverview({ units, setPage, admin }) {
         <DashStatCard
           label="Overdue"
           value={totals.overdue_count}
-          sub="Requires escalation"
-          highlight="danger"
+          sub={overdueCardState === "zero" ? "On track" : overdueCardState === "critical" ? "Needs urgent action" : "Requires attention"}
+          overdueState={overdueCardState}
         />
         <DashStatCard
           label="Accepted this month"
@@ -410,11 +412,20 @@ function SuperAdminOverview({ units, setPage, admin }) {
   );
 }
 
-function DashStatCard({ label, value, sub, highlight }) {
+function DashStatCard({ label, value, sub, highlight, overdueState }) {
+  const overdueClass =
+    overdueState === "zero" ? " is-overdue-zero" : overdueState === "critical" ? " is-overdue-critical" : overdueState === "amber" ? " is-overdue-amber" : "";
   return (
-    <div className={`sa-dash-stat${highlight === "danger" ? " is-danger" : ""}`}>
+    <div className={`sa-dash-stat${highlight === "danger" ? " is-danger" : ""}${overdueClass}`}>
       <div className="sa-dash-stat-label">{label}</div>
-      <div className="sa-dash-stat-value">{value ?? "—"}</div>
+      <div className="sa-dash-stat-value">
+        {overdueState === "zero" ? (
+          <span className="sa-dash-overdue-zero" aria-hidden>
+            ✓
+          </span>
+        ) : null}
+        {overdueState === "zero" ? 0 : (value ?? "—")}
+      </div>
       {sub ? <div className="sa-dash-stat-sub">{sub}</div> : null}
     </div>
   );
@@ -467,6 +478,12 @@ export function Overview({ units, setPage }) {
 
   const showBarAndTrend = !isServiceLeader && !isSubUnitLeader;
   const trendSubtitle = scope && scope !== "—" ? scope : "Your visible registrations";
+  const overdueVisual =
+    (totals.overdue_count ?? 0) === 0
+      ? { state: "zero", sub: "On track" }
+      : totals.overdue_critical
+        ? { state: "critical", sub: "Needs urgent action" }
+        : { state: "amber", sub: "Requires attention" };
 
   return (
     <>
@@ -474,16 +491,24 @@ export function Overview({ units, setPage }) {
         <StatCard label="Total Registrations" value={totals.registrations} icon={<PeopleIcon />} iconClass="indigo" trend={`+${totals.this_week} this week`} />
         <StatCard label="Pending Review" value={totals.pending} icon={<ClockIcon />} iconClass="amber" />
         <StatCard label="Approved" value={totals.approved} icon={<CheckIcon />} iconClass="green" />
+        <StatCard
+          label="Overdue"
+          value={totals.overdue_count ?? 0}
+          icon={<ClockIcon />}
+          iconClass="amber"
+          trend={overdueVisual.sub}
+          overdueState={overdueVisual.state}
+        />
         {!isServiceLeader && (
           <StatCard label="Active Units" value={totals.active_units} icon={<LayerIcon />} iconClass="blue" />
         )}
         {isServiceLeader && (
           <StatCard
-            label="In review"
+            label="In Progress"
             value={totals.in_progress_count ?? totals.waitlisted}
             icon={<ClockIcon />}
             iconClass="amber"
-            sub="Across all sub-units"
+            trend="Across all sub-units"
           />
         )}
       </div>
@@ -620,14 +645,25 @@ export function Overview({ units, setPage }) {
   );
 }
 
-function StatCard({ label, value, icon, iconClass, trend }) {
+function StatCard({ label, value, icon, iconClass, trend, overdueState }) {
+  const overdueCls =
+    overdueState === "zero"
+      ? " sa-stat-card--overdue-zero"
+      : overdueState === "critical"
+        ? " sa-stat-card--overdue-critical"
+        : overdueState === "amber"
+          ? " sa-stat-card--overdue-amber"
+          : "";
   return (
-    <div className="sa-stat-card">
+    <div className={`sa-stat-card${overdueCls}`}>
       <div className="sa-stat-header">
         <span className="sa-stat-label">{label}</span>
         <div className={`sa-stat-icon ${iconClass}`}>{icon}</div>
       </div>
-      <div className="sa-stat-value">{value ?? "—"}</div>
+      <div className={`sa-stat-value${overdueState === "zero" ? " sa-stat-value--overdue-ok" : ""}`}>
+        {overdueState === "zero" ? <span className="sa-overdue-check" aria-hidden>✓</span> : null}
+        {overdueState === "zero" ? 0 : (value ?? "—")}
+      </div>
       {trend && (
         <div className="sa-stat-trend">
           <strong>{trend}</strong>
