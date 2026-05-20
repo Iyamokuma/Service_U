@@ -474,6 +474,19 @@
   gap: 12px 16px;
   margin-bottom: 16px;
 }
+.sa-locations-table-toolbar--directory {
+  align-items: flex-start;
+}
+.sa-locations-table-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.sa-locations-view-tabs .sa-unit-tab-btn {
+  min-width: 72px;
+}
 .sa-locations-result-count {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;

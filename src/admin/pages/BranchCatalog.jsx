@@ -21,6 +21,14 @@ const TABS = [
   { id: "country", label: "Countries" },
 ];
 
+/** Branch directory: compact view tabs (same ids as TABS for table rendering). */
+const BRANCH_DIRECTORY_TABS = [
+  { id: "all", label: "All" },
+  { id: "country", label: "Country" },
+  { id: "state", label: "State" },
+  { id: "satellite", label: "Satellite" },
+];
+
 const PAGE_COPY = {
   locations: {
     title: "Locations",
@@ -62,16 +70,24 @@ function normalizeCatalog(raw) {
   };
 }
 
-function DirectoryToolbarActions({ busy, canCreateLocation, onRefresh, onNewLocation, size = "sm" }) {
+function DirectoryToolbarActions({
+  busy,
+  canCreateLocation,
+  onRefresh,
+  onNewLocation,
+  size = "sm",
+  refreshLabel = "Refresh",
+  createLabel = "+ New location",
+}) {
   const btnClass = size === "sm" ? " sa-btn-sm" : "";
   return (
     <>
       <button type="button" className={`sa-btn sa-btn-outline${btnClass}`} disabled={busy} onClick={onRefresh}>
-        Refresh
+        {refreshLabel}
       </button>
       {canCreateLocation ? (
         <button type="button" className={`sa-btn sa-btn-primary${btnClass}`} onClick={onNewLocation}>
-          + New location
+          {createLabel}
         </button>
       ) : null}
     </>
@@ -92,6 +108,7 @@ export function BranchCatalog({ variant = "catalog" }) {
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const viewTabs = isBranchDirectory ? BRANCH_DIRECTORY_TABS : TABS;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +129,12 @@ export function BranchCatalog({ variant = "catalog" }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!viewTabs.some((t) => t.id === tab)) {
+      setTab(viewTabs[0]?.id || "all");
+    }
+  }, [viewTabs, tab]);
 
   const allRows = useMemo(() => (catalog ? buildAllRows(catalog) : []), [catalog]);
   const countryRows = useMemo(() => (catalog ? buildCountryRows(catalog) : []), [catalog]);
@@ -337,6 +360,18 @@ export function BranchCatalog({ variant = "catalog" }) {
           <h2 className="sa-locations-title">{copy.title}</h2>
           <p className="sa-locations-subtitle">{copy.subtitle}</p>
         </div>
+        {isBranchDirectory ? (
+          <div className="sa-locations-hero-actions">
+            <DirectoryToolbarActions
+              busy={busy}
+              canCreateLocation={canCreateLocation}
+              onRefresh={() => load()}
+              onNewLocation={() => setShowCreate(true)}
+              refreshLabel="Refresh table"
+              createLabel="Create location"
+            />
+          </div>
+        ) : null}
       </header>
 
       {summary ? (
@@ -491,9 +526,11 @@ export function BranchCatalog({ variant = "catalog" }) {
             </div>
           </div>
 
-          <div className="sa-locations-table-toolbar">
-            <div className="sa-unit-tab-row" style={{ marginBottom: 0, flex: 1 }}>
-              {TABS.map((t) => (
+          <div
+            className={`sa-locations-table-toolbar${isBranchDirectory ? " sa-locations-table-toolbar--directory" : ""}`}
+          >
+            <div className="sa-unit-tab-row sa-locations-view-tabs" style={{ marginBottom: 0, flex: 1 }}>
+              {viewTabs.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -504,6 +541,19 @@ export function BranchCatalog({ variant = "catalog" }) {
                 </button>
               ))}
             </div>
+            {isBranchDirectory ? (
+              <div className="sa-locations-table-toolbar-actions">
+                <DirectoryToolbarActions
+                  busy={busy}
+                  canCreateLocation={canCreateLocation}
+                  onRefresh={() => load()}
+                  onNewLocation={() => setShowCreate(true)}
+                  size="sm"
+                  refreshLabel="Refresh table"
+                  createLabel="Create location"
+                />
+              </div>
+            ) : null}
             <span className="sa-text-muted sa-text-sm sa-locations-result-count">
               {tab === "country"
                 ? `${filteredCountries.length} countries`
