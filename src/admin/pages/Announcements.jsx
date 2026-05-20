@@ -6,12 +6,20 @@ import { useAdminAuth } from "../AdminContext.jsx";
 import { canPostAnnouncements, isGlobalAdminRole } from "../roles.js";
 import { AnnouncementCreateModal } from "../components/AnnouncementCreateModal.jsx";
 
-const TABS = [
-  { id: "general", label: "General" },
-  { id: "draft", label: "Draft" },
-  { id: "scheduled", label: "Scheduled" },
-  { id: "archived", label: "Archived" },
+/** Admin destination roles aligned with AnnouncementCreateModal options. */
+const ADMIN_DEST_ROLE_KEYS = [
+  "general_admin",
+  "country_super_admin",
+  "state_super_admin",
+  "satellite_church_admin",
 ];
+
+const ADMIN_DEST_LABELS = {
+  general_admin: "General Admin",
+  country_super_admin: "Country Admin",
+  state_super_admin: "State Branch Admin",
+  satellite_church_admin: "Satellite / Branch Admin",
+};
 
 function formatMedium(r) {
   const e = Number(r.medium_email) === 1;
@@ -62,8 +70,15 @@ function formatDestination(r, unitNames) {
   }
 
   if (type === "admins") {
-    const roles = Array.isArray(cfg.roles) ? cfg.roles.join(", ") : "Admins";
-    return `Admins · ${roles}`;
+    const raw = Array.isArray(cfg.roles) ? cfg.roles.filter(Boolean).map(String) : [];
+    if (raw.length === 0) return "Admins · All admins";
+    const selected = new Set(raw.map((role) => role.trim()));
+    const allSelected = ADMIN_DEST_ROLE_KEYS.every((key) => selected.has(key));
+    if (allSelected && selected.size <= ADMIN_DEST_ROLE_KEYS.length) {
+      return "Admins · All admins";
+    }
+    const labels = raw.map((key) => ADMIN_DEST_LABELS[key] || key.replace(/_/g, " "));
+    return `Admins · ${labels.join(", ")}`;
   }
 
   const uid = r.scope_unit_id != null ? Number(r.scope_unit_id) : 0;
@@ -83,12 +98,41 @@ function fmtDateTime(str) {
   return new Date(str).toLocaleString();
 }
 
+function workflowRowStatus(r) {
+  return String(r.workflow_status || "sent").trim().toLowerCase();
+}
+
+/** Single human-readable timeline cell per row */
+function timelineCell(r) {
+  const st = workflowRowStatus(r);
+  if (st === "scheduled") return { primary: fmtDateTime(r.scheduled_at), hint: "Scheduled for" };
+  if (st === "draft") return { primary: fmtDateTime(r.updated_at || r.created_at), hint: "Last updated" };
+  if (st === "archived") return { primary: fmtDateTime(r.archived_at), hint: "Archived" };
+  return { primary: fmtDateTime(r.sent_at || r.created_at), hint: "Sent" };
+}
+
+function statusBadgeClass(st) {
+  if (st === "sent") return "active";
+  if (st === "draft") return "in_review";
+  if (st === "scheduled") return "open";
+  if (st === "archived") return "archived";
+  return "inactive";
+}
+
+function statusLabel(st) {
+  if (st === "sent") return "Sent";
+  if (st === "draft") return "Draft";
+  if (st === "scheduled") return "Scheduled";
+  if (st === "archived") return "Archived";
+  return st || "—";
+}
+
 export function Announcements() {
   const toast = useToast();
   const { admin } = useAdminAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("general");
+  const [statusFilter, setStatusFilter] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [unitNames, setUnitNames] = useState({});
@@ -131,15 +175,9 @@ export function Announcements() {
   }, []);
 
   const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      const st = r.workflow_status || "sent";
-      if (tab === "general") return st === "sent";
-      if (tab === "draft") return st === "draft";
-      if (tab === "scheduled") return st === "scheduled";
-      if (tab === "archived") return st === "archived";
-      return true;
-    });
-  }, [rows, tab]);
+    if (!statusFilter) return rows;
+    return rows.filter((r) => workflowRowStatus(r) === statusFilter);
+  }, [rows, statusFilter]);
 
   async function handleCreate(payload, validationError) {
     if (validationError) {
@@ -149,12 +187,15 @@ export function Announcements() {
     setSaving(true);
     try {
       await api.createAnnouncement(payload);
+      const act = payload.workflow_action;
       toast(
-        payload.workflow_action === "draft"
+        act === "draft"
           ? "Draft saved."
-          : payload.workflow_action === "schedule"
+          : act === "schedule"
             ? "Announcement scheduled."
-            : "Announcement sent.",
+            : act === "send"
+              ? "Announcement sent."
+              : "Announcement saved.",
         "success",
       );
       setShowCreate(false);
@@ -246,17 +287,30 @@ export function Announcements() {
       </div>
 
       <div className="sa-card">
-        <div className="sa-card-body sa-unit-tab-row">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`sa-unit-tab-btn ${tab === t.id ? "is-active" : ""}`}
-              onClick={() => setTab(t.id)}
+        <div className="sa-card-body sa-ann-toolbar">
+          <div>
+            <div className="sa-ann-toolbar-title">General</div>
+            <p className="sa-text-muted sa-text-sm" style={{ margin: "6px 0 0", maxWidth: 520 }}>
+              All announcements appear here — drafts, scheduled, sent, and archived together. Narrow the table with status below.
+            </p>
+          </div>
+          <div className="sa-ann-toolbar-filters">
+            <label htmlFor="ann-status-filter" className="sa-sr-only">
+              Filter by status
+            </label>
+            <select
+              id="ann-status-filter"
+              className="sa-select sa-ann-status-select"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
             >
-              {t.label}
-            </button>
-          ))}
+              <option value="">Status: All</option>
+              <option value="sent">Sent</option>
+              <option value="draft">Draft</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
         </div>
 
         <div className="sa-table-wrap">
@@ -274,7 +328,9 @@ export function Announcements() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="sa-empty">
-              <div className="sa-empty-text">No announcements in this tab.</div>
+              <div className="sa-empty-text">
+                {statusFilter ? `No announcements with status “${statusLabel(statusFilter)}”.` : "No announcements yet."}
+              </div>
             </div>
           ) : (
             <table className="sa-table">
@@ -284,31 +340,37 @@ export function Announcements() {
                   <th>Destination</th>
                   <th>Message</th>
                   <th>Email / SMS</th>
-                  {tab === "general" && <th>Sent</th>}
-                  {tab === "scheduled" && <th>Scheduled for</th>}
-                  {tab === "draft" && <th>Last updated</th>}
-                  {tab === "archived" && <th>Archived</th>}
+                  <th>Status</th>
+                  <th>Timeline</th>
                   <th>By</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id}>
-                    <td className="sa-fw-600">{r.title}</td>
-                    <td className="sa-text-sm sa-text-muted">{formatDestination(r, unitNames)}</td>
-                    <td style={{ maxWidth: 280 }}>{r.body}</td>
-                    <td>{formatMedium(r)}</td>
-                    {tab === "general" && <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.sent_at || r.created_at)}</td>}
-                    {tab === "scheduled" && (
-                      <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.scheduled_at)}</td>
-                    )}
-                    {tab === "draft" && <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.updated_at)}</td>}
-                    {tab === "archived" && <td className="sa-text-muted sa-text-sm">{fmtDateTime(r.archived_at)}</td>}
-                    <td className="sa-text-sm">{r.created_by_name || "—"}</td>
-                    <td>{renderActions(r)}</td>
-                  </tr>
-                ))}
+                {filtered.map((r) => {
+                  const st = workflowRowStatus(r);
+                  const badgeCls = statusBadgeClass(st);
+                  const time = timelineCell(r);
+                  return (
+                    <tr key={r.id}>
+                      <td className="sa-fw-600">{r.title}</td>
+                      <td className="sa-text-sm sa-text-muted">{formatDestination(r, unitNames)}</td>
+                      <td style={{ maxWidth: 280 }}>{r.body}</td>
+                      <td>{formatMedium(r)}</td>
+                      <td>
+                        <span className={`sa-badge ${badgeCls}`}>{statusLabel(st)}</span>
+                      </td>
+                      <td className="sa-text-sm">
+                        <div className="sa-text-muted" style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>
+                          {time.hint}
+                        </div>
+                        <div>{time.primary}</div>
+                      </td>
+                      <td className="sa-text-sm">{r.created_by_name || "—"}</td>
+                      <td>{renderActions(r)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

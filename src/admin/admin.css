@@ -365,7 +365,10 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
-  max-width: 1280px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .sa-locations-loading {
   min-height: 280px;
@@ -396,7 +399,7 @@
 }
 .sa-locations-subtitle {
   margin: 0;
-  max-width: 52rem;
+  max-width: none;
   font-size: 14px;
   line-height: 1.55;
   color: var(--sa-text-muted);
@@ -1860,6 +1863,72 @@
   border: 1px solid var(--sa-border);
   border-radius: 12px;
   background: #fafbfc;
+}
+.sa-ann-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--sa-border);
+  margin-bottom: 0 !important;
+}
+.sa-ann-toolbar-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sa-text-muted);
+}
+.sa-ann-toolbar-filters {
+  min-width: 200px;
+  flex-shrink: 0;
+}
+.sa-ann-status-select {
+  width: 100%;
+  max-width: 260px;
+  min-height: 40px;
+}
+.sa-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sa-ann-schedule-toggle.sa-field-toggle {
+  margin-top: 8px;
+}
+
+/* Admin destination: checkbox row on one horizontal line */
+.sa-ann-admin-role-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 14px 20px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.sa-ann-admin-role-row .sa-ann-admin-role-item {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .sa-ann-admin-role-row {
+    gap: 10px 14px;
+  }
+}
+.sa-root[data-theme="dark"] .sa-ann-toolbar {
+  border-bottom-color: rgba(148, 163, 184, 0.2);
 }
 .sa-ann-scope-title {
   font-size: 12px;

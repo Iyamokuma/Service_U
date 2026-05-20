@@ -53,10 +53,12 @@ function branchSatelliteOptions(churches, branchCountry, branchState) {
 export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitList = [] }) {
   const [form, setForm] = useState(emptyForm);
   const [churches, setChurches] = useState([]);
+  const [scheduleLater, setScheduleLater] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setForm(emptyForm());
+      setScheduleLater(false);
       return;
     }
     fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
@@ -166,10 +168,16 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   function submit(workflow_action) {
     const err = validate();
     if (err) return onSubmit(null, err);
-    if (workflow_action === "schedule" && !form.scheduled_at) {
-      return onSubmit(null, "Pick a date and time to schedule.");
+    if (workflow_action === "schedule") {
+      if (!scheduleLater) return onSubmit(null, "Turn on “Schedule send” to schedule.");
+      if (!form.scheduled_at?.trim()) return onSubmit(null, "Pick a date and time.");
     }
     onSubmit(buildPayload(workflow_action), null);
+  }
+
+  function scheduleToggle(enabled) {
+    setScheduleLater(enabled);
+    if (!enabled) setForm((f) => ({ ...f, scheduled_at: "" }));
   }
 
   const setDest = (type) => setForm((f) => ({ ...f, destination_type: type }));
@@ -190,9 +198,16 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           <button type="button" className="sa-btn sa-btn-outline" onClick={() => submit("draft")} disabled={saving}>
             Save draft
           </button>
-          <button type="button" className="sa-btn sa-btn-outline" onClick={() => submit("schedule")} disabled={saving}>
-            Schedule
-          </button>
+          {scheduleLater ? (
+            <button
+              type="button"
+              className="sa-btn sa-btn-outline"
+              onClick={() => submit("schedule")}
+              disabled={saving || !form.scheduled_at?.trim()}
+            >
+              Schedule send
+            </button>
+          ) : null}
           <button type="button" className="sa-btn sa-btn-primary" onClick={() => submit("send")} disabled={saving}>
             {saving ? "Sending…" : "Send now"}
           </button>
@@ -405,10 +420,13 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
 
       {form.destination_type === "admins" && (
         <section className="sa-ann-scope" aria-label="Admin audience">
-          <div className="sa-ann-scope-title">Admin roles</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="sa-ann-scope-title">Admin audience</div>
+          <p className="sa-field-hint" style={{ marginTop: 0, marginBottom: 12 }}>
+            Tick all boxes to reach every admin tier, or limit to selected roles only.
+          </p>
+          <div className="sa-ann-admin-role-row" role="group" aria-label="Admin roles">
             {ADMIN_ROLE_OPTIONS.map((r) => (
-              <label key={r.value} className="sa-field-toggle" style={{ cursor: "pointer" }}>
+              <label key={r.value} className="sa-field-toggle sa-ann-admin-role-item" style={{ cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={form.admins.roles.includes(r.value)}
@@ -450,15 +468,33 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             </label>
           </div>
         </div>
-        <div className="sa-field">
-          <label className="sa-label">Schedule for (optional)</label>
-          <input
-            type="datetime-local"
-            className="sa-input"
-            value={form.scheduled_at}
-            onChange={(e) => setForm((f) => ({ ...f, scheduled_at: e.target.value }))}
-          />
-          <div className="sa-field-hint">Use Schedule below, or Send now to publish immediately.</div>
+        <div className="sa-field" style={{ marginBottom: 0 }}>
+          <label className="sa-field-toggle sa-ann-schedule-toggle">
+            <input
+              type="checkbox"
+              checked={scheduleLater}
+              onChange={(e) => scheduleToggle(Boolean(e.target.checked))}
+            />
+            <span className="sa-field-toggle-label">Schedule send (pick date &amp; time below)</span>
+          </label>
+          {scheduleLater ? (
+            <div style={{ marginTop: 12 }}>
+              <label className="sa-label">Send date &amp; time <span className="sa-required">*</span></label>
+              <input
+                type="datetime-local"
+                className="sa-input"
+                value={form.scheduled_at}
+                onChange={(e) => setForm((f) => ({ ...f, scheduled_at: e.target.value }))}
+              />
+              <div className="sa-field-hint">
+                Announcement publishes at this time. Use Schedule send in the footer, or turn off scheduling for Send now.
+              </div>
+            </div>
+          ) : (
+            <p className="sa-field-hint" style={{ marginTop: 8 }}>
+              Turn this on to reveal the date picker, then confirm with Schedule send.
+            </p>
+          )}
         </div>
       </div>
     </Modal>
