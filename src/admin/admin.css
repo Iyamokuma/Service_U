@@ -419,6 +419,15 @@
 }
 .sa-locations-card-head {
   flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.sa-locations-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
 }
 .sa-locations-card-head > div:first-child {
   display: flex;

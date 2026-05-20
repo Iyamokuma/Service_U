@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import { useAdminAuth } from "../AdminContext.jsx";
+import { isGlobalAdminRole } from "../roles.js";
 import { useToast } from "../components/Toast.jsx";
 import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
@@ -62,6 +64,8 @@ function normalizeCatalog(raw) {
 
 export function BranchCatalog({ variant = "catalog" }) {
   const copy = PAGE_COPY[variant] || PAGE_COPY.catalog;
+  const { admin } = useAdminAuth();
+  const canCreateLocation = isGlobalAdminRole(admin?.role);
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState(null);
@@ -316,14 +320,6 @@ export function BranchCatalog({ variant = "catalog" }) {
           <h2 className="sa-locations-title">{copy.title}</h2>
           <p className="sa-locations-subtitle">{copy.subtitle}</p>
         </div>
-        <div className="sa-locations-hero-actions">
-          <button type="button" className="sa-btn sa-btn-outline" disabled={busy} onClick={() => load()}>
-            Refresh
-          </button>
-          <button type="button" className="sa-btn sa-btn-primary" onClick={() => setShowCreate(true)}>
-            + Add location
-          </button>
-        </div>
       </header>
 
       {summary ? (
@@ -375,9 +371,19 @@ export function BranchCatalog({ variant = "catalog" }) {
               </span>
             ) : null}
           </div>
-          <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setFilters(emptyFilters())}>
-            Clear filters
-          </button>
+          <div className="sa-locations-card-actions">
+            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={busy} onClick={() => load()}>
+              Refresh
+            </button>
+            {canCreateLocation ? (
+              <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" onClick={() => setShowCreate(true)}>
+                + New location
+              </button>
+            ) : null}
+            <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setFilters(emptyFilters())}>
+              Clear filters
+            </button>
+          </div>
         </div>
 
         <div className="sa-card-body">
@@ -706,13 +712,6 @@ export function BranchCatalog({ variant = "catalog" }) {
                             }
                           >
                             View
-                          </button>
-                          <button
-                            type="button"
-                            className="sa-btn sa-btn-ghost sa-btn-sm"
-                            onClick={() => setShowCreate(true)}
-                          >
-                            + Location
                           </button>
                         </div>
                       </td>
