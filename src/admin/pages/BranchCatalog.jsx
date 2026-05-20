@@ -62,8 +62,25 @@ function normalizeCatalog(raw) {
   };
 }
 
+function DirectoryToolbarActions({ busy, canCreateLocation, onRefresh, onNewLocation, size = "sm" }) {
+  const btnClass = size === "sm" ? " sa-btn-sm" : "";
+  return (
+    <>
+      <button type="button" className={`sa-btn sa-btn-outline${btnClass}`} disabled={busy} onClick={onRefresh}>
+        Refresh
+      </button>
+      {canCreateLocation ? (
+        <button type="button" className={`sa-btn sa-btn-primary${btnClass}`} onClick={onNewLocation}>
+          + New location
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 export function BranchCatalog({ variant = "catalog" }) {
   const copy = PAGE_COPY[variant] || PAGE_COPY.catalog;
+  const isBranchDirectory = variant === "catalog";
   const { admin } = useAdminAuth();
   const canCreateLocation = isGlobalAdminRole(admin?.role);
   const toast = useToast();
@@ -372,13 +389,14 @@ export function BranchCatalog({ variant = "catalog" }) {
             ) : null}
           </div>
           <div className="sa-locations-card-actions">
-            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" disabled={busy} onClick={() => load()}>
-              Refresh
-            </button>
-            {canCreateLocation ? (
-              <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" onClick={() => setShowCreate(true)}>
-                + New location
-              </button>
+            {!isBranchDirectory ? (
+              <DirectoryToolbarActions
+                busy={busy}
+                canCreateLocation={canCreateLocation}
+                onRefresh={() => load()}
+                onNewLocation={() => setShowCreate(true)}
+                size="sm"
+              />
             ) : null}
             <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setFilters(emptyFilters())}>
               Clear filters
