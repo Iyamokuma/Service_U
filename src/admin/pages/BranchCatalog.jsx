@@ -526,9 +526,7 @@ export function BranchCatalog({ variant = "catalog" }) {
             </div>
           </div>
 
-          <div
-            className={`sa-locations-table-toolbar${isBranchDirectory ? " sa-locations-table-toolbar--directory" : ""}`}
-          >
+          <div className="sa-locations-table-toolbar">
             <div className="sa-unit-tab-row sa-locations-view-tabs" style={{ marginBottom: 0, flex: 1 }}>
               {viewTabs.map((t) => (
                 <button
@@ -541,19 +539,6 @@ export function BranchCatalog({ variant = "catalog" }) {
                 </button>
               ))}
             </div>
-            {isBranchDirectory ? (
-              <div className="sa-locations-table-toolbar-actions">
-                <DirectoryToolbarActions
-                  busy={busy}
-                  canCreateLocation={canCreateLocation}
-                  onRefresh={() => load()}
-                  onNewLocation={() => setShowCreate(true)}
-                  size="sm"
-                  refreshLabel="Refresh table"
-                  createLabel="Create location"
-                />
-              </div>
-            ) : null}
             <span className="sa-text-muted sa-text-sm sa-locations-result-count">
               {tab === "country"
                 ? `${filteredCountries.length} countries`
