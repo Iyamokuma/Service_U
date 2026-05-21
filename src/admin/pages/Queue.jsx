@@ -120,7 +120,7 @@ export function RegistrationDetails({ r }) {
   );
 }
 
-export function Queue({ units }) {
+export function Queue({ units, initialTab = "all" }) {
   const toast = useToast();
   const { admin } = useAdminAuth();
   const isServiceLeader = isServiceUnitLeader(admin?.role);
@@ -144,7 +144,11 @@ export function Queue({ units }) {
     sort: "submitted_at",
     dir: "DESC",
   });
-  const [subUnitStatusTab, setSubUnitStatusTab] = useState("all");
+  const [statusTab, setStatusTab] = useState(initialTab);
+
+  useEffect(() => {
+    setStatusTab(initialTab);
+  }, [initialTab]);
   const [leaderSubUnitLabels, setLeaderSubUnitLabels] = useState([]);
   const debounce = useRef(null);
 

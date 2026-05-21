@@ -46,6 +46,12 @@ export function AdminLayout() {
     try { return localStorage.getItem("sm_admin_theme") || "light"; } catch { return "light"; }
   });
   const [page, setPage]   = useState("overview");
+  const [queueTab, setQueueTab] = useState("all");
+
+  const navigateToQueue = useCallback((tab = "all") => {
+    setQueueTab(tab);
+    setPage("queue");
+  }, []);
   const [units, setUnits] = useState(null);
   const [admins, setAdmins] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -185,8 +191,8 @@ export function AdminLayout() {
           {(page === "locations" || page === "branch-catalog") && canEditBranchCatalog(admin?.role) && (
             <BranchCatalog variant={page === "locations" ? "locations" : "catalog"} />
           )}
-          {page === "overview"  && <Overview units={units} setPage={setPage} />}
-          {page === "queue"     && <Queue     units={units} />}
+          {page === "overview"  && <Overview units={units} setPage={setPage} navigateToQueue={navigateToQueue} />}
+          {page === "queue"     && <Queue     units={units} initialTab={queueTab} />}
           {page === "units" && (
             <ServiceUnits data={units} reload={() => { loadUnits(); loadAdmins(); }} />
           )}

@@ -37,7 +37,8 @@ function GenderBreakdown({ sexMap }) {
   );
 }
 
-function SuperAdminOverview({ units, setPage, admin }) {
+function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
+  const goOverdueQueue = () => (navigateToQueue ? navigateToQueue("overdue") : setPage?.("queue"));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rangeDays, setRangeDays] = useState(28);
@@ -258,7 +259,7 @@ function SuperAdminOverview({ units, setPage, admin }) {
             <strong>{totals.overdue_count}</strong> overdue application{totals.overdue_count !== 1 ? "s" : ""} across visible scope
             {filterParams.filter_country || filterParams.filter_unit_id ? "" : " — action required"} (threshold: {thDays} day{thDays !== 1 ? "s" : ""} in Settings).
           </div>
-          <button type="button" className="sa-btn sa-btn-sm sa-dash-alert-btn" onClick={() => setPage?.("queue")}>
+          <button type="button" className="sa-btn sa-btn-sm sa-dash-alert-btn" onClick={goOverdueQueue}>
             View queue
           </button>
         </div>
@@ -346,7 +347,7 @@ function SuperAdminOverview({ units, setPage, admin }) {
                     <li key={row.label}>
                       <span className="sa-dash-overdue-label">{row.label}</span>
                       <span className="sa-dash-overdue-count">{row.count} overdue</span>
-                      <button type="button" className="sa-dash-overdue-link" onClick={() => setPage?.("queue")}>
+                      <button type="button" className="sa-dash-overdue-link" onClick={goOverdueQueue}>
                         View →
                       </button>
                     </li>
@@ -431,7 +432,7 @@ function DashStatCard({ label, value, sub, highlight, overdueState }) {
   );
 }
 
-export function Overview({ units, setPage }) {
+export function Overview({ units, setPage, navigateToQueue }) {
   const { admin } = useAdminAuth();
   const isServiceLeader = admin?.role === "service_unit_leader";
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
@@ -450,7 +451,7 @@ export function Overview({ units, setPage }) {
   }, [admin]);
 
   if (isGlobalAdminRole(admin?.role)) {
-    return <SuperAdminOverview units={units} setPage={setPage} admin={admin} />;
+    return <SuperAdminOverview units={units} setPage={setPage} navigateToQueue={navigateToQueue} admin={admin} />;
   }
 
   if (loading) {
