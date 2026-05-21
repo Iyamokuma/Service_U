@@ -15,12 +15,91 @@ set
   email_normalized = case
     when email is null or trim(email) = '' then null
     else lower(trim(email))
-  end
-where phone1_digits is null and phone2_digits is null and email_normalized is null;
+  end;
 
 -- Drop too-short phone keys so unique index does not block empty strings
 update public.registrations set phone1_digits = null where phone1_digits is not null and length(phone1_digits) < 7;
 update public.registrations set phone2_digits = null where phone2_digits is not null and length(phone2_digits) < 7;
+
+-- Existing data may contain duplicate active phones/emails; archive extras before unique indexes.
+-- Keeps the best pipeline record per key (accepted > in progress > new), then earliest submission.
+do $$
+declare
+  dup_note text := E'\n[Migration] Auto-archived: duplicate identity (phone or email) — kept the primary active application.';
+begin
+  with dup_phone as (
+    select phone1_digits
+    from public.registrations
+    where phone1_digits is not null
+      and length(phone1_digits) >= 7
+      and status not in ('rejected', 'archived')
+    group by phone1_digits
+    having count(*) > 1
+  ),
+  phone_ranked as (
+    select r.id,
+      row_number() over (
+        partition by r.phone1_digits
+        order by
+          case r.status
+            when 'accepted' then 0
+            when 'in_progress' then 1
+            when 'new' then 2
+            else 3
+          end,
+          r.submitted_at asc nulls last,
+          r.id asc
+      ) as rn
+    from public.registrations r
+    inner join dup_phone d on d.phone1_digits = r.phone1_digits
+    where r.status not in ('rejected', 'archived')
+  )
+  update public.registrations r
+  set
+    status = 'archived',
+    notes = case
+      when coalesce(trim(r.notes), '') = '' then trim(dup_note)
+      else trim(r.notes) || dup_note
+    end
+  from phone_ranked p
+  where r.id = p.id and p.rn > 1;
+
+  with dup_email as (
+    select email_normalized
+    from public.registrations
+    where email_normalized is not null
+      and status not in ('rejected', 'archived')
+    group by email_normalized
+    having count(*) > 1
+  ),
+  email_ranked as (
+    select r.id,
+      row_number() over (
+        partition by r.email_normalized
+        order by
+          case r.status
+            when 'accepted' then 0
+            when 'in_progress' then 1
+            when 'new' then 2
+            else 3
+          end,
+          r.submitted_at asc nulls last,
+          r.id asc
+      ) as rn
+    from public.registrations r
+    inner join dup_email d on d.email_normalized = r.email_normalized
+    where r.status not in ('rejected', 'archived')
+  )
+  update public.registrations r
+  set
+    status = 'archived',
+    notes = case
+      when coalesce(trim(r.notes), '') = '' then trim(dup_note)
+      else trim(r.notes) || dup_note
+    end
+  from email_ranked e
+  where r.id = e.id and e.rn > 1;
+end $$;
 
 create unique index if not exists idx_registrations_phone1_digits_active
   on public.registrations (phone1_digits)

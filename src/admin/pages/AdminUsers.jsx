@@ -25,14 +25,18 @@ import {
 
 const ROLES = [
   { value: "general_admin", label: "General Admin", desc: "Full global access except creating Super Admin accounts." },
-  { value: "data_entry_admin", label: "Data Entry Admin", desc: "Global registration intake and updates; custom home dashboard; no platform settings." },
-  { value: "super_admin", label: "Super Admin", desc: "Platform owner — full access including Super Admin accounts." },
   {
     value: "country_super_admin",
     label: "Country Admin",
-    desc: "Scoped to one country: view, filter, and action applications, members, admins, and audit within that country.",
+    desc: "One active account per country (location required). Manages that country’s applications, members, and branch admins.",
   },
-  { value: "state_super_admin", label: "State Branch Admin", desc: "Supervisory: one state / satellites, filters only, mostly view-only on intake." },
+  {
+    value: "state_super_admin",
+    label: "State Branch Admin",
+    desc: "One active account per state/region (country + state required). Supervisory intake and filters for that state.",
+  },
+  { value: "data_entry_admin", label: "Data Entry Admin", desc: "Global registration intake and updates; custom home dashboard; no platform settings." },
+  { value: "super_admin", label: "Super Admin", desc: "Platform owner — full access including Super Admin accounts." },
   { value: "satellite_church_admin", label: "Satellite Pastor Admin", desc: "Pastoral oversight for one satellite: team leaders, unit requests, announcements, registrations in branch scope." },
   { value: "service_unit_leader", label: "Service Unit Leader", desc: "Can manage assigned service unit." },
   { value: "sub_unit_leader", label: "Sub-unit Leader", desc: "Can manage assigned sub-unit only." },
@@ -136,7 +140,7 @@ function occupiedCountryCodes(admins, pendingRequests, excludeId) {
   const set = new Set();
   for (const a of admins || []) {
     if (excludeId != null && Number(a.id) === Number(excludeId)) continue;
-    if (a.role === "country_super_admin" && a.branch_country) {
+    if (a.role === "country_super_admin" && a.branch_country && Number(a.is_active) === 1) {
       set.add(String(a.branch_country).toUpperCase());
     }
   }
@@ -157,6 +161,7 @@ function occupiedStateCodes(admins, pendingRequests, countryCode, excludeId) {
     if (excludeId != null && Number(a.id) === Number(excludeId)) continue;
     if (
       a.role === "state_super_admin" &&
+      Number(a.is_active) === 1 &&
       String(a.branch_country || "").toUpperCase() === cc &&
       a.branch_state
     ) {
@@ -177,12 +182,28 @@ function occupiedStateCodes(admins, pendingRequests, countryCode, excludeId) {
   return set;
 }
 
-function validateAdminForm(form) {
+function validateAdminForm(form, { takenCountries, takenStates, isEdit } = {}) {
   if (ROLES_WITH_COUNTRY.includes(form.role) && !String(form.branch_country || "").trim()) {
     return "Country is required for this role.";
   }
   if (ROLES_WITH_STATE.includes(form.role) && !String(form.branch_state || "").trim()) {
     return "State / region is required for this role.";
+  }
+  if (!isEdit && form.role === "country_super_admin") {
+    const cc = String(form.branch_country || "").toUpperCase();
+    if (takenCountries?.has(cc)) {
+      return "This country already has a Country Admin (or one pending approval).";
+    }
+    if (!cc) return "Select a country for the Country Admin.";
+  }
+  if (!isEdit && form.role === "state_super_admin") {
+    const cc = String(form.branch_country || "").toUpperCase();
+    const st = String(form.branch_state || "").toUpperCase();
+    if (!cc) return "Select a country for the State Branch Admin.";
+    if (!st) return "Select a state / region for the State Branch Admin.";
+    if (takenStates?.has(st)) {
+      return "This state already has a State Branch Admin (or one pending approval).";
+    }
   }
   if (form.role === "service_unit_leader" && !form.service_unit_id) {
     return "Service unit is required.";
@@ -207,6 +228,30 @@ export function AdminUsers({ data, units, reload }) {
   const isServiceLeader = isServiceUnitLeader(me?.role);
   const isSatellitePastor = me?.role === "satellite_church_admin";
   const [showInactive, setShowInactive] = useState(false);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [pendingAdminRequests, setPendingAdminRequests] = useState([]);
+
+  const loadPendingAdminRequests = useCallback(() => {
+    if (!isCountryAdmin && !isGlobalAdmin) return;
+    api
+      .requests({ per_page: 500, page: 1 })
+      .then((res) => {
+        setPendingAdminRequests(
+          (res.data || []).filter(
+            (r) => r.request_type === "admin_account" && PENDING_ADMIN_REQUEST_STATUSES.has(r.status),
+          ),
+        );
+      })
+      .catch(() => setPendingAdminRequests([]));
+  }, [isCountryAdmin, isGlobalAdmin]);
+
+  useEffect(() => {
+    loadPendingAdminRequests();
+  }, [loadPendingAdminRequests, data]);
+
   const scopedAdmins = (data?.data ?? []).filter((a) => {
     if (isGlobalAdmin) return true;
     if (isCountryAdmin) {
@@ -233,10 +278,42 @@ export function AdminUsers({ data, units, reload }) {
     }
     return false;
   });
-  const admins = scopedAdmins.filter(
-    (a) => showInactive || Number(a.is_active) === 1
+  const visibilityFiltered = useMemo(
+    () => scopedAdmins.filter((a) => showInactive || Number(a.is_active) === 1),
+    [scopedAdmins, showInactive],
   );
-  const activeAdminCount = scopedAdmins.filter((a) => Number(a.is_active) === 1).length;
+
+  const admins = useMemo(() => {
+    if (!isGlobalAdmin) return visibilityFiltered;
+    const q = search.trim().toLowerCase();
+    return visibilityFiltered.filter((a) => {
+      if (roleFilter !== "all" && a.role !== roleFilter) return false;
+      if (!q) return true;
+      const hay = [
+        a.full_name,
+        a.username,
+        a.email,
+        roleDisplayLabel(a.role),
+        formatAdminScope(a),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [visibilityFiltered, isGlobalAdmin, search, roleFilter]);
+
+  const adminStats = useMemo(() => {
+    if (!isGlobalAdmin) return null;
+    const active = scopedAdmins.filter((a) => Number(a.is_active) === 1);
+    return {
+      total: scopedAdmins.length,
+      active: active.length,
+      inactive: scopedAdmins.length - active.length,
+      country: active.filter((a) => a.role === "country_super_admin").length,
+      state: active.filter((a) => a.role === "state_super_admin").length,
+      pending: pendingAdminRequests.length,
+    };
+  }, [isGlobalAdmin, scopedAdmins, pendingAdminRequests]);
   const fallbackUnits = SERVICE_UNITS.map((u, idx) => ({
     id: u.id,
     name: u.name,
@@ -247,30 +324,21 @@ export function AdminUsers({ data, units, reload }) {
     .slice()
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.name).localeCompare(String(b.name)));
 
-  const [modal, setModal] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [pendingAdminRequests, setPendingAdminRequests] = useState([]);
-
-  const loadPendingAdminRequests = useCallback(() => {
-    if (!isCountryAdmin && !isGlobalAdmin) return;
-    api
-      .requests({ per_page: 500, page: 1 })
-      .then((res) => {
-        setPendingAdminRequests(
-          (res.data || []).filter(
-            (r) => r.request_type === "admin_account" && PENDING_ADMIN_REQUEST_STATUSES.has(r.status),
-          ),
-        );
-      })
-      .catch(() => setPendingAdminRequests([]));
-  }, [isCountryAdmin, isGlobalAdmin]);
-
-  useEffect(() => {
-    loadPendingAdminRequests();
-  }, [loadPendingAdminRequests, data]);
+  const allAdmins = data?.data ?? [];
 
   async function save(form) {
-    const validationMsg = validateAdminForm(form);
+    const takenCountries = occupiedCountryCodes(allAdmins, pendingAdminRequests, form.id);
+    const takenStates = occupiedStateCodes(
+      allAdmins,
+      pendingAdminRequests,
+      form.branch_country,
+      form.id,
+    );
+    const validationMsg = validateAdminForm(form, {
+      takenCountries,
+      takenStates,
+      isEdit: !!form.id,
+    });
     if (validationMsg) {
       toast(validationMsg, "error");
       return;
@@ -306,6 +374,22 @@ export function AdminUsers({ data, units, reload }) {
     } catch (e) { toast(e.message, "error"); }
   }
 
+  function openCreateModal() {
+    setModal({
+      role: isCountryAdmin
+        ? "state_super_admin"
+        : isServiceLeader
+          ? "sub_unit_leader"
+          : isSatellitePastor
+            ? "service_unit_leader"
+            : "general_admin",
+      service_unit_id: isServiceLeader ? me.service_unit_id : "",
+      branch_country: isCountryAdmin || isSatellitePastor ? me.branch_country : "",
+      branch_state: isSatellitePastor ? me.branch_state : "",
+      satellite_site: isSatellitePastor ? me.satellite_site : "",
+    });
+  }
+
   async function removeAdmin(admin) {
     if (Number(admin.id) === Number(me?.id)) {
       toast("You cannot delete your own account.", "error");
@@ -322,138 +406,202 @@ export function AdminUsers({ data, units, reload }) {
     }
   }
 
+  const createBtnLabel = isCountryAdmin
+    ? "+ Request Branch/State Admin"
+    : isServiceLeader
+      ? "+ New sub-unit admin"
+      : isSatellitePastor
+        ? "+ New team leader"
+        : "+ New Admin";
+
+  const tableProps = {
+    admins,
+    me,
+    isStateAdmin,
+    isRootSuper,
+    isCountryAdmin,
+    isGlobalAdmin,
+    isSatellitePastor,
+    isServiceLeader,
+    setModal,
+    toggleActive,
+    removeAdmin,
+    emptyText:
+      isGlobalAdmin && (search.trim() || roleFilter !== "all")
+        ? "No administrators match your filters."
+        : "No admins yet.",
+  };
+
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 700 }}>
-            {isSatellitePastor ? "Team leaders" : isCountryAdmin ? "Country admin accounts" : "Admin Accounts"}
-          </h2>
-          <p className="sa-text-muted sa-text-sm">
-            {isCountryAdmin
-              ? `${admins.length} administrator${admins.length !== 1 ? "s" : ""} in ${branchCountryLabel(me?.branch_country) || "your country"}. Manage branch, state, service unit, and sub-unit admins. Service units and sub-units are created by Super / General Admin only.`
-              : isSatellitePastor
-                ? `${admins.length} leader account${admins.length !== 1 ? "s" : ""} under your satellite.`
-                : `${admins.length} visible / ${scopedAdmins.length} total administrator${scopedAdmins.length !== 1 ? "s" : ""}`}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {(isGlobalAdmin || isServiceLeader || isCountryAdmin || isSatellitePastor) && !isStateAdmin && (
-            <label className="sa-field-toggle">
-              <span className="sa-field-toggle-label">Show inactive</span>
-              <span className="sa-switch">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
-                />
-                <span className="sa-switch-ui" aria-hidden />
-              </span>
-            </label>
-          )}
-          {(isGlobalAdmin || isServiceLeader || isCountryAdmin || isSatellitePastor) && (
-            <button
-              className="sa-btn sa-btn-primary"
-              onClick={() =>
-                setModal({
-                  role: isCountryAdmin
-                    ? "state_super_admin"
-                    : isServiceLeader
-                      ? "sub_unit_leader"
-                      : isSatellitePastor
-                        ? "service_unit_leader"
-                        : "general_admin",
-                  service_unit_id: isServiceLeader ? me.service_unit_id : "",
-                  branch_country: isCountryAdmin || isSatellitePastor ? me.branch_country : "",
-                  branch_state: isSatellitePastor ? me.branch_state : "",
-                  satellite_site: isSatellitePastor ? me.satellite_site : "",
-                })
-              }
-            >
-              {isCountryAdmin
-                ? "+ Request Branch/State Admin"
-                : isServiceLeader
-                  ? "+ New sub-unit admin"
-                  : isSatellitePastor
-                    ? "+ New team leader"
-                    : "+ New Admin"}
-            </button>
-          )}
-        </div>
-      </div>
+      {isGlobalAdmin ? (
+        <div className="sa-admins-page">
+          <header className="sa-admins-hero">
+            <div>
+              <h1 className="sa-admins-title">Admin accounts</h1>
+              <p className="sa-admins-subtitle">
+                Manage platform, country, state, satellite, and service unit administrators. Country and State
+                Branch admins must be tied to a location — only one active account per country or state.
+              </p>
+            </div>
+            <div className="sa-admins-hero-actions">
+              <button type="button" className="sa-btn sa-btn-primary" onClick={openCreateModal}>
+                {createBtnLabel}
+              </button>
+            </div>
+          </header>
 
-      <div className="sa-card">
-        <div className="sa-table-wrap">
-          {admins.length === 0 ? (
-            <div className="sa-empty"><div className="sa-empty-icon">👤</div><div className="sa-empty-text">No admins yet.</div></div>
-          ) : (
-            <table className="sa-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Username</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Scope</th>
-                  <th>Status</th>
-                  <th>Last Login</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {admins.map((a) => (
-                  <tr key={a.id}>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div className="sa-avatar" style={{ width: 30, height: 30, fontSize: 12 }}>
-                          {adminInitials(a.full_name)}
-                        </div>
-                        <div className="sa-fw-600">{a.full_name}</div>
-                        {a.id === +me.id && <span className="sa-badge viewer">You</span>}
-                      </div>
-                    </td>
-                    <td className="sa-text-muted">{a.username}</td>
-                    <td>{a.email}</td>
-                    <td><span className={`sa-badge ${a.role}`}>{roleDisplayLabel(a.role)}</span></td>
-                    <td className="sa-text-muted sa-text-sm">{formatAdminScope(a)}</td>
-                    <td><span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>{a.is_active ? "Active" : "Inactive"}</span></td>
-                    <td className="sa-text-muted">{fmtDate(a.last_login)}</td>
-                    <td>
-                      <div className="sa-table-actions">
-                        {!isStateAdmin &&
-                          !(a.role === "super_admin" && !isRootSuper) &&
-                          (!isCountryAdmin || canCountryAdminManageRole(a.role)) && (
-                          <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
-                            Edit
-                          </button>
-                        )}
-                        {!isStateAdmin &&
-                          a.id !== +me.id &&
-                          !(a.role === "super_admin" && !isRootSuper) &&
-                          (!isCountryAdmin || canCountryAdminManageRole(a.role)) && (
-                          <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
-                            {a.is_active ? "Deactivate" : "Activate"}
-                          </button>
-                        )}
-                        {!isStateAdmin &&
-                          ((isGlobalAdmin && a.id !== +me.id && (isRootSuper || a.role !== "super_admin")) ||
-                          (isSatellitePastor && a.id !== +me.id) ||
-                          (isServiceLeader && a.id !== +me.id && a.role === "sub_unit_leader") ||
-                          (isCountryAdmin && a.id !== +me.id && canCountryAdminManageRole(a.role))) && (
-                          <button className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {adminStats && (
+            <div className="sa-admins-stats" aria-label="Administrator summary">
+              <div className="sa-admins-stat">
+                <div className="sa-admins-stat-value">{adminStats.active}</div>
+                <div className="sa-admins-stat-label">Active</div>
+              </div>
+              <div className="sa-admins-stat">
+                <div className="sa-admins-stat-value">{adminStats.inactive}</div>
+                <div className="sa-admins-stat-label">Inactive</div>
+              </div>
+              <div className="sa-admins-stat">
+                <div className="sa-admins-stat-value">{adminStats.country}</div>
+                <div className="sa-admins-stat-label">Country admins</div>
+              </div>
+              <div className="sa-admins-stat">
+                <div className="sa-admins-stat-value">{adminStats.state}</div>
+                <div className="sa-admins-stat-label">State branch admins</div>
+              </div>
+              {adminStats.pending > 0 ? (
+                <div className="sa-admins-stat is-highlight">
+                  <div className="sa-admins-stat-value">{adminStats.pending}</div>
+                  <div className="sa-admins-stat-label">Pending approval</div>
+                </div>
+              ) : null}
+            </div>
           )}
+
+          {pendingAdminRequests.length > 0 && (
+            <div className="sa-admins-pending" role="status">
+              <span className="sa-admins-pending-icon" aria-hidden>
+                ⏳
+              </span>
+              <div className="sa-admins-pending-body">
+                <p className="sa-admins-pending-title">
+                  {pendingAdminRequests.length} admin request{pendingAdminRequests.length !== 1 ? "s" : ""} awaiting
+                  approval
+                </p>
+                <ul className="sa-admins-pending-list">
+                  {pendingAdminRequests.map((r) => {
+                    const a = adminFromRequestPayload(r);
+                    return (
+                      <li key={r.id}>
+                        <span className="sa-fw-600">{a.full_name || "—"}</span>
+                        <span className="sa-text-muted">· {roleDisplayLabel(a.role)}</span>
+                        <span className="sa-badge in_review">In review</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          <div className="sa-card sa-admins-card">
+            <div className="sa-card-head sa-admins-card-head">
+              <div className="sa-admins-card-head-main">
+                <div className="sa-card-title">All administrators</div>
+                <p className="sa-admins-card-meta">
+                  {admins.length} shown · {adminStats?.total ?? scopedAdmins.length} total in directory
+                </p>
+              </div>
+            </div>
+            <div className="sa-admins-filters" role="toolbar" aria-label="Filter administrators">
+              <div className="sa-search">
+                <span className="sa-search-icon" aria-hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </span>
+                <input
+                  type="search"
+                  placeholder="Search name, email, role, scope…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  aria-label="Search administrators"
+                />
+              </div>
+              <select
+                className="sa-select"
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                aria-label="Filter by role"
+              >
+                <option value="all">All roles</option>
+                {ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+              <label className="sa-field-toggle">
+                <span className="sa-field-toggle-label">Show inactive</span>
+                <span className="sa-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={showInactive}
+                    onChange={(e) => setShowInactive(e.target.checked)}
+                  />
+                  <span className="sa-switch-ui" aria-hidden />
+                </span>
+              </label>
+              <span className="sa-admins-filter-count">
+                {admins.length} result{admins.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <AdminAccountsTable {...tableProps} className="sa-admins-table" />
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="sa-admins-header-legacy">
+            <div>
+              <h2>{isSatellitePastor ? "Team leaders" : isCountryAdmin ? "Country admin accounts" : "Admin Accounts"}</h2>
+              <p className="sa-text-muted sa-text-sm">
+                {isCountryAdmin
+                  ? `${admins.length} administrator${admins.length !== 1 ? "s" : ""} in ${branchCountryLabel(me?.branch_country) || "your country"}. Manage branch, state, service unit, and sub-unit admins. Service units and sub-units are created by Super / General Admin only.`
+                  : isSatellitePastor
+                    ? `${admins.length} leader account${admins.length !== 1 ? "s" : ""} under your satellite.`
+                    : `${admins.length} visible / ${scopedAdmins.length} total administrator${scopedAdmins.length !== 1 ? "s" : ""}`}
+              </p>
+            </div>
+            <div className="sa-admins-hero-actions">
+              {(isServiceLeader || isCountryAdmin || isSatellitePastor) && !isStateAdmin && (
+                <label className="sa-field-toggle">
+                  <span className="sa-field-toggle-label">Show inactive</span>
+                  <span className="sa-switch">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={showInactive}
+                      onChange={(e) => setShowInactive(e.target.checked)}
+                    />
+                    <span className="sa-switch-ui" aria-hidden />
+                  </span>
+                </label>
+              )}
+              {(isServiceLeader || isCountryAdmin || isSatellitePastor) && (
+                <button type="button" className="sa-btn sa-btn-primary" onClick={openCreateModal}>
+                  {createBtnLabel}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="sa-card">
+            <AdminAccountsTable {...tableProps} />
+          </div>
+        </>
+      )}
 
       {isCountryAdmin && pendingAdminRequests.length > 0 && (
         <div className="sa-card" style={{ marginBottom: 16 }}>
@@ -483,7 +631,7 @@ export function AdminUsers({ data, units, reload }) {
         open={!!modal}
         data={modal}
         unitList={unitList}
-        existingAdmins={data?.data ?? []}
+        existingAdmins={allAdmins}
         pendingAdminRequests={pendingAdminRequests}
         onClose={() => setModal(null)}
         onSave={save}
@@ -491,6 +639,103 @@ export function AdminUsers({ data, units, reload }) {
         me={me}
       />
     </>
+  );
+}
+
+function AdminAccountsTable({
+  admins,
+  me,
+  isStateAdmin,
+  isRootSuper,
+  isCountryAdmin,
+  isGlobalAdmin,
+  isSatellitePastor,
+  isServiceLeader,
+  setModal,
+  toggleActive,
+  removeAdmin,
+  emptyText = "No admins yet.",
+  className = "",
+}) {
+  return (
+    <div className={`sa-table-wrap${className ? ` ${className}` : ""}`}>
+      {admins.length === 0 ? (
+        <div className="sa-empty">
+          <div className="sa-empty-icon">👤</div>
+          <div className="sa-empty-text">{emptyText}</div>
+        </div>
+      ) : (
+        <table className="sa-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Scope/Service Unit</th>
+              <th>Status</th>
+              <th>Last login</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {admins.map((a) => (
+              <tr key={a.id}>
+                <td>
+                  <div className="sa-admins-name-cell">
+                    <div className="sa-avatar">{adminInitials(a.full_name)}</div>
+                    <div className="sa-admins-name-text">
+                      <div className="sa-fw-600">{a.full_name}</div>
+                      {a.id === +me.id ? <span className="sa-badge viewer">You</span> : null}
+                    </div>
+                  </div>
+                </td>
+                <td className="sa-text-muted sa-text-sm">{a.username}</td>
+                <td className="sa-truncate sa-text-sm">{a.email}</td>
+                <td>
+                  <span className={`sa-badge ${a.role}`}>{roleDisplayLabel(a.role)}</span>
+                </td>
+                <td className="sa-text-muted sa-text-sm sa-admins-scope-cell">{formatAdminScope(a)}</td>
+                <td>
+                  <span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>
+                    {a.is_active ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td className="sa-text-muted sa-text-sm">{fmtDate(a.last_login)}</td>
+                <td>
+                  <div className="sa-table-actions">
+                    {!isStateAdmin &&
+                      !(a.role === "super_admin" && !isRootSuper) &&
+                      (!isCountryAdmin || canCountryAdminManageRole(a.role)) && (
+                        <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
+                          Edit
+                        </button>
+                      )}
+                    {!isStateAdmin &&
+                      a.id !== +me.id &&
+                      !(a.role === "super_admin" && !isRootSuper) &&
+                      (!isCountryAdmin || canCountryAdminManageRole(a.role)) && (
+                        <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
+                          {a.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                      )}
+                    {!isStateAdmin &&
+                      ((isGlobalAdmin && a.id !== +me.id && (isRootSuper || a.role !== "super_admin")) ||
+                        (isSatellitePastor && a.id !== +me.id) ||
+                        (isServiceLeader && a.id !== +me.id && a.role === "sub_unit_leader") ||
+                        (isCountryAdmin && a.id !== +me.id && canCountryAdminManageRole(a.role))) && (
+                        <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
+                          Delete
+                        </button>
+                      )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -612,6 +857,14 @@ function AdminModal({ open, data, unitList, existingAdmins, pendingAdminRequests
     return !takenStates.has(String(s.code).toUpperCase());
   });
 
+  const locationScopedRole = ROLES_WITH_COUNTRY.includes(form.role);
+  const createBlocked =
+    !isEdit &&
+    ((form.role === "country_super_admin" && countryOptions.length === 0) ||
+      (form.role === "state_super_admin" &&
+        form.branch_country &&
+        stateOptions.length === 0));
+
   return (
     <Modal
       open={open} onClose={onClose}
@@ -631,7 +884,7 @@ function AdminModal({ open, data, unitList, existingAdmins, pendingAdminRequests
       size="md"
       footer={<>
         <button className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
-        <button className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving}>
+        <button className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving || createBlocked}>
           {saving
             ? "Saving…"
             : isEdit
@@ -683,17 +936,34 @@ function AdminModal({ open, data, unitList, existingAdmins, pendingAdminRequests
               const role = e.target.value;
               const geoRoles = ROLES_WITH_COUNTRY;
               setForm((f) => {
+                let branch_country = geoRoles.includes(role)
+                  ? f.branch_country
+                  : isCountryAdmin
+                    ? me?.branch_country || ""
+                    : "";
+                let branch_state = ROLES_WITH_STATE.includes(role) ? f.branch_state : "";
+                if (!isEdit && role === "country_super_admin") {
+                  const cc = String(branch_country || "").toUpperCase();
+                  if (cc && takenCountries.has(cc)) {
+                    branch_country = "";
+                    branch_state = "";
+                  }
+                }
+                if (!isEdit && role === "state_super_admin") {
+                  const cc = String(branch_country || "").toUpperCase();
+                  const st = String(branch_state || "").toUpperCase();
+                  if (st && takenStates.has(st)) branch_state = "";
+                  if (cc && !branch_state && branchStatesForCountry(cc).every((s) => takenStates.has(String(s.code).toUpperCase()))) {
+                    branch_country = "";
+                  }
+                }
                 const next = {
                   ...f,
                   role,
                   service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? f.service_unit_id : "",
                   sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
-                  branch_country: geoRoles.includes(role)
-                    ? f.branch_country
-                    : isCountryAdmin
-                      ? me?.branch_country || ""
-                      : "",
-                  branch_state: ROLES_WITH_STATE.includes(role) ? f.branch_state : "",
+                  branch_country,
+                  branch_state,
                   satellite_site: role === "satellite_church_admin" ? f.satellite_site : "",
                 };
                 if (
@@ -749,7 +1019,18 @@ function AdminModal({ open, data, unitList, existingAdmins, pendingAdminRequests
         )}
       </div>
 
-      {ROLES_WITH_COUNTRY.includes(form.role) && (
+      {locationScopedRole && (
+        <>
+          <p className="sa-text-sm sa-fw-600" style={{ margin: "4px 0 8px" }}>
+            Scope / location <span className="sa-required">*</span>
+          </p>
+          {isGlobalAdmin && (form.role === "country_super_admin" || form.role === "state_super_admin") && (
+            <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 12px" }}>
+              {form.role === "country_super_admin"
+                ? "Country Admin accounts must be assigned to exactly one country. Countries that already have an active Country Admin (or a pending request) are not listed."
+                : "State Branch Admin accounts must be assigned to a country and state. States that already have an active State Branch Admin (or a pending request) are not listed."}
+            </p>
+          )}
         <div className="sa-form-row">
           <div className="sa-field">
             <label className="sa-label">Country <span className="sa-required">*</span></label>
@@ -814,6 +1095,7 @@ function AdminModal({ open, data, unitList, existingAdmins, pendingAdminRequests
             </div>
           )}
         </div>
+        </>
       )}
 
       {form.role === "satellite_church_admin" && (

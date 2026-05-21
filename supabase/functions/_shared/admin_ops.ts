@@ -161,15 +161,12 @@ async function assertUniqueCountryAdmin(
   const cc = normUp(branchCountry);
   if (!cc) return;
   const { data, error } = await supabase.from("admins").select("id,full_name,is_active").eq("role", "country_super_admin")
-    .eq("branch_country", cc);
+    .eq("branch_country", cc).eq("is_active", 1);
   if (error) throw new Error(error.message);
   const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
   if (taken) {
-    const active = Number((taken as { is_active?: number }).is_active) === 1;
     throw new Error(
-      `This country already has a Country Admin (${(taken as { full_name?: string }).full_name || "existing account"})${
-        active ? "" : " (inactive)"
-      }. Choose another country or remove the existing account first.`,
+      `This country already has an active Country Admin (${(taken as { full_name?: string }).full_name || "existing account"}). Choose another country or deactivate the existing account first.`,
     );
   }
   if (await pendingCountryAdminRequestExists(supabase, cc, excludeRequestId)) {
@@ -188,15 +185,12 @@ async function assertUniqueStateAdmin(
   const st = normUp(branchState);
   if (!cc || !st) return;
   const { data, error } = await supabase.from("admins").select("id,full_name,is_active").eq("role", "state_super_admin")
-    .eq("branch_country", cc).eq("branch_state", st);
+    .eq("branch_country", cc).eq("branch_state", st).eq("is_active", 1);
   if (error) throw new Error(error.message);
   const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
   if (taken) {
-    const active = Number((taken as { is_active?: number }).is_active) === 1;
     throw new Error(
-      `This state already has a State Branch Admin (${(taken as { full_name?: string }).full_name || "existing account"})${
-        active ? "" : " (inactive)"
-      }. Choose another state or remove the existing account first.`,
+      `This state already has an active State Branch Admin (${(taken as { full_name?: string }).full_name || "existing account"}). Choose another state or deactivate the existing account first.`,
     );
   }
   if (await pendingStateAdminRequestExists(supabase, cc, st, excludeRequestId)) {
