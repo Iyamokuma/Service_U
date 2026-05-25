@@ -109,8 +109,9 @@ export function Requests() {
   const toast = useToast();
   const { admin } = useAdminAuth();
   const isSuper = admin?.role === "super_admin" || admin?.role === "general_admin";
+  const isCountryAdmin = admin?.role === "country_super_admin";
+  const canApprove = isSuper || isCountryAdmin;
   const [rows, setRows] = useState([]);
-  const [message, setMessage] = useState("");
 
   const load = async () => {
     try {
@@ -125,21 +126,6 @@ export function Requests() {
   useEffect(() => {
     load();
   }, []);
-
-  const send = async () => {
-    if (!message.trim()) return;
-    try {
-      await api.createRequest({
-        message: message.trim(),
-        request_type: "general",
-      });
-      setMessage("");
-      toast("Request sent.", "success");
-      load();
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  };
 
   const requestTypeLabel = (r) => {
     if (r.request_type === "location_catalog") return "Location proposal";
@@ -198,22 +184,13 @@ export function Requests() {
 
   return (
     <div className="sa-card">
-      {!isSuper && (
-        <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)" }}>
-          <div className="sa-field">
-            <label className="sa-label">Send a general message to Super / General Admin</label>
-            <textarea
-              className="sa-textarea"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your request…"
-            />
-          </div>
-          <button type="button" className="sa-btn sa-btn-primary" style={{ width: "auto" }} onClick={send}>
-            Send request
-          </button>
-        </div>
-      )}
+      <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", padding: "14px 20px" }}>
+        <p className="sa-text-muted sa-text-sm" style={{ margin: 0 }}>
+          {canApprove
+            ? "Review and action pending requests from your downline administrators."
+            : "Track the status of requests you\u2019ve submitted for approval."}
+        </p>
+      </div>
 
       <div className="sa-table-wrap">
         <table className="sa-table">
@@ -259,7 +236,7 @@ export function Requests() {
                     <span className={`sa-badge ${r.status}`}>{statusLabel(r.status)}</span>
                   </td>
                   <td>
-                    {isSuper ? (
+                    {canApprove && Number(r.from_admin_id) !== Number(admin?.id) ? (
                       <div className="sa-table-actions">
                         <button
                           type="button"
@@ -296,7 +273,9 @@ export function Requests() {
                         </button>
                       </div>
                     ) : (
-                      "—"
+                      <span className="sa-text-muted sa-text-sm">
+                        {Number(r.from_admin_id) === Number(admin?.id) ? "Your request" : "—"}
+                      </span>
                     )}
                   </td>
                 </tr>

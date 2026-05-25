@@ -395,6 +395,7 @@ export function Announcements() {
           onSubmit={handleCreate}
           saving={saving}
           unitList={unitList}
+          admin={admin}
         />
       ) : null}
     </>

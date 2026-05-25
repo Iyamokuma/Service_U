@@ -21,7 +21,7 @@ import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
 import { isGlobalAdminRole, canEditBranchCatalog, isServiceUnitLeader } from "./roles.js";
 
-const PAGE_TITLES = {
+const PAGE_TITLES_DEFAULT = {
   overview: "Overview",
   locations: "Locations",
   queue:    "Application Queue",
@@ -32,12 +32,39 @@ const PAGE_TITLES = {
   activity: "Activity Log",
   settings: "Settings",
   profile: "Profile / Settings",
-  oversight: "Branch registrations & filters",
-  "role-dashboard": "Custom dashboard",
+  oversight: "Application Queue",
+  "role-dashboard": "Dashboard",
   announcements: "Announcements",
   "data-locations": "Propose church location",
   "branch-catalog": "Branch directory",
+  "unit-request": "Request Service Unit",
 };
+
+const PAGE_TITLES_BY_ROLE = {
+  satellite_church_admin: {
+    "role-dashboard": "Dashboard",
+    oversight: "Application Queue",
+    admins: "Admin Accounts",
+    requests: "My Requests",
+  },
+  country_super_admin: {
+    overview: "Country Analytics",
+    oversight: "Application Queue",
+    requests: "Requests & Approvals",
+  },
+  state_super_admin: {
+    overview: "State Analytics",
+    oversight: "Application Queue",
+    requests: "My Requests",
+  },
+  data_entry_admin: {
+    "role-dashboard": "Home",
+  },
+};
+
+function getPageTitle(page, role) {
+  return PAGE_TITLES_BY_ROLE[role]?.[page] || PAGE_TITLES_DEFAULT[page] || page;
+}
 
 export function AdminLayout() {
   const { admin } = useAdminAuth();
@@ -45,13 +72,29 @@ export function AdminLayout() {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("sm_admin_theme") || "light"; } catch { return "light"; }
   });
-  const [page, setPage]   = useState("overview");
-  const [queueTab, setQueueTab] = useState("all");
+  const [page, setPageRaw] = useState(() => {
+    try {
+      return sessionStorage.getItem("sm_admin_page") || "overview";
+    } catch { return "overview"; }
+  });
+  const setPage = useCallback((v) => {
+    setPageRaw((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      try { sessionStorage.setItem("sm_admin_page", next); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const [queueTab, setQueueTab] = useState(() => {
+    try {
+      return sessionStorage.getItem("sm_admin_queue_tab") || "all";
+    } catch { return "all"; }
+  });
 
   const navigateToQueue = useCallback((tab = "all") => {
     setQueueTab(tab);
+    try { sessionStorage.setItem("sm_admin_queue_tab", tab); } catch { /* ignore */ }
     setPage("queue");
-  }, []);
+  }, [setPage]);
   const [units, setUnits] = useState(null);
   const [admins, setAdmins] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -71,13 +114,13 @@ export function AdminLayout() {
     if (!admin) return;
     if (admin.role === "country_super_admin") {
       setPage((p) =>
-        ["overview", "oversight", "members", "admins", "activity", "announcements", "profile"].includes(p)
+        ["overview", "oversight", "members", "admins", "locations", "requests", "activity", "announcements", "profile"].includes(p)
           ? p
           : "overview",
       );
     } else if (admin.role === "state_super_admin") {
       setPage((p) =>
-        ["overview", "oversight", "members", "admins", "activity", "announcements", "profile"].includes(p)
+        ["overview", "oversight", "members", "admins", "requests", "activity", "announcements", "profile"].includes(p)
           ? p
           : "overview",
       );
@@ -87,7 +130,6 @@ export function AdminLayout() {
           "role-dashboard",
           "oversight",
           "admins",
-          "unit-request",
           "requests",
           "announcements",
           "profile",
@@ -103,7 +145,6 @@ export function AdminLayout() {
           "locations",
           "branch-catalog",
           "activity",
-          "announcements",
           "profile",
         ].includes(p)
           ? p
@@ -168,7 +209,7 @@ export function AdminLayout() {
       <div className="sa-main">
         <div className="sa-topbar">
           <div className="sa-page-title-block">
-            <div className="sa-page-title">{PAGE_TITLES[page]}</div>
+            <div className="sa-page-title">{getPageTitle(page, admin?.role)}</div>
             {showLeaderScope ? <div className="sa-page-scope">{leaderScope}</div> : null}
           </div>
           <div className="sa-topbar-right">
@@ -198,7 +239,7 @@ export function AdminLayout() {
           )}
           {page === "members"   && <UnitMembers units={units} />}
           {page === "admins"    && <AdminUsers   data={admins} units={units} reload={loadAdmins} />}
-          {page === "unit-request" && admin?.role === "satellite_church_admin" && <SatelliteUnitRequest />}
+          {/* unit-request removed — satellite pastors no longer request service units */}
           {page === "requests"  && <Requests />}
           {page === "activity"  && <ActivityLog />}
           {page === "oversight" && <BranchOversight units={units} />}

@@ -35,7 +35,7 @@ export function isDataEntryAdmin(role) {
 
 /** Countries / states / churches directory (admin-managed, public form lists). */
 export function canEditBranchCatalog(role) {
-  return role === "super_admin" || role === "general_admin" || role === "data_entry_admin";
+  return role === "super_admin" || role === "general_admin" || role === "data_entry_admin" || role === "country_super_admin";
 }
 
 export function isCountrySuperAdmin(role) {
@@ -64,6 +64,18 @@ export const COUNTRY_MANAGED_ADMIN_ROLES = [
 
 export function canCountryAdminManageRole(targetRole) {
   return COUNTRY_MANAGED_ADMIN_ROLES.includes(targetRole);
+}
+
+/** Admin roles a state branch admin may manage (within their state). */
+export const STATE_MANAGED_ADMIN_ROLES = ["satellite_church_admin"];
+
+export function canStateAdminManageRole(targetRole) {
+  return STATE_MANAGED_ADMIN_ROLES.includes(targetRole);
+}
+
+/** Whether this admin role uses the request→approval flow instead of direct creation. */
+export function mustUseRequestFlow(role) {
+  return ["country_super_admin", "state_super_admin", "satellite_church_admin"].includes(role);
 }
 
 export function isServiceUnitLeader(role) {

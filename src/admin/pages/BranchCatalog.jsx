@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
-import { isGlobalAdminRole } from "../roles.js";
+import { isGlobalAdminRole, isCountrySuperAdmin } from "../roles.js";
 import { useToast } from "../components/Toast.jsx";
 import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
@@ -13,6 +13,7 @@ import {
   buildStateRows,
   uniqueContinents,
 } from "../catalogUtils.js";
+import { exportCsv } from "../exportCsv.js";
 
 const TABS = [
   { id: "satellite", label: "Satellite churches" },
@@ -98,7 +99,7 @@ export function BranchCatalog({ variant = "catalog" }) {
   const copy = PAGE_COPY[variant] || PAGE_COPY.catalog;
   const isBranchDirectory = variant === "catalog";
   const { admin } = useAdminAuth();
-  const canCreateLocation = isGlobalAdminRole(admin?.role);
+  const canCreateLocation = isGlobalAdminRole(admin?.role) || isCountrySuperAdmin(admin?.role);
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState(null);
@@ -260,6 +261,53 @@ export function BranchCatalog({ variant = "catalog" }) {
     if (filterSearch.trim()) n += 1;
     return n;
   }, [filters, filterSearch]);
+
+  function handleExportLocations() {
+    const exportByTab = {
+      all: { rows: filteredAll, filename: "locations-all-branches", cols: [
+        { key: "name", label: "Satellite Name" },
+        { key: "stateLabel", label: "State" },
+        { key: "countryLabel", label: "Country" },
+        { key: "branchAdminName", label: "Branch Admin" },
+        { key: "satelliteAdminName", label: "Satellite Admin" },
+        { key: "members", label: "Members" },
+        { key: "is_active", label: "Status", format: (v) => v ? "Active" : "Hidden" },
+      ]},
+      country: { rows: filteredCountries, filename: "locations-countries", cols: [
+        { key: "name", label: "Country" },
+        { key: "stateCount", label: "States" },
+        { key: "satelliteCount", label: "Satellites" },
+        { key: "branchAdminName", label: "Country Admin" },
+        { key: "satelliteAdminCount", label: "Satellite Admins" },
+        { key: "members", label: "Members" },
+      ]},
+      state: { rows: filteredStates, filename: "locations-states", cols: [
+        { key: "countryLabel", label: "Country" },
+        { key: "stateLabel", label: "State" },
+        { key: "satelliteCount", label: "Satellites" },
+        { key: "unitLeaders", label: "Unit Leaders" },
+        { key: "contact", label: "Contact" },
+        { key: "members", label: "Members" },
+      ]},
+      satellite: { rows: filteredSatellites, filename: "locations-satellites", cols: [
+        { key: "name", label: "Church Name" },
+        { key: "countryLabel", label: "Country" },
+        { key: "stateLabel", label: "State" },
+        { key: "continent", label: "Continent" },
+        { key: "lga", label: "LGA" },
+        { key: "pastorName", label: "Pastor Admin" },
+        { key: "members", label: "Members" },
+        { key: "is_active", label: "Status", format: (v) => v ? "Active" : "Hidden" },
+      ]},
+    };
+    const cfg = exportByTab[tab] || exportByTab.all;
+    if (!cfg.rows.length) { toast("No records to export.", "error"); return; }
+    exportCsv(cfg.rows, {
+      filename: `${cfg.filename}-${new Date().toISOString().slice(0, 10)}.csv`,
+      columns: cfg.cols,
+    });
+    toast(`Exported ${cfg.rows.length} record${cfg.rows.length !== 1 ? "s" : ""}.`, "success");
+  }
 
   async function createLocation(payload) {
     if (!payload.continent || !payload.countryIso2 || !payload.stateName || !payload.lgaName) {
@@ -433,6 +481,9 @@ export function BranchCatalog({ variant = "catalog" }) {
                 size="sm"
               />
             ) : null}
+            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExportLocations}>
+              Export CSV
+            </button>
             <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setFilters(emptyFilters())}>
               Clear filters
             </button>

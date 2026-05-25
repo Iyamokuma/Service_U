@@ -1,9 +1,7 @@
+import { useCallback, useEffect, useState } from "react";
 import { useAdminAuth } from "../AdminContext.jsx";
-
-const SATELLITE_COPY = {
-  title: "Satellite pastor workspace",
-  body: "Manage registrations for your branch, appoint service unit and sub-unit leaders, request new ministry units for Super Admin approval, and send announcements scoped to your satellite.",
-};
+import { api } from "../api.js";
+import { leaderScopeLabel } from "../leaderScope.js";
 
 export function RoleDashboard({ setPage }) {
   const { admin } = useAdminAuth();
@@ -25,18 +23,6 @@ export function RoleDashboard({ setPage }) {
               <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("data-locations")}>
                 Propose new location
               </button>
-              {/* <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("overview")}>
-                Overview
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("queue")}>
-                Application queue
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("members")}>
-                Unit members
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("requests")}>
-                My requests
-              </button> */}
             </div>
           </div>
         </div>
@@ -45,37 +31,7 @@ export function RoleDashboard({ setPage }) {
   }
 
   if (admin?.role === "satellite_church_admin") {
-    return (
-      <div className="sa-card sa-data-entry-home">
-        <div className="sa-card-head">
-          <span className="sa-card-title">{SATELLITE_COPY.title}</span>
-        </div>
-        <div className="sa-card-body">
-          <div className="sa-de-hero">
-            <p className="sa-text-muted sa-text-sm" style={{ lineHeight: 1.6, margin: 0 }}>
-              {SATELLITE_COPY.body}
-            </p>
-            <div className="sa-de-actions">
-              <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("oversight")}>
-                Registrations &amp; filters
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("admins")}>
-                Team leaders
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("unit-request")}>
-                Request service unit
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("announcements")}>
-                Announcements
-              </button>
-              <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("requests")}>
-                My requests
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <SatellitePastorDashboard setPage={setPage} admin={admin} />;
   }
 
   return (
@@ -89,5 +45,138 @@ export function RoleDashboard({ setPage }) {
         </p>
       </div>
     </div>
+  );
+}
+
+function SatellitePastorDashboard({ setPage, admin }) {
+  const scope = leaderScopeLabel(admin);
+  const [stats, setStats] = useState(null);
+  const [adminCount, setAdminCount] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      api.stats({ viewer: admin, trend_days: 365 }).catch(() => null),
+      api.admins().then((r) => r?.data || []).catch(() => []),
+    ]).then(([s, admins]) => {
+      setStats(s);
+      const myTeam = admins.filter((a) => {
+        const sameCountry = String(a.branch_country || "").toUpperCase() === String(admin.branch_country || "").toUpperCase();
+        const sameState = String(a.branch_state || "").toUpperCase() === String(admin.branch_state || "").toUpperCase();
+        const sameSat = String(a.satellite_site || "").trim() === String(admin.satellite_site || "").trim();
+        return sameCountry && sameState && sameSat &&
+          (a.role === "service_unit_leader" || a.role === "sub_unit_leader") &&
+          Number(a.is_active) === 1;
+      });
+      setAdminCount(myTeam.length);
+    }).finally(() => setLoading(false));
+  }, [admin]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const totals = stats?.totals || {};
+  const overdueCount = totals.overdue_count ?? 0;
+  const overdueState = overdueCount === 0 ? "zero" : totals.overdue_critical ? "critical" : "amber";
+
+  return (
+    <>
+      {scope && (
+        <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px" }}>
+          {scope}
+        </p>
+      )}
+
+      {loading ? (
+        <div className="sa-loading">
+          <div className="sa-spinner" />
+          <span>Loading dashboard...</span>
+        </div>
+      ) : (
+        <>
+          <div className="sa-stat-grid">
+            <DashCard
+              label="Total Registrations"
+              value={totals.registrations ?? 0}
+              sub={`+${totals.this_week ?? 0} this week`}
+              onClick={() => setPage?.("oversight")}
+            />
+            <DashCard
+              label="Pending Review"
+              value={totals.pending ?? 0}
+              onClick={() => setPage?.("oversight")}
+            />
+            <DashCard
+              label="Approved"
+              value={totals.approved ?? 0}
+            />
+            <DashCard
+              label="Overdue"
+              value={overdueCount}
+              overdueState={overdueState}
+              sub={overdueCount === 0 ? "On track" : "Needs attention"}
+              onClick={() => setPage?.("oversight")}
+            />
+            <DashCard
+              label="Admin Accounts"
+              value={adminCount ?? 0}
+              sub="Active team leaders"
+              onClick={() => setPage?.("admins")}
+            />
+          </div>
+
+          <div className="sa-card" style={{ marginTop: 20 }}>
+            <div className="sa-card-head">
+              <span className="sa-card-title">Quick actions</span>
+            </div>
+            <div className="sa-card-body">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("oversight")}>
+                  Application Queue
+                </button>
+                <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("admins")}>
+                  Admin Accounts
+                </button>
+                <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("announcements")}>
+                  Announcements
+                </button>
+                <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("requests")}>
+                  My Requests
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function DashCard({ label, value, sub, onClick, overdueState }) {
+  const overdueCls =
+    overdueState === "zero"
+      ? " sa-stat-card--overdue-zero"
+      : overdueState === "critical"
+        ? " sa-stat-card--overdue-critical"
+        : overdueState === "amber"
+          ? " sa-stat-card--overdue-amber"
+          : "";
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag
+      className={`sa-stat-card${overdueCls}`}
+      onClick={onClick}
+      type={onClick ? "button" : undefined}
+      style={onClick ? { cursor: "pointer", textAlign: "left", border: "1px solid var(--sa-border)" } : undefined}
+    >
+      <div className="sa-stat-header">
+        <span className="sa-stat-label">{label}</span>
+      </div>
+      <div className={`sa-stat-value${overdueState === "zero" ? " sa-stat-value--overdue-ok" : ""}`}>
+        {overdueState === "zero" ? <span className="sa-overdue-check" aria-hidden>&#10003;</span> : null}
+        {overdueState === "zero" ? 0 : (value ?? "\u2014")}
+      </div>
+      {sub ? <div className="sa-stat-trend">{sub}</div> : null}
+    </Tag>
   );
 }

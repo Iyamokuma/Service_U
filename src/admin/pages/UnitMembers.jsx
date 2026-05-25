@@ -4,6 +4,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { isCountrySuperAdmin, isStateSuperAdmin } from "../roles.js";
 import { branchStatesForCountry } from "../branchRegions.js";
+import { exportCsv } from "../exportCsv.js";
 
 export function UnitMembers({ units }) {
   const toast = useToast();
@@ -74,6 +75,47 @@ export function UnitMembers({ units }) {
   }, [load]);
 
   const unitName = (units?.data || []).find((u) => Number(u.id) === Number(admin?.service_unit_id))?.name;
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const body = {
+        search: filters.search,
+        page: 1,
+        per_page: 10000,
+        viewer: admin,
+        unit_id: isLeader ? admin?.service_unit_id : filters.unit_id,
+        filter_branch_state: isCountryAdmin ? filters.filter_branch_state : "",
+      };
+      if (isSubUnitLeader && admin?.sub_unit_name) body.sub_unit = admin.sub_unit_name;
+      else if (isServiceUnitLeader && filters.sub_unit) body.sub_unit = filters.sub_unit;
+      else if (isCountryAdmin && filters.sub_unit) body.sub_unit = filters.sub_unit;
+      if (isStateAdmin && filters.filter_branch_state) body.filter_branch_state = filters.filter_branch_state;
+      const res = await api.members(body);
+      const all = res.data || [];
+      if (!all.length) { toast("No records to export.", "error"); return; }
+      exportCsv(all, {
+        filename: `unit-members-${new Date().toISOString().slice(0, 10)}.csv`,
+        columns: [
+          { key: "id", label: "Ref" },
+          { key: "first_name", label: "First Name" },
+          { key: "surname", label: "Surname" },
+          { key: "phone1", label: "Phone" },
+          { key: "email", label: "Email" },
+          { key: "unit_name", label: "Service Unit" },
+          { key: "sub_unit", label: "Sub-unit" },
+          { key: "branch_country", label: "Country" },
+          { key: "branch_state", label: "State" },
+          { key: "satellite_site", label: "Church" },
+          { key: "status", label: "Status" },
+          { key: "submitted_at", label: "Submitted", format: (v) => v ? new Date(v).toLocaleDateString() : "" },
+        ],
+      });
+      toast(`Exported ${all.length} member${all.length !== 1 ? "s" : ""}.`, "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setExporting(false); }
+  }
 
   return (
     <>
@@ -133,6 +175,15 @@ export function UnitMembers({ units }) {
             ))}
           </select>
         )}
+        <button
+          type="button"
+          className="sa-btn sa-btn-outline sa-btn-sm"
+          disabled={exporting || loading || rows.length === 0}
+          onClick={handleExport}
+          style={{ marginLeft: "auto" }}
+        >
+          {exporting ? "Exporting…" : "Export CSV"}
+        </button>
       </div>
 
       <div className="sa-table-wrap">

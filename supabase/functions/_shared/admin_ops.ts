@@ -291,6 +291,12 @@ async function insertAdminFromBody(
     throw new Error("Country is required for Country Admin accounts.");
   }
   assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+  if (row.role === "super_admin") {
+    await assertUniqueSuperAdmin(supabase);
+  }
+  if (row.role === "general_admin") {
+    await assertUniqueGeneralAdmin(supabase);
+  }
   if (row.role === "country_super_admin") {
     await assertUniqueCountryAdmin(supabase, row.branch_country);
   }
@@ -348,6 +354,10 @@ function isCountrySuperAdmin(admin: AdminRow): boolean {
   return norm(admin.role) === "country_super_admin";
 }
 
+function isStateSuperAdmin(admin: AdminRow): boolean {
+  return norm(admin.role) === "state_super_admin";
+}
+
 const COUNTRY_MANAGED_ADMIN_ROLES = [
   "satellite_church_admin",
   "state_super_admin",
@@ -355,10 +365,57 @@ const COUNTRY_MANAGED_ADMIN_ROLES = [
   "sub_unit_leader",
 ];
 
+const STATE_MANAGED_ADMIN_ROLES = [
+  "satellite_church_admin",
+];
+
 function assertCountryManagedRole(role: string): void {
   if (!COUNTRY_MANAGED_ADMIN_ROLES.includes(norm(role))) {
     throw new Error("Country admins may only manage branch, state, service unit, and sub-unit admin accounts.");
   }
+}
+
+function assertStateManagedRole(role: string): void {
+  if (!STATE_MANAGED_ADMIN_ROLES.includes(norm(role))) {
+    throw new Error("State Branch admins may only create Satellite Pastor Admin accounts.");
+  }
+}
+
+async function assertUniqueSuperAdmin(
+  supabase: SupabaseClient,
+  excludeId?: number,
+): Promise<void> {
+  const { data, error } = await supabase.from("admins").select("id,full_name").eq("role", "super_admin").eq("is_active", 1);
+  if (error) throw new Error(error.message);
+  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  if (taken) {
+    throw new Error("Only one active Super Admin account is allowed in the system.");
+  }
+}
+
+async function assertUniqueGeneralAdmin(
+  supabase: SupabaseClient,
+  excludeId?: number,
+): Promise<void> {
+  const { data, error } = await supabase.from("admins").select("id,full_name").eq("role", "general_admin").eq("is_active", 1);
+  if (error) throw new Error(error.message);
+  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  if (taken) {
+    throw new Error("Only one active General Admin account is allowed in the system.");
+  }
+}
+
+async function assertStateAdminTarget(
+  admin: AdminRow,
+  target: Record<string, unknown>,
+): Promise<void> {
+  const cc = normUp(admin.branch_country);
+  const st = normUp(admin.branch_state);
+  if (!cc || !st) throw new Error("Your state scope is not configured.");
+  if (normUp(target.branch_country) !== cc || normUp(target.branch_state) !== st) {
+    throw new Error("Not allowed outside your state.");
+  }
+  assertStateManagedRole(norm(target.role));
 }
 
 function adminInCountry(row: Record<string, unknown>, countryCode: string): boolean {
@@ -991,6 +1048,11 @@ async function handleAdmins(supabase: SupabaseClient, admin: AdminRow) {
     q = q.eq("branch_country", normUp(admin.branch_country));
   } else if (role === "state_super_admin") {
     q = q.eq("branch_country", normUp(admin.branch_country)).eq("branch_state", normUp(admin.branch_state));
+  } else if (role === "satellite_church_admin") {
+    q = q.eq("branch_country", normUp(admin.branch_country))
+      .eq("branch_state", normUp(admin.branch_state))
+      .eq("satellite_site", norm(admin.satellite_site))
+      .in("role", ["service_unit_leader", "sub_unit_leader"]);
   } else if (!["super_admin", "general_admin"].includes(role)) {
     q = q.eq("id", -1);
   }
@@ -1002,12 +1064,9 @@ async function handleAdmins(supabase: SupabaseClient, admin: AdminRow) {
 async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   const body = (params.body || {}) as Record<string, unknown>;
   const actorRole = norm(admin.role);
-  if (!["super_admin", "general_admin", "service_unit_leader", "country_super_admin"].includes(actorRole)) {
-    throw new Error("Not allowed.");
-  }
-  if (actorRole === "country_super_admin") {
+  if (!["super_admin", "general_admin", "service_unit_leader"].includes(actorRole)) {
     throw new Error(
-      "Country admins must submit new accounts as requests. Super Admin approval is required before the account becomes active.",
+      "Downline admins must submit new accounts as requests for upline approval.",
     );
   }
   const row = {
@@ -1041,7 +1100,7 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
   const { data: target } = await supabase.from("admins").select("*").eq("id", targetId).maybeSingle();
   if (!target) throw new Error("Admin not found.");
   const actorRole = norm(admin.role);
-  if (!["super_admin", "general_admin", "service_unit_leader", "country_super_admin"].includes(actorRole)) {
+  if (!["super_admin", "general_admin", "service_unit_leader", "country_super_admin", "state_super_admin"].includes(actorRole)) {
     throw new Error("Not allowed.");
   }
   if (actorRole === "service_unit_leader") {
@@ -1050,6 +1109,9 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
   }
   if (actorRole === "country_super_admin") {
     await assertCountryAdminTarget(supabase, admin, target as Record<string, unknown>);
+  }
+  if (actorRole === "state_super_admin") {
+    await assertStateAdminTarget(admin, target as Record<string, unknown>);
   }
   const unitId = norm(admin.role) === "service_unit_leader"
     ? Number(admin.service_unit_id)
@@ -1064,12 +1126,17 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
     ? "sub_unit_leader"
     : actorRole === "country_super_admin"
       ? norm(body.role ?? target.role)
-      : (body.role ?? target.role);
+      : actorRole === "state_super_admin"
+        ? norm(body.role ?? target.role)
+        : (body.role ?? target.role);
   if (actorRole === "country_super_admin") {
     assertCountryManagedRole(nextRole);
     if (nextRole === "sub_unit_leader" && unitId) {
       await assertSubUnitInServiceUnit(supabase, Number(unitId), subName);
     }
+  }
+  if (actorRole === "state_super_admin") {
+    assertStateManagedRole(nextRole);
   }
   const patch: Record<string, unknown> = {
     full_name: body.full_name ?? target.full_name,
@@ -1077,11 +1144,11 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
     role: nextRole,
     service_unit_id: actorRole === "service_unit_leader" ? Number(admin.service_unit_id) : unitId,
     sub_unit_name: subName,
-    branch_country: actorRole === "service_unit_leader" || actorRole === "country_super_admin"
+    branch_country: actorRole === "service_unit_leader" || actorRole === "country_super_admin" || actorRole === "state_super_admin"
       ? normUp(admin.branch_country)
       : (body.branch_country !== undefined ? normUp(body.branch_country) : target.branch_country),
     branch_state:
-      actorRole === "service_unit_leader"
+      actorRole === "service_unit_leader" || actorRole === "state_super_admin"
         ? normUp(admin.branch_state)
         : body.branch_state !== undefined
           ? normUp(body.branch_state)
@@ -1096,6 +1163,12 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
   const finalCountry = normUp(patch.branch_country);
   const finalState = normUp(patch.branch_state);
   assertAdminLocationFields(finalRole, finalCountry, finalState);
+  if (finalRole === "super_admin") {
+    await assertUniqueSuperAdmin(supabase, targetId);
+  }
+  if (finalRole === "general_admin") {
+    await assertUniqueGeneralAdmin(supabase, targetId);
+  }
   if (finalRole === "country_super_admin") {
     await assertUniqueCountryAdmin(supabase, finalCountry, targetId);
   }
@@ -1110,7 +1183,7 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
 
 async function handleDeleteAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   const role = norm(admin.role);
-  if (!["super_admin", "general_admin", "service_unit_leader", "country_super_admin"].includes(role)) {
+  if (!["super_admin", "general_admin", "service_unit_leader", "country_super_admin", "state_super_admin"].includes(role)) {
     throw new Error("Not allowed.");
   }
   if (Number(params.id) === Number(admin.id)) throw new Error("You cannot delete your own account.");
@@ -1122,6 +1195,9 @@ async function handleDeleteAdmin(supabase: SupabaseClient, params: Record<string
   }
   if (role === "country_super_admin") {
     await assertCountryAdminTarget(supabase, admin, target as Record<string, unknown>);
+  }
+  if (role === "state_super_admin") {
+    await assertStateAdminTarget(admin, target as Record<string, unknown>);
   }
   const { error } = await supabase.from("admins").delete().eq("id", params.id);
   if (error) throw new Error(error.message);
@@ -1180,7 +1256,17 @@ async function handleRequests(supabase: SupabaseClient, params: Record<string, u
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
   let q = supabase.from("admin_requests").select("*", { count: "exact" }).order("created_at", { ascending: false });
-  if (!["super_admin", "general_admin"].includes(norm(admin.role))) {
+  const role = norm(admin.role);
+  if (["super_admin", "general_admin"].includes(role)) {
+    // global: see all
+  } else if (role === "country_super_admin") {
+    // country admin sees own requests AND requests from state admins in their country
+    const { data: stateAdmins } = await supabase.from("admins").select("id")
+      .eq("branch_country", normUp(admin.branch_country))
+      .in("role", ["state_super_admin", "satellite_church_admin"]);
+    const ids = [Number(admin.id), ...(stateAdmins || []).map((a) => Number(a.id))];
+    q = q.in("from_admin_id", ids);
+  } else {
     q = q.eq("from_admin_id", admin.id);
   }
   if (params.status) q = q.eq("status", norm(params.status));
@@ -1196,8 +1282,22 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
   const actorRole = norm(admin.role);
 
   if (requestType === "admin_account") {
-    if (actorRole !== "country_super_admin") {
-      throw new Error("Only Country Admins may submit new admin account requests.");
+    const REQUESTABLE_ROLES = ["country_super_admin", "state_super_admin", "satellite_church_admin"];
+    if (!REQUESTABLE_ROLES.includes(actorRole)) {
+      throw new Error("Your role does not support submitting admin account requests. Use the create flow or contact your upline.");
+    }
+    if (actorRole === "state_super_admin") {
+      const payload = (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>;
+      const proposedAdmin = (payload.admin && typeof payload.admin === "object" ? payload.admin : {}) as Record<string, unknown>;
+      assertStateManagedRole(norm(proposedAdmin.role));
+    }
+    if (actorRole === "satellite_church_admin") {
+      const payload = (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>;
+      const proposedAdmin = (payload.admin && typeof payload.admin === "object" ? payload.admin : {}) as Record<string, unknown>;
+      const proposedRole = norm(proposedAdmin.role);
+      if (!["service_unit_leader", "sub_unit_leader"].includes(proposedRole)) {
+        throw new Error("Satellite Pastor Admins may only request workforce accounts (service unit or sub-unit leaders).");
+      }
     }
     const validated = await validateAdminAccountProposal(supabase, admin, body.payload);
     const adminBody = validated.admin;
@@ -1250,11 +1350,25 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
 }
 
 async function handleUpdateRequest(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
-  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  const approverRole = norm(admin.role);
+  const ALLOWED_APPROVERS = ["super_admin", "general_admin", "country_super_admin"];
+  if (!ALLOWED_APPROVERS.includes(approverRole)) throw new Error("Not allowed.");
   const body = (params.body || {}) as Record<string, unknown>;
   const newStatus = norm(body.status);
   const { data: req } = await supabase.from("admin_requests").select("*").eq("id", params.id).maybeSingle();
   if (!req) throw new Error("Request not found.");
+  if (approverRole === "country_super_admin") {
+    const fromAdminId = Number((req as { from_admin_id?: unknown }).from_admin_id);
+    const { data: fromAdmin } = await supabase.from("admins").select("role,branch_country").eq("id", fromAdminId).maybeSingle();
+    if (!fromAdmin) throw new Error("Requesting admin not found.");
+    const fromRole = norm((fromAdmin as { role?: string }).role);
+    const fromCountry = normUp((fromAdmin as { branch_country?: string }).branch_country);
+    const myCountry = normUp(admin.branch_country);
+    if (fromCountry !== myCountry) throw new Error("Cannot approve requests outside your country.");
+    if (!["state_super_admin", "satellite_church_admin"].includes(fromRole)) {
+      throw new Error("Country admins can only approve requests from State Branch Admins and Satellite Pastor Admins within their country.");
+    }
+  }
   const reqType = norm((req as { request_type?: string }).request_type);
   if (newStatus === "approved" && reqType === "location_catalog") {
     const payload = ((req as { payload?: unknown }).payload || {}) as Record<string, unknown>;
@@ -1322,9 +1436,16 @@ async function handleApproveServiceUnitProposal(
   admin: AdminRow,
   ip: string,
 ) {
-  if (!["super_admin", "general_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
+  if (!["super_admin", "general_admin", "country_super_admin"].includes(norm(admin.role))) throw new Error("Not allowed.");
   const { data: req } = await supabase.from("admin_requests").select("*").eq("id", params.id).maybeSingle();
   if (!req) throw new Error("Request not found.");
+  if (norm(admin.role) === "country_super_admin") {
+    const fromAdminId = Number((req as { from_admin_id?: unknown }).from_admin_id);
+    const { data: fromAdmin } = await supabase.from("admins").select("branch_country").eq("id", fromAdminId).maybeSingle();
+    if (normUp((fromAdmin as { branch_country?: string })?.branch_country) !== normUp(admin.branch_country)) {
+      throw new Error("Cannot approve requests outside your country.");
+    }
+  }
   const payload = (req.payload || {}) as Record<string, unknown>;
   const { data: maxRow } = await supabase.from("service_units").select("id").order("id", { ascending: false }).limit(1).maybeSingle();
   const nextId = Number(maxRow?.id || 0) + 1;
@@ -1579,6 +1700,30 @@ function parseAnnouncementDestination(body: Record<string, unknown>) {
   return { destinationType, destinationConfig: cfg };
 }
 
+/**
+ * Server-side enforcement: force geo/unit fields in destination_config
+ * to the admin's own scope when the admin is below global level.
+ */
+function clampAnnouncementScope(
+  admin: AdminRow,
+  cfg: Record<string, unknown>,
+): void {
+  const role = norm(admin.role);
+  if (["super_admin", "general_admin"].includes(role)) return;
+  if (admin.branch_country) cfg.branch_country = normUp(admin.branch_country);
+  if (admin.branch_state) cfg.branch_state = normUp(admin.branch_state);
+  if (role === "satellite_church_admin" && admin.satellite_site) {
+    cfg.satellite_site = norm(admin.satellite_site);
+  }
+  if (role === "service_unit_leader" && admin.service_unit_id) {
+    cfg.service_unit_id = Number(admin.service_unit_id);
+  }
+  if (role === "sub_unit_leader") {
+    if (admin.service_unit_id) cfg.service_unit_id = Number(admin.service_unit_id);
+    if (admin.sub_unit_name) cfg.sub_unit = norm(admin.sub_unit_name);
+  }
+}
+
 function announcementScopeFromPayload(
   admin: AdminRow,
   destinationType: string,
@@ -1645,6 +1790,7 @@ async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record
 
   const action = norm(body.workflow_action) || "send";
   const { destinationType, destinationConfig } = parseAnnouncementDestination(body);
+  clampAnnouncementScope(admin, destinationConfig);
   const scopeFields = announcementScopeFromPayload(admin, destinationType, destinationConfig, body);
 
   const now = new Date().toISOString();
@@ -1746,8 +1892,17 @@ async function handleDeleteAnnouncement(supabase: SupabaseClient, params: Record
 
 function requireCatalogEditor(admin: AdminRow) {
   const r = norm(admin.role);
-  if (!["super_admin", "general_admin", "data_entry_admin"].includes(r)) {
-    throw new Error("Only Super Admin, General Admin, or Data Entry Admin can edit the branch catalog.");
+  if (!["super_admin", "general_admin", "data_entry_admin", "country_super_admin"].includes(r)) {
+    throw new Error("Only Super Admin, General Admin, Data Entry Admin, or Country Admin can edit the branch catalog.");
+  }
+}
+
+function assertCatalogCountryScope(admin: AdminRow, targetCountryCode: string): void {
+  if (norm(admin.role) !== "country_super_admin") return;
+  const myCountry = normUp(admin.branch_country);
+  if (!myCountry) throw new Error("Your country scope is not configured.");
+  if (normUp(targetCountryCode) !== myCountry) {
+    throw new Error("Country admins can only manage locations within their own country.");
   }
 }
 
@@ -1842,6 +1997,7 @@ async function handleCatalogCreateLocation(
     ? [String(body.satelliteName)]
     : [];
   if (!iso || !stateName || !lga) throw new Error("Continent, country, state, and LGA are required.");
+  assertCatalogCountryScope(admin, iso.toUpperCase());
   const cleaned = sats.map((s) => String(s || "").trim()).filter(Boolean);
   if (!cleaned.length) throw new Error("Enter at least one satellite church name.");
   await applyLocationCatalogProposal(supabase, {
@@ -1858,6 +2014,9 @@ async function handleCatalogCreateLocation(
 
 async function handleCatalogAddCountry(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   requireCatalogEditor(admin);
+  if (norm(admin.role) === "country_super_admin") {
+    throw new Error("Country admins cannot add new countries. Add states and churches within your country instead.");
+  }
   const code = normUp(params.branch_country_code);
   const name = norm(params.name);
   if (!/^[A-Z]{2,8}$/.test(code)) throw new Error("Country code must be 2–8 letters A–Z.");
@@ -1884,6 +2043,7 @@ async function handleCatalogAddState(supabase: SupabaseClient, params: Record<st
   if (!/^[A-Z0-9]{1,12}$/.test(stateCode)) throw new Error("State / region code must be 1–12 characters (A–Z, 0–9).");
   const { data: cc } = await supabase.from("directory_countries").select("id,branch_country_code").eq("id", countryId).maybeSingle();
   if (!cc) throw new Error("Country not found.");
+  assertCatalogCountryScope(admin, String((cc as { branch_country_code?: string }).branch_country_code || ""));
   const { data: dup } = await supabase.from("directory_states").select("id").eq("country_id", countryId).eq(
     "branch_state_code",
     stateCode,
@@ -1911,6 +2071,7 @@ async function handleCatalogAddState(supabase: SupabaseClient, params: Record<st
 async function handleCatalogAddChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   requireCatalogEditor(admin);
   const countryCode = normUp(params.branch_country);
+  assertCatalogCountryScope(admin, countryCode);
   const requestedStateCode = normUp(params.branch_state);
   const churchName = norm(params.name);
   const address = norm(params.address);
@@ -1947,6 +2108,11 @@ async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Re
   requireCatalogEditor(admin);
   const id = params.id;
   const isActive = Number(params.is_active) === 1 ? 1 : 0;
+  if (norm(admin.role) === "country_super_admin") {
+    const { data: church } = await supabase.from("churches").select("branch_country").eq("id", id).maybeSingle();
+    if (!church) throw new Error("Church not found.");
+    assertCatalogCountryScope(admin, String((church as { branch_country?: string }).branch_country || ""));
+  }
   const { error } = await supabase.from("churches").update({ is_active: isActive }).eq("id", id);
   if (error) throw new Error(error.message);
   await logActivity(supabase, admin, "catalog.church_active", "church", String(id), `is_active=${isActive}`, ip);
@@ -1956,8 +2122,9 @@ async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Re
 async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   requireCatalogEditor(admin);
   const id = params.id;
-  const { data: row } = await supabase.from("churches").select("directory_branch_id").eq("id", id).maybeSingle();
+  const { data: row } = await supabase.from("churches").select("directory_branch_id,branch_country").eq("id", id).maybeSingle();
   if (!row) throw new Error("Church not found.");
+  assertCatalogCountryScope(admin, String((row as { branch_country?: string }).branch_country || ""));
   const { error: e1 } = await supabase.from("churches").delete().eq("id", id);
   if (e1) throw new Error(e1.message);
   const bid = Number((row as { directory_branch_id?: number }).directory_branch_id);
