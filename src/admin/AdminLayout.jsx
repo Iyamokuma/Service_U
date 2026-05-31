@@ -15,11 +15,22 @@ import { DataEntryLocationForm } from "./pages/DataEntryLocationForm.jsx";
 import { SatelliteUnitRequest } from "./pages/SatelliteUnitRequest.jsx";
 import { BranchCatalog } from "./pages/BranchCatalog.jsx";
 import { Announcements } from "./pages/Announcements.jsx";
-import { NotificationBell } from "./components/NotificationBell.jsx";
+import { CountryWorkforce } from "./pages/CountryWorkforce.jsx";
+import { CountryUsers } from "./pages/CountryUsers.jsx";
+import { StateWorkforce } from "./pages/StateWorkforce.jsx";
+import { StateUsers } from "./pages/StateUsers.jsx";
 import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
-import { isGlobalAdminRole, canEditBranchCatalog, isServiceUnitLeader } from "./roles.js";
+import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
+import { isGlobalAdminRole, canEditBranchCatalog, isServiceUnitLeader, isCountrySuperAdmin } from "./roles.js";
+import {
+  effectiveUiRole,
+  isActingAsStateAdmin,
+  isStateLevelUi,
+  normalizePageForViewMode,
+  normalizeStateAdminPage,
+} from "./adminViewMode.js";
 
 const PAGE_TITLES_DEFAULT = {
   overview: "Overview",
@@ -38,6 +49,8 @@ const PAGE_TITLES_DEFAULT = {
   "data-locations": "Propose church location",
   "branch-catalog": "Branch directory",
   "unit-request": "Request Service Unit",
+  workforce: "Workforce",
+  users: "Users",
 };
 
 const PAGE_TITLES_BY_ROLE = {
@@ -50,12 +63,14 @@ const PAGE_TITLES_BY_ROLE = {
   country_super_admin: {
     overview: "Country Analytics",
     oversight: "Application Queue",
-    requests: "Requests & Approvals",
+    workforce: "Workforce",
+    users: "Users",
   },
   state_super_admin: {
     overview: "State Analytics",
     oversight: "Application Queue",
-    requests: "My Requests",
+    workforce: "Workforce",
+    users: "Users",
   },
   data_entry_admin: {
     "role-dashboard": "Home",
@@ -67,7 +82,9 @@ function getPageTitle(page, role) {
 }
 
 export function AdminLayout() {
-  const { admin } = useAdminAuth();
+  const { admin, viewMode } = useAdminAuth();
+  const uiRole = effectiveUiRole(admin, viewMode);
+  const actingAsState = isActingAsStateAdmin(admin, viewMode);
   const canPlatformSettings = isGlobalAdminRole(admin?.role);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("sm_admin_theme") || "light"; } catch { return "light"; }
@@ -113,17 +130,9 @@ export function AdminLayout() {
   useEffect(() => {
     if (!admin) return;
     if (admin.role === "country_super_admin") {
-      setPage((p) =>
-        ["overview", "oversight", "members", "admins", "locations", "requests", "activity", "announcements", "profile"].includes(p)
-          ? p
-          : "overview",
-      );
+      setPage((p) => normalizePageForViewMode(p, admin, viewMode));
     } else if (admin.role === "state_super_admin") {
-      setPage((p) =>
-        ["overview", "oversight", "members", "admins", "requests", "activity", "announcements", "profile"].includes(p)
-          ? p
-          : "overview",
-      );
+      setPage((p) => normalizeStateAdminPage(p));
     } else if (admin.role === "satellite_church_admin") {
       setPage((p) =>
         [
@@ -157,7 +166,7 @@ export function AdminLayout() {
           : "overview",
       );
     }
-  }, [admin?.id, admin?.role]);
+  }, [admin?.id, admin?.role, admin?.branch_state, viewMode, setPage]);
 
   // Fetch pending count for sidebar badge
   useEffect(() => {
@@ -192,7 +201,7 @@ export function AdminLayout() {
     hour: "2-digit", minute: "2-digit",
   });
 
-  const leaderScope = leaderScopeLabel(admin);
+  const leaderScope = leaderScopeLabel(admin, viewMode);
   const showLeaderScope =
     leaderScope &&
     (admin?.role === "service_unit_leader" ||
@@ -209,7 +218,7 @@ export function AdminLayout() {
       <div className="sa-main">
         <div className="sa-topbar">
           <div className="sa-page-title-block">
-            <div className="sa-page-title">{getPageTitle(page, admin?.role)}</div>
+            <div className="sa-page-title">{getPageTitle(page, uiRole)}</div>
             {showLeaderScope ? <div className="sa-page-scope">{leaderScope}</div> : null}
           </div>
           <div className="sa-topbar-right">
@@ -226,10 +235,25 @@ export function AdminLayout() {
           </div>
         </div>
 
+        {actingAsState && admin?.branch_state ? (
+          <div className="sa-state-view-banner" role="status">
+            <span className="sa-state-view-banner-label">State branch dashboard</span>
+            <span>
+              <strong>{branchStateLabel(admin.branch_country, admin.branch_state)}</strong>
+              {branchCountryLabel(admin.branch_country)
+                ? ` · ${branchCountryLabel(admin.branch_country)}`
+                : ""}
+            </span>
+            <span className="sa-text-muted sa-text-sm">Country-wide tools are hidden. Toggle off in the sidebar to return to Country Admin.</span>
+          </div>
+        ) : null}
+
         <div className="sa-content">
           {page === "role-dashboard" && <RoleDashboard setPage={setPage} />}
           {page === "data-locations" && admin?.role === "data_entry_admin" && <DataEntryLocationForm />}
-          {(page === "locations" || page === "branch-catalog") && canEditBranchCatalog(admin?.role) && (
+          {(page === "locations" || page === "branch-catalog") &&
+            canEditBranchCatalog(admin?.role) &&
+            !(isCountrySuperAdmin(admin?.role) && actingAsState) && (
             <BranchCatalog variant={page === "locations" ? "locations" : "catalog"} />
           )}
           {page === "overview"  && <Overview units={units} setPage={setPage} navigateToQueue={navigateToQueue} />}
@@ -244,6 +268,18 @@ export function AdminLayout() {
           {page === "activity"  && <ActivityLog />}
           {page === "oversight" && <BranchOversight units={units} />}
           {page === "announcements" && <Announcements />}
+          {page === "workforce" && isCountrySuperAdmin(admin?.role) && !actingAsState && (
+            <CountryWorkforce admins={admins} reload={loadAdmins} setPage={setPage} />
+          )}
+          {page === "users" && isCountrySuperAdmin(admin?.role) && !actingAsState && (
+            <CountryUsers admins={admins} reload={loadAdmins} />
+          )}
+          {page === "workforce" && isStateLevelUi(admin, viewMode) && (
+            <StateWorkforce admins={admins} reload={loadAdmins} setPage={setPage} />
+          )}
+          {page === "users" && isStateLevelUi(admin, viewMode) && (
+            <StateUsers admins={admins} reload={loadAdmins} />
+          )}
           {page === "settings"  && canPlatformSettings && <Settings />}
           {page === "profile"   && !canPlatformSettings && <ProfileSettings />}
         </div>

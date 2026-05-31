@@ -1,0 +1,94 @@
+/** Country Admin ↔ State Branch Admin dashboard switch (HQ dual role). */
+
+import { countryAdminHomeState, isCountrySuperAdmin } from "./roles.js";
+
+export const VIEW_MODE_STORAGE_KEY = "sm_admin_view_mode";
+
+/**
+ * Only the Country Admin account (created by Super Admin — one per country) may switch.
+ * State Branch Admins for other states never get this control.
+ */
+export function canSwitchAdminView(admin) {
+  return isCountrySuperAdmin(admin?.role) && !!String(admin?.branch_country || "").trim();
+}
+
+export function viewModeStorageKey(adminId) {
+  return adminId ? `${VIEW_MODE_STORAGE_KEY}_${adminId}` : VIEW_MODE_STORAGE_KEY;
+}
+
+export function readAdminViewMode(adminId) {
+  try {
+    const key = viewModeStorageKey(adminId);
+    return sessionStorage.getItem(key) === "state" ? "state" : "country";
+  } catch {
+    return "country";
+  }
+}
+
+export function writeAdminViewMode(adminId, mode) {
+  try {
+    sessionStorage.setItem(viewModeStorageKey(adminId), mode === "state" ? "state" : "country");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** UI nav / page routing — state view mimics State Branch Admin. */
+export function effectiveUiRole(admin, viewMode) {
+  if (canSwitchAdminView(admin) && viewMode === "state") return "state_super_admin";
+  return admin?.role || "";
+}
+
+/** Sent to API as scope_mode for server-side data scoping. */
+export function apiScopeMode(admin, viewMode) {
+  if (canSwitchAdminView(admin) && viewMode === "state") return "state";
+  return undefined;
+}
+
+const COUNTRY_PAGES = [
+  "overview",
+  "oversight",
+  "workforce",
+  "users",
+  "locations",
+  "activity",
+  "announcements",
+  "profile",
+];
+
+export const STATE_LEVEL_PAGES = [
+  "overview",
+  "oversight",
+  "members",
+  "workforce",
+  "users",
+  "activity",
+  "announcements",
+  "profile",
+];
+
+const STATE_PAGES = STATE_LEVEL_PAGES;
+
+/** Normalize page id for State Branch Admin nav (including Country Admin in state view). */
+export function normalizeStateAdminPage(page) {
+  if (page === "admins" || page === "requests") return "users";
+  if (STATE_LEVEL_PAGES.includes(page)) return page;
+  return "overview";
+}
+
+export function normalizePageForViewMode(page, admin, viewMode) {
+  if (!canSwitchAdminView(admin)) return page;
+  const allowed = viewMode === "state" ? STATE_PAGES : COUNTRY_PAGES;
+  if (page === "admins") return "users";
+  if (page === "requests" && viewMode === "state") return "users";
+  if (allowed.includes(page)) return page;
+  return "overview";
+}
+
+export function isStateLevelUi(admin, viewMode) {
+  return effectiveUiRole(admin, viewMode) === "state_super_admin";
+}
+
+export function isActingAsStateAdmin(admin, viewMode) {
+  return canSwitchAdminView(admin) && viewMode === "state";
+}

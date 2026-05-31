@@ -77,6 +77,12 @@ export function branchStatesForCountry(countryCode: string) {
   return [...states].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** First state in the country dataset — default HQ for Country Admin accounts. */
+export function defaultHeadquartersStateForCountry(countryCode: string): string {
+  const states = branchStatesForCountry(countryCode);
+  return states[0]?.code || "";
+}
+
 export function isStateValidForCountry(countryCode: string, stateCode: string): boolean {
   const sc = normCode(stateCode);
   if (!normCode(countryCode) || !sc) return false;

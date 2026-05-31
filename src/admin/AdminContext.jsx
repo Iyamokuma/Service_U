@@ -1,5 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api } from "./api.js";
+import {
+  canSwitchAdminView,
+  readAdminViewMode,
+  writeAdminViewMode,
+} from "./adminViewMode.js";
 
 const AuthCtx = createContext(null);
 
@@ -20,6 +25,30 @@ export function AdminAuthProvider({ children }) {
   });
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
+  const [viewMode, setViewModeRaw] = useState("country");
+
+  useEffect(() => {
+    if (admin?.id) {
+      setViewModeRaw(readAdminViewMode(admin.id));
+    } else {
+      setViewModeRaw("country");
+    }
+  }, [admin?.id]);
+
+  const setViewMode = useCallback(
+    (mode) => {
+      const next = mode === "state" ? "state" : "country";
+      if (admin?.id) writeAdminViewMode(admin.id, next);
+      setViewModeRaw(next);
+    },
+    [admin?.id],
+  );
+
+  useEffect(() => {
+    if (!canSwitchAdminView(admin) && viewMode !== "country") {
+      setViewMode("country");
+    }
+  }, [admin?.branch_state, admin?.role, viewMode, setViewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,8 +111,15 @@ export function AdminAuthProvider({ children }) {
     try {
       const res = await api.login({ username, password });
       localStorage.setItem("admin_token", res.token);
-      localStorage.setItem("admin_user",  JSON.stringify(res.admin));
+      localStorage.setItem("admin_user", JSON.stringify(res.admin));
       setAdmin(res.admin);
+      if (res.admin?.role === "country_super_admin") {
+        const refreshed = await api.refreshSession(res.admin);
+        if (refreshed) {
+          setAdmin(refreshed);
+          localStorage.setItem("admin_user", JSON.stringify(refreshed));
+        }
+      }
       return true;
     } catch (e) {
       setError(e.message);
@@ -101,7 +137,7 @@ export function AdminAuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ admin, loading, error, login, logout, refreshAdmin }}>
+    <AuthCtx.Provider value={{ admin, loading, error, login, logout, refreshAdmin, viewMode, setViewMode }}>
       {children}
     </AuthCtx.Provider>
   );

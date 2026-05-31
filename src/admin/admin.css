@@ -177,6 +177,77 @@
 }
 .sa-brand-name  { font-size: 14px; font-weight: 700; color: var(--sa-text); line-height: 1.25; letter-spacing: -0.02em; }
 .sa-brand-sub   { font-size: 10px; color: var(--sa-text-muted); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; margin-top: 2px; }
+.sa-role-toggle-wrap {
+  margin: 0 12px 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--sa-border);
+  background: var(--sa-sidebar-hover, #f9fafb);
+}
+.sa-role-toggle-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+.sa-role-toggle-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sa-text-muted);
+}
+.sa-role-toggle-hq {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.sa-role-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.sa-role-toggle-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sa-text-muted);
+  transition: color 0.12s;
+  flex: 1;
+}
+.sa-role-toggle-label:first-child { text-align: right; }
+.sa-role-toggle-label:last-child { text-align: left; }
+.sa-role-toggle-label.is-active {
+  color: var(--sa-accent);
+}
+.sa-state-view-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 24px 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.08);
+  font-size: 13px;
+  color: var(--sa-text);
+}
+.sa-state-view-banner-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--sa-accent);
+}
+.sa-root[data-theme="dark"] .sa-role-toggle-wrap {
+  background: rgba(255, 255, 255, 0.04);
+}
+.sa-root[data-theme="dark"] .sa-state-view-banner {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(96, 165, 250, 0.3);
+}
 .sa-brand-unit  {
   font-size: 12px; font-weight: 600; color: var(--sa-accent);
   margin-top: 6px; line-height: 1.35; letter-spacing: -0.01em;
@@ -3156,4 +3227,32 @@
 }
 .sa-root[data-theme="dark"] .sa-admins-stat.is-highlight {
   background: linear-gradient(145deg, rgba(251, 191, 36, 0.1) 0%, transparent 100%);
+}
+
+.sa-workforce-state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.sa-workforce-state-chip {
+  border: 1px solid var(--sa-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--sa-surface);
+}
+.sa-workforce-state-chip.is-vacant {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.06);
+}
+.sa-workforce-state-name {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.sa-workforce-state-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
 }

@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Salvation Ministries — Admin Dashboard Guide</title>
+  <style>
+@page { margin: 18mm 16mm; size: A4; }
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.55;
+  color: #1a1a1a;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 12px 8px 48px;
+}
+h1 { font-size: 22pt; border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; margin-top: 0; color: #1e3a5f; }
+h2 { font-size: 15pt; margin-top: 28px; color: #1e3a5f; page-break-after: avoid; }
+h3 { font-size: 12.5pt; margin-top: 20px; color: #2d4a6f; page-break-after: avoid; }
+h4 { font-size: 11pt; margin-top: 14px; color: #333; }
+p, li { orphans: 3; widows: 3; }
+ul, ol { padding-left: 1.4em; }
+li { margin-bottom: 0.35em; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9.5pt;
+  margin: 12px 0 16px;
+  page-break-inside: avoid;
+}
+th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #eef2f7; font-weight: 600; }
+tr:nth-child(even) td { background: #f9fafb; }
+code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 0.92em; }
+hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
+blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-left: 4px solid #1e3a5f;
+  background: #f5f8fc;
+  color: #333;
+}
+.cover-meta { color: #555; font-size: 10pt; margin-bottom: 24px; }
+.toc { background: #f8f9fb; padding: 16px 20px; border-radius: 6px; margin: 20px 0; }
+.toc ul { list-style: none; padding-left: 0; }
+.toc li { margin: 4px 0; }
+.toc a { color: #1e3a5f; text-decoration: none; }
+.role-section { page-break-before: always; }
+@media print {
+  a { color: inherit; text-decoration: none; }
+  .no-print { display: none; }
+}
+</style>
+</head>
+<body>
+<h1 id="salvation-ministries-admin-portal-complete-dashboard-guide">Salvation Ministries Admin Portal — Complete Dashboard Guide</h1>
+<p><strong>Document version:</strong> 1.0<br />
+<strong>Platform:</strong> Service unit registration admin (<code>/admin</code>)<br />
+<strong>Audience:</strong> Super Admins, General Admins, branch administrators, data entry staff, and service unit leaders</p>
+<hr />
+<h2 id="table-of-contents">Table of contents</h2>
+<ol>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#signing-in">Signing in</a></li>
+<li><a href="#shared-concepts">Shared concepts</a></li>
+<li><a href="#feature-reference--every-tab-explained">Feature reference — every tab explained</a></li>
+<li><a href="#super-admin-dashboard">Super Admin dashboard</a></li>
+<li><a href="#general-admin-dashboard">General Admin dashboard</a></li>
+<li><a href="#data-entry-admin-dashboard">Data Entry Admin dashboard</a></li>
+<li><a href="#country-admin-dashboard">Country Admin dashboard</a></li>
+<li><a href="#state-branch-admin-dashboard">State Branch Admin dashboard</a></li>
+<li><a href="#satellite-pastor-admin-dashboard">Satellite Pastor Admin dashboard</a></li>
+<li><a href="#service-unit-leader-dashboard">Service Unit Leader dashboard</a></li>
+<li><a href="#sub-unit-leader-dashboard">Sub-Unit Leader dashboard</a></li>
+<li><a href="#approval-workflows">Approval workflows</a></li>
+<li><a href="#quick-reference--who-sees-which-tab">Quick reference — who sees which tab</a></li>
+</ol>
+<hr />
+<h2 id="introduction">Introduction</h2>
+<p>The <strong>Salvation Ministries Admin Portal</strong> is where staff review public registration applications, manage church locations, coordinate service units, and administer user accounts. Each person signs in with a <strong>username or email</strong> and <strong>password</strong>. What you see after login depends entirely on your <strong>role</strong> and <strong>scope</strong> (global, country, state, satellite church, service unit, or sub-unit).</p>
+<p>This guide is organized in two ways:</p>
+<ul>
+<li><strong>Part 1 — Features:</strong> Each sidebar tab is explained in plain language (what it is for, what you can do, and typical workflows).</li>
+<li><strong>Part 2 — Roles:</strong> Each admin type gets a walkthrough of <strong>their</strong> menu items tab by tab.</li>
+</ul>
+<p>For role permissions and limits (e.g. one Country Admin per country), see also <code>docs/ADMIN_ROLES.md</code>.</p>
+<hr />
+<h2 id="signing-in">Signing in</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Open the admin URL (e.g. <code>/admin</code> on your deployment).</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Enter <strong>username or email</strong> and <strong>password</strong>.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Click <strong>Sign in</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>On success, the system loads your profile (name, role, branch, unit) and shows the sidebar for your role. Failed logins show an error message on the login card. Use <strong>Sign out</strong> at the bottom of the sidebar when finished.</p>
+<p><strong>Note:</strong> Usernames are <strong>unique worldwide</strong>. Country admins are often named like <code>gb.country.admin</code>, not a generic <code>country.admin</code>.</p>
+<hr />
+<h2 id="shared-concepts">Shared concepts</h2>
+<h3 id="application-registration-statuses">Application (registration) statuses</h3>
+<p>Applications move through a pipeline. These are the main statuses:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>New</strong></td>
+<td>Just submitted; not yet reviewed.</td>
+</tr>
+<tr>
+<td><strong>In progress</strong></td>
+<td>A leader is working with the candidate (calls, meetings).</td>
+</tr>
+<tr>
+<td><strong>Accepted</strong></td>
+<td>Approved as a unit member.</td>
+</tr>
+<tr>
+<td><strong>Rejected</strong></td>
+<td>Not taken into the unit.</td>
+</tr>
+<tr>
+<td><strong>Archived</strong></td>
+<td>Closed record (e.g. after accept/reject).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Overdue</strong> is not a separate status. Applications that stay <strong>New</strong> or <strong>In progress</strong> longer than the configured threshold also appear on the <strong>Overdue</strong> tab. Super / General Admins set the global overdue days under <strong>Settings</strong>; each service unit can override its own threshold.</p>
+<h3 id="accepting-an-application">Accepting an application</h3>
+<p>When moving from <strong>In progress</strong> to <strong>Accepted</strong>, leaders must confirm:</p>
+<ul>
+<li>They <strong>called the candidate</strong></li>
+<li>They invited them to a <strong>physical meeting</strong> in church  </li>
+<li>Optional checks: foundation class, water baptism (shown in verification modal)</li>
+</ul>
+<p>These checks are stored on the record for audit purposes.</p>
+<h3 id="scope">Scope</h3>
+<p><strong>Scope</strong> means which data you are allowed to see:</p>
+<ul>
+<li><strong>Global</strong> — everything (Super Admin, General Admin, Data Entry for most data).</li>
+<li><strong>Country</strong> — one <code>branch_country</code>.</li>
+<li><strong>State</strong> — country + <code>branch_state</code>.</li>
+<li><strong>Satellite</strong> — country + state + <code>satellite_site</code> (church branch name).</li>
+<li><strong>Service unit</strong> — one ministry unit (e.g. Choir, Ushering).</li>
+<li><strong>Sub-unit</strong> — one team inside that unit.</li>
+</ul>
+<p>The top bar often shows your scope label under the page title.</p>
+<h3 id="theme-and-navigation">Theme and navigation</h3>
+<ul>
+<li><strong>Light / Dark mode</strong> — toggle in the top-right of the main area.</li>
+<li><strong>Sidebar badge</strong> — the Application Queue tab can show a count of <strong>new</strong> applications in your scope.</li>
+<li><strong>Requests badge</strong> — Super / General Admins see open request counts on the Requests tab.</li>
+</ul>
+<h3 id="notifications">Notifications</h3>
+<p>The notification bell (when enabled) alerts you to items such as new admin requests. Overdue applications can trigger in-app and email alerts to sub-unit leaders, with escalation to service unit leaders and satellite pastors per platform settings.</p>
+<hr />
+<h2 id="feature-reference-every-tab-explained">Feature reference — every tab explained</h2>
+<p>This section describes <strong>each screen</strong> regardless of role. Your role may hide some tabs entirely.</p>
+<hr />
+<h3 id="overview">Overview</h3>
+<p><strong>Also labeled:</strong> Dashboard (service leaders), Country analytics, State analytics.</p>
+<p><strong>Purpose:</strong> High-level picture of registrations and activity in your scope.</p>
+<p><strong>What you typically see:</strong></p>
+<ul>
+<li><strong>Stat cards</strong> — Total registrations, pending review, approved, overdue, and sometimes active units or in-progress counts.</li>
+<li><strong>Filters</strong> (Super / General Admin) — Country, state, satellite branch, service unit, sub-unit, status, gender, date submitted. Filters narrow all charts and totals on the page.</li>
+<li><strong>Registration pulse</strong> — Trend chart over selectable days (e.g. 7, 28, 90, 365).</li>
+<li><strong>Registrations by unit</strong> — Bar chart of volume per service unit.</li>
+<li><strong>Gender breakdown</strong> — Counts by sex.</li>
+<li><strong>Status summary</strong> — Chips for pending, approved, rejected, waitlisted.</li>
+<li><strong>Recent activity</strong> — Latest audit events (logins, status changes, admin changes).</li>
+</ul>
+<p><strong>Common actions:</strong></p>
+<ul>
+<li>Click <strong>Overdue</strong> or stat cards to jump to the Application Queue (where supported).</li>
+<li>Service Unit Leaders see extra analytics (trend + gender); Sub-Unit Leaders see a dedicated analytics block.</li>
+</ul>
+<p><strong>Who has it:</strong> Super Admin, General Admin, Service Unit Leader, Sub-Unit Leader. Country and State admins use <strong>Country/State analytics</strong> (same Overview page id) with supervisory copy. Data Entry and Satellite Pastor use other home screens instead.</p>
+<hr />
+<h3 id="application-queue-intake-queue">Application Queue / Intake Queue</h3>
+<p><strong>Purpose:</strong> Work through incoming registration applications — search, filter, open details, and change status.</p>
+<p><strong>Layout:</strong></p>
+<ol>
+<li><strong>Status tabs</strong> — All, New, In Progress, Accepted, Rejected, Archived, Overdue.</li>
+<li><strong>Filters</strong> — Search (name, email, phone), service unit, sub-unit, gender, date range, sort order.</li>
+<li><strong>Table</strong> — One row per applicant with key columns and expand/collapse for full details.</li>
+<li><strong>Pagination</strong> — Move through large lists (25 per page).</li>
+</ol>
+<p><strong>Expanded row details include:</strong></p>
+<p>Personal data, contact, branch (country, state, satellite), service unit and sub-unit, spiritual history (born again, foundation, baptism, WOLBI), photo, internal notes, and acceptance verification fields if already accepted.</p>
+<p><strong>Actions:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Who</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Change status (modal or quick buttons)</td>
+<td>Leaders; Country Admin on oversight screen</td>
+</tr>
+<tr>
+<td>Accept with verification</td>
+<td>Required for in progress → accepted</td>
+</tr>
+<tr>
+<td>Delete registration</td>
+<td>Super Admin and General Admin only</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Leader-specific behavior:</strong></p>
+<ul>
+<li>Service Unit Leaders see per–sub-unit queue hints and can filter sub-units.</li>
+<li>Sub-Unit Leaders only see their own sub-unit’s applications.</li>
+<li>Overdue tab lists open items past the threshold, sorted by days overdue.</li>
+</ul>
+<hr />
+<h3 id="branch-oversight-application-queue-country-state">Branch oversight — “Application queue” (Country &amp; State)</h3>
+<p><strong>Purpose:</strong> Supervisory view for <strong>Country Admin</strong> and <strong>State Branch Admin</strong> — one screen combining summary stats and a filterable application list (similar to the queue but framed for branch oversight).</p>
+<p><strong>Summary cards (top):</strong></p>
+<ul>
+<li>Registrations in scope, pending, approved, units touched.</li>
+</ul>
+<p><strong>Filters:</strong></p>
+<p>Search, state (Country Admin only), service unit, sub-unit, status, gender, date range.</p>
+<p><strong>Important difference:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Can change application status?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Country Admin</td>
+<td><strong>Yes</strong> — same accept/reject flow as leaders</td>
+</tr>
+<tr>
+<td>State Branch Admin</td>
+<td><strong>No</strong> — view and filter only; status changes are done by unit leaders</td>
+</tr>
+</tbody>
+</table>
+<p>State admins use this screen to monitor progress across their state; country admins can intervene on status when needed.</p>
+<hr />
+<h3 id="unit-members">Unit Members</h3>
+<p><strong>Purpose:</strong> List people whose applications are <strong>Accepted</strong> — your active member roster in scope.</p>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Search by name, email, phone.</li>
+<li>Filter by service unit, sub-unit, and (for country/state) branch state.</li>
+<li>Pagination and <strong>Export CSV</strong> for reporting.</li>
+<li>Read-only list (not the same as editing queue status).</li>
+</ul>
+<p><strong>Scope:</strong></p>
+<ul>
+<li>Leaders see only their unit (and sub-unit for sub-unit leaders).</li>
+<li>Country / State admins see accepted members across their branch geography with extra filters.</li>
+</ul>
+<hr />
+<h3 id="service-units">Service Units</h3>
+<p><strong>Purpose:</strong> Manage the <strong>catalog of ministry units</strong> (e.g. Choir, Media) and their <strong>sub-units</strong> (teams inside each unit).</p>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Expand a unit to see sub-units.</li>
+<li><strong>Create unit</strong> — Name, description, coordinator, sort order, active flag, optional overdue override per unit. Creating a unit can optionally create a <strong>Service Unit Leader</strong> account in the same flow.</li>
+<li><strong>Edit / delete unit</strong> — Delete may be blocked if registrations or admins still reference the unit (confirmation with safety checks).</li>
+<li><strong>Create / edit / delete sub-units</strong> under each unit.</li>
+</ul>
+<p><strong>Who has it:</strong> Super Admin and General Admin only. Other roles consume units in dropdowns but cannot change structure.</p>
+<hr />
+<h3 id="admin-accounts">Admin Accounts</h3>
+<p><strong>Purpose:</strong> Create and maintain <strong>login accounts</strong> for other administrators and leaders.</p>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Table: name, username, email, role, scope, active/inactive, last login.</li>
+<li><strong>Create</strong> / <strong>Edit</strong> / <strong>Activate</strong> / <strong>Deactivate</strong> / <strong>Delete</strong> (within your permission).</li>
+<li><strong>Export CSV</strong> (global admins).</li>
+<li>Search and role filter (global admins).</li>
+<li>Pending admin requests banner when approvals are waiting.</li>
+</ul>
+<p><strong>Create form fields:</strong></p>
+<p>Full name, username, email, password, role, scope (country, state, satellite, unit, sub-unit), active status.</p>
+<p><strong>Request flow:</strong> Some roles submit a <strong>request</strong> instead of creating immediately; account becomes active after approval.</p>
+<hr />
+<h3 id="locations">Locations</h3>
+<p><strong>Purpose:</strong> Manage the <strong>geographic directory</strong> that powers the public registration form — countries, states/regions, and satellite churches.</p>
+<p><strong>Tabs inside the directory:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Satellite churches</td>
+<td>Individual church sites (LGA, satellites)</td>
+</tr>
+<tr>
+<td>All branches</td>
+<td>Combined branch listing</td>
+</tr>
+<tr>
+<td>States &amp; regions</td>
+<td>States within countries</td>
+</tr>
+<tr>
+<td>Countries</td>
+<td>Country directory entries</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Actions:</strong></p>
+<ul>
+<li>Filter by continent, country, status, search.</li>
+<li><strong>New location</strong> — Add country, state, or church (role-dependent).</li>
+<li>Open a row for <strong>detail</strong> — activate/deactivate churches, view member stats.</li>
+<li>Refresh directory data.</li>
+</ul>
+<p><strong>Who can edit:</strong> Super Admin, General Admin, Data Entry Admin, Country Admin (country-scoped; cannot add new countries as Country Admin).</p>
+<hr />
+<h3 id="branch-directory">Branch directory</h3>
+<p><strong>Purpose:</strong> Same underlying data as <strong>Locations</strong>, presented as a compact <strong>browse/manage</strong> view for global admins (sidebar label “Branch directory”).</p>
+<p>Use it to explore the hierarchy and manage branches without the fuller Locations layout. Capabilities match Locations for editors.</p>
+<hr />
+<h3 id="requests">Requests</h3>
+<p><strong>Purpose:</strong> Track <strong>approval workflows</strong> — things one admin submits for a higher admin to approve.</p>
+<p><strong>Request types:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Admin account</strong></td>
+<td>New login for state, satellite, or leader roles</td>
+</tr>
+<tr>
+<td><strong>Location catalog</strong></td>
+<td>New country/state/satellite sites from data entry</td>
+</tr>
+<tr>
+<td><strong>Service unit proposal</strong></td>
+<td>New unit + sub-units proposed from the field</td>
+</tr>
+<tr>
+<td><strong>General</strong></td>
+<td>Other messages</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Columns:</strong> Date, submitter, role, type, details summary, status, actions.</p>
+<p><strong>Statuses:</strong> Open, in review, approved, rejected, resolved.</p>
+<p><strong>Approvers:</strong></p>
+<ul>
+<li>Super / General Admin — most types, all locations.</li>
+<li>Country Admin — admin accounts from state/satellite in their country; service unit proposals in country.</li>
+</ul>
+<p>Submitters without approve rights see <strong>My requests</strong> and can track status only.</p>
+<hr />
+<h3 id="announcements">Announcements</h3>
+<p><strong>Purpose:</strong> Send targeted messages to <strong>members</strong>, <strong>leaders</strong>, or <strong>admins</strong> by geography and unit.</p>
+<p><strong>List view:</strong></p>
+<ul>
+<li>Title, audience summary, medium (email/SMS), schedule, workflow status.</li>
+<li>Edit/delete (creator or global admin).</li>
+</ul>
+<p><strong>Create announcement:</strong></p>
+<ul>
+<li>Title and body.</li>
+<li><strong>Destination type</strong> — Members, leaders, or admins.</li>
+<li><strong>Audience scope</strong> — Country, state, satellite, service unit, sub-unit (options depend on your role; server clamps to your jurisdiction).</li>
+<li><strong>Medium</strong> — Email and/or SMS (SMS requires provider configuration).</li>
+<li>Optional schedule time.</li>
+</ul>
+<p>Lower roles cannot broadcast outside their scope.</p>
+<hr />
+<h3 id="activity-log">Activity Log</h3>
+<p><strong>Purpose:</strong> <strong>Audit trail</strong> of important actions across the platform (or your country for Country Admin).</p>
+<p><strong>Logged examples:</strong></p>
+<ul>
+<li>Admin login/logout, create/update/delete admin</li>
+<li>Unit create/update/delete</li>
+<li>Queue status changes, registration delete</li>
+<li>Settings updates, catalog changes, request approvals</li>
+</ul>
+<p><strong>Filters:</strong></p>
+<p>Search text, action type, admin user, entity type (registration, unit, admin), date range.</p>
+<p>Use this for accountability and troubleshooting (“who changed this application?”).</p>
+<hr />
+<h3 id="settings">Settings</h3>
+<p><strong>Purpose:</strong> <strong>Platform configuration</strong> — only Super Admin and General Admin.</p>
+<p><strong>Sections:</strong></p>
+<ol>
+<li><strong>Notification templates</strong> — Text for approved, rejected, and waitlisted outcomes (used when notifying applicants).</li>
+<li><strong>Overdue &amp; alerts</strong> — Global overdue threshold (1–30 days); explains escalation to unit leader and satellite pastor.</li>
+<li><strong>User permissions</strong> — Feature flags stored in app settings (enable/disable per permission key).</li>
+</ol>
+<p>Click <strong>Save Settings</strong> after changes.</p>
+<hr />
+<h3 id="profile-settings">Profile / Settings</h3>
+<p><strong>Purpose:</strong> <strong>Your own account</strong> — not platform settings.</p>
+<p><strong>Fields:</strong></p>
+<ul>
+<li>Full name  </li>
+<li>Email  </li>
+<li>New password (optional; leave blank to keep current)</li>
+</ul>
+<p>Available to roles that do not see the global <strong>Settings</strong> page (leaders, country, state, satellite, data entry).</p>
+<hr />
+<h3 id="home-data-entry-dashboard">Home — Data Entry dashboard</h3>
+<p><strong>Purpose:</strong> Landing page for <strong>Data Entry Admin</strong>.</p>
+<p>Explains that you add church locations via proposals. Button: <strong>Propose new location</strong> → opens the location proposal form.</p>
+<hr />
+<h3 id="propose-new-location">Propose new location</h3>
+<p><strong>Purpose:</strong> Submit a <strong>location catalog request</strong> for Super / General Admin approval.</p>
+<p><strong>Form flow:</strong></p>
+<ol>
+<li>Select <strong>continent</strong> (loads countries).  </li>
+<li>Select <strong>country</strong> (loads states).  </li>
+<li>Select <strong>state/region</strong> (loads LGA/city list).  </li>
+<li>Select <strong>LGA/city</strong>.  </li>
+<li>Enter one or more <strong>satellite church names</strong> (add rows as needed).  </li>
+<li><strong>Submit for approval</strong>.</li>
+</ol>
+<p>After approval, sites appear on the public registration form.</p>
+<hr />
+<h3 id="dashboard-satellite-pastor">Dashboard — Satellite Pastor</h3>
+<p><strong>Purpose:</strong> Home for <strong>Satellite Pastor Admin</strong>.</p>
+<p><strong>Stat cards:</strong></p>
+<p>Total registrations, pending, approved, overdue, active team leader count.</p>
+<p><strong>Quick actions:</strong></p>
+<p>Application Queue, Admin Accounts, Announcements, My Requests.</p>
+<hr />
+<h2 id="super-admin-dashboard">Super Admin dashboard</h2>
+<p><strong>Role summary:</strong> Full platform owner. One active Super Admin per system. Only this role creates other Super Admin accounts.</p>
+<h3 id="sidebar-menu">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Overview</strong></td>
+<td>Global analytics with deep filters; trend charts; recent activity; jump to overdue queue.</td>
+</tr>
+<tr>
+<td><strong>Application Queue</strong></td>
+<td>All applications worldwide; full status control; delete registrations.</td>
+</tr>
+<tr>
+<td><strong>Service Units</strong></td>
+<td>Create/edit/delete units and sub-units; set per-unit overdue days.</td>
+</tr>
+<tr>
+<td><strong>Unit Members</strong></td>
+<td>All accepted members; export.</td>
+</tr>
+<tr>
+<td><strong>Locations</strong></td>
+<td>Full directory; add countries, states, churches.</td>
+</tr>
+<tr>
+<td><strong>Branch directory</strong></td>
+<td>Alternate directory browser.</td>
+</tr>
+<tr>
+<td><strong>Admin Accounts</strong></td>
+<td>Manage every role; export CSV; see pending requests.</td>
+</tr>
+<tr>
+<td><strong>Announcements</strong></td>
+<td>Broadcast to any audience.</td>
+</tr>
+<tr>
+<td><strong>Requests</strong></td>
+<td>Approve/reject all request types.</td>
+</tr>
+<tr>
+<td><strong>Activity Log</strong></td>
+<td>Full audit trail.</td>
+</tr>
+<tr>
+<td><strong>Settings</strong></td>
+<td>Templates, overdue, permissions.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="typical-daily-workflow">Typical daily workflow</h3>
+<ol>
+<li>Check <strong>Overview</strong> for overdue and pending spikes.  </li>
+<li>Work <strong>Application Queue</strong> or delegate to country/leaders.  </li>
+<li>Process <strong>Requests</strong> (locations, new admins, units).  </li>
+<li>Adjust <strong>Service Units</strong> or <strong>Locations</strong> as organization changes.  </li>
+<li>Review <strong>Activity Log</strong> if issues are reported.</li>
+</ol>
+<hr />
+<h2 id="general-admin-dashboard">General Admin dashboard</h2>
+<p><strong>Role summary:</strong> Same operational power as Super Admin <strong>except</strong> managing Super Admin accounts. One active General Admin per system.</p>
+<h3 id="sidebar-menu_1">Sidebar menu</h3>
+<p>Identical tabs to Super Admin.</p>
+<h3 id="differences-from-super-admin">Differences from Super Admin</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>General Admin</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Create Super Admin</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Edit/delete Super Admin row</td>
+<td>No (unless you are the Super Admin)</td>
+</tr>
+<tr>
+<td>Everything else</td>
+<td>Same as Super Admin</td>
+</tr>
+</tbody>
+</table>
+<p>Use <strong>Admin Accounts</strong> for General Admin, Country Admin, leaders, etc., but not for promoting someone to Super Admin.</p>
+<hr />
+<h2 id="data-entry-admin-dashboard">Data Entry Admin dashboard</h2>
+<p><strong>Role summary:</strong> Add locations and support branch data globally. No platform settings or admin user management.</p>
+<h3 id="sidebar-menu_2">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Home</strong></td>
+<td>Read overview of data entry mission; link to propose location.</td>
+</tr>
+<tr>
+<td><strong>Propose new location</strong></td>
+<td>Submit location catalog requests.</td>
+</tr>
+<tr>
+<td><strong>Locations</strong></td>
+<td>View/edit directory within catalog rules.</td>
+</tr>
+<tr>
+<td><strong>Activity Log</strong></td>
+<td>See relevant audit events.</td>
+</tr>
+<tr>
+<td><strong>Profile / Settings</strong></td>
+<td>Update your name, email, password.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="typical-workflow">Typical workflow</h3>
+<ol>
+<li>Open <strong>Propose new location</strong>.  </li>
+<li>Complete geography and satellite names.  </li>
+<li>Submit and monitor approval (Super / General Admin <strong>Requests</strong> tab).  </li>
+<li>Use <strong>Locations</strong> to verify or maintain existing entries if needed.</li>
+</ol>
+<h3 id="what-you-do-not-have">What you do not have</h3>
+<p>Application Queue, Service Units, Admin Accounts, Announcements (as primary ops), Requests approval, Settings.</p>
+<hr />
+<h2 id="country-admin-dashboard">Country Admin dashboard</h2>
+<p><strong>Role summary:</strong> Lead administrator for <strong>one country</strong>. One active account per country code.</p>
+<h3 id="sidebar-menu_3">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Country analytics</strong></td>
+<td>Overview stats for your country only.</td>
+</tr>
+<tr>
+<td><strong>Application queue</strong></td>
+<td>Branch oversight: filter by state, unit, sub-unit; <strong>update statuses</strong>.</td>
+</tr>
+<tr>
+<td><strong>Unit members</strong></td>
+<td>Accepted members in your country.</td>
+</tr>
+<tr>
+<td><strong>Admin accounts</strong></td>
+<td>Manage state, satellite, and leader accounts in your country.</td>
+</tr>
+<tr>
+<td><strong>Locations</strong></td>
+<td>Directory edits <strong>within your country</strong> (not new countries).</td>
+</tr>
+<tr>
+<td><strong>Requests &amp; approvals</strong></td>
+<td>Approve state/satellite admin requests and service unit proposals in country.</td>
+</tr>
+<tr>
+<td><strong>Activity log</strong></td>
+<td>Country-scoped audit events.</td>
+</tr>
+<tr>
+<td><strong>Announcements</strong></td>
+<td>Post to country-level audiences (and below per UI rules).</td>
+</tr>
+<tr>
+<td><strong>Profile / Settings</strong></td>
+<td>Your profile.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="admin-accounts-what-you-manage">Admin accounts — what you manage</h3>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Direct create</th>
+<th>Request required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>State Branch Admin</td>
+<td>Via request to Super/General</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Satellite Pastor Admin</td>
+<td>Create/request per process</td>
+<td>Often request</td>
+</tr>
+<tr>
+<td>Service Unit / Sub-Unit Leader</td>
+<td>Yes, in country</td>
+<td>Sub-units must already exist</td>
+</tr>
+</tbody>
+</table>
+<p>You <strong>cannot</strong> create another Country Admin, General Admin, or Super Admin.</p>
+<h3 id="typical-workflow_1">Typical workflow</h3>
+<ol>
+<li>Review <strong>Country analytics</strong> and <strong>Application queue</strong>.  </li>
+<li>Approve <strong>Requests</strong> from state and satellite admins.  </li>
+<li>Maintain <strong>Admin accounts</strong> for your branch structure.  </li>
+<li>Post <strong>Announcements</strong> for national coordination.</li>
+</ol>
+<hr />
+<h2 id="state-branch-admin-dashboard">State Branch Admin dashboard</h2>
+<p><strong>Role summary:</strong> Supervisory intake for <strong>one state/region</strong> within a country. One active account per state.</p>
+<h3 id="sidebar-menu_4">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>State analytics</strong></td>
+<td>Stats for your state.</td>
+</tr>
+<tr>
+<td><strong>Application queue</strong></td>
+<td>View/filter applications; <strong>cannot</strong> change status (leaders action items).</td>
+</tr>
+<tr>
+<td><strong>Unit members</strong></td>
+<td>Accepted members in state.</td>
+</tr>
+<tr>
+<td><strong>Admin accounts</strong></td>
+<td>Request/manage <strong>Satellite Pastor Admin</strong> only.</td>
+</tr>
+<tr>
+<td><strong>My requests</strong></td>
+<td>Track submitted requests (e.g. new satellite pastor).</td>
+</tr>
+<tr>
+<td><strong>Activity log</strong></td>
+<td>State-scoped events.</td>
+</tr>
+<tr>
+<td><strong>Announcements</strong></td>
+<td>Post within state/satellite/unit scope.</td>
+</tr>
+<tr>
+<td><strong>Profile / Settings</strong></td>
+<td>Your profile.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="typical-workflow_2">Typical workflow</h3>
+<ol>
+<li>Monitor <strong>State analytics</strong> and <strong>Application queue</strong> for bottlenecks.  </li>
+<li>Request new <strong>Satellite Pastor Admin</strong> via <strong>Admin accounts</strong> or <strong>My requests</strong>.  </li>
+<li>Communicate via <strong>Announcements</strong> to satellites and leaders.</li>
+</ol>
+<h3 id="what-you-do-not-have_1">What you do not have</h3>
+<p>Locations tab, Service Units, Settings, direct status changes on applications.</p>
+<hr />
+<h2 id="satellite-pastor-admin-dashboard">Satellite Pastor Admin dashboard</h2>
+<p><strong>Role summary:</strong> Pastoral oversight for <strong>one satellite church</strong> (country + state + site name).</p>
+<h3 id="sidebar-menu_5">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dashboard</strong></td>
+<td>Registration stats, overdue, team leader count; quick links.</td>
+</tr>
+<tr>
+<td><strong>Application Queue</strong></td>
+<td>Applications for your satellite only; status updates.</td>
+</tr>
+<tr>
+<td><strong>Admin Accounts</strong></td>
+<td>View/request <strong>Service Unit</strong> and <strong>Sub-Unit</strong> leaders for your site.</td>
+</tr>
+<tr>
+<td><strong>My Requests</strong></td>
+<td>Track workforce account requests.</td>
+</tr>
+<tr>
+<td><strong>Announcements</strong></td>
+<td>Message your satellite, units, or sub-units.</td>
+</tr>
+<tr>
+<td><strong>Profile / Settings</strong></td>
+<td>Your profile.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="typical-workflow_3">Typical workflow</h3>
+<ol>
+<li>Start on <strong>Dashboard</strong> — check overdue and pending.  </li>
+<li>Process <strong>Application Queue</strong>.  </li>
+<li>Request team leaders under <strong>Admin Accounts</strong>.  </li>
+<li>Send <strong>Announcements</strong> for meetings or deadlines.</li>
+</ol>
+<h3 id="team-leaders">Team leaders</h3>
+<p>You see service unit and sub-unit leaders tied to your branch and satellite. New leader accounts go through <strong>request</strong> approval.</p>
+<hr />
+<h2 id="service-unit-leader-dashboard">Service Unit Leader dashboard</h2>
+<p><strong>Role summary:</strong> Operate one <strong>service unit</strong> — intake queue, members, and sub-unit admins.</p>
+<h3 id="sidebar-menu_6">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dashboard</strong></td>
+<td>Unit-scoped stats, trend chart, gender breakdown, in-progress across sub-units.</td>
+</tr>
+<tr>
+<td><strong>Intake Queue</strong></td>
+<td>All applications for your unit (filter sub-units if multiple).</td>
+</tr>
+<tr>
+<td><strong>Members List</strong></td>
+<td>Accepted members in your unit.</td>
+</tr>
+<tr>
+<td><strong>Announcements</strong></td>
+<td>Target your unit or specific sub-units.</td>
+</tr>
+<tr>
+<td><strong>Sub-Unit Admins</strong></td>
+<td>Create/edit/delete <strong>Sub-Unit Leader</strong> accounts directly.</td>
+</tr>
+<tr>
+<td><strong>Activity Log</strong></td>
+<td>Audit events.</td>
+</tr>
+<tr>
+<td><strong>Profile / Settings</strong></td>
+<td>Your profile.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="intake-queue-leader-actions">Intake Queue — leader actions</h3>
+<ul>
+<li>Tabs: All, New, In Progress, Accepted, Rejected, Archived, Overdue.  </li>
+<li>Quick status buttons for common transitions.  </li>
+<li><strong>Accept</strong> opens verification modal (call + meeting).  </li>
+<li>Sub-unit leaders only see their sub-unit’s rows.</li>
+</ul>
+<h3 id="sub-unit-admins-tab">Sub-Unit Admins tab</h3>
+<p>Create leaders with username, email, password, and <strong>sub-unit name</strong> (must already exist under your unit). You cannot invent new sub-unit names on the structure — Super / General Admin adds sub-units under <strong>Service Units</strong>.</p>
+<hr />
+<h2 id="sub-unit-leader-dashboard">Sub-Unit Leader dashboard</h2>
+<p><strong>Role summary:</strong> Narrowest leader role — one <strong>sub-unit</strong> team inside a service unit.</p>
+<h3 id="sidebar-menu_7">Sidebar menu</h3>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dashboard</strong></td>
+<td>Sub-unit analytics (trend, status donut, gender).</td>
+</tr>
+<tr>
+<td><strong>Intake Queue</strong></td>
+<td>Only your sub-unit’s applications.</td>
+</tr>
+<tr>
+<td><strong>Members List</strong></td>
+<td>Accepted members in your sub-unit.</td>
+</tr>
+<tr>
+<td><strong>Announcements</strong></td>
+<td>Post to your sub-unit scope.</td>
+</tr>
+<tr>
+<td><strong>Profile / Settings</strong></td>
+<td>Your profile.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="typical-workflow_4">Typical workflow</h3>
+<ol>
+<li>Review <strong>Dashboard</strong> for pending/overdue.  </li>
+<li>Work <strong>Intake Queue</strong> daily.  </li>
+<li>Move candidates through New → In Progress → Accepted with verification.  </li>
+<li>Announce reminders to your team via <strong>Announcements</strong>.</li>
+</ol>
+<h3 id="what-you-do-not-have_2">What you do not have</h3>
+<p>Sub-Unit Admins tab (you cannot create other admins), Service Units, Admin Accounts, Requests, Locations, Settings.</p>
+<hr />
+<h2 id="approval-workflows">Approval workflows</h2>
+<h3 id="admin-account-request">Admin account request</h3>
+<pre><code>Country / State / Satellite admin fills form → Submit request → In review
+    → Super/General (or Country for in-country state/satellite) approves
+    → Account created and active
+</code></pre>
+<h3 id="location-catalog-request">Location catalog request</h3>
+<pre><code>Data Entry submits Propose new location → Open request
+    → Super/General approves → Sites published to registration form
+</code></pre>
+<h3 id="service-unit-proposal">Service unit proposal</h3>
+<pre><code>(Field proposal) → Country or Super/General approves → Unit + sub-units created in Service Units
+</code></pre>
+<hr />
+<h2 id="quick-reference-who-sees-which-tab">Quick reference — who sees which tab</h2>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th style="text-align: center;">Super</th>
+<th style="text-align: center;">General</th>
+<th style="text-align: center;">Data entry</th>
+<th style="text-align: center;">Country</th>
+<th style="text-align: center;">State</th>
+<th style="text-align: center;">Satellite</th>
+<th style="text-align: center;">Unit leader</th>
+<th style="text-align: center;">Sub-unit leader</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Overview / analytics</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Home (data entry)</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Satellite dashboard</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Application / intake queue</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓*</td>
+<td style="text-align: center;">✓*</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Unit members</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Service units</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Locations</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Branch directory</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Admin accounts</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓**</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Requests</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓***</td>
+<td style="text-align: center;">✓***</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Announcements</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Activity log</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Settings</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Profile</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Propose location</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+</tbody>
+</table>
+<p>* Country oversight can action status; State oversight is view-only.<br />
+** Service Unit Leader tab is labeled <strong>Sub-Unit Admins</strong>.<br />
+*** <strong>My requests</strong> for submitters; full <strong>Requests &amp; approvals</strong> for Country Admin.</p>
+<hr />
+<h2 id="document-history">Document history</h2>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Date</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.0</td>
+<td>May 2026</td>
+<td>Initial full dashboard guide aligned with <code>src/admin</code> UI</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Salvation Ministries — Service Unit Registration Admin Platform</em></p>
+<p class="no-print" style="margin-top:48px;font-size:9pt;color:#888;">
+  Generated from ADMIN_DASHBOARD_GUIDE.md — open this HTML in a browser and use Print → Save as PDF if needed.
+</p>
+</body>
+</html>

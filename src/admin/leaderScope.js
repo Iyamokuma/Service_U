@@ -1,7 +1,7 @@
 import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 
 /** Human-readable service unit / sub-unit scope for leader dashboards (uses API-shaped admin). */
-export function leaderScopeLabel(admin) {
+export function leaderScopeLabel(admin, viewMode) {
   if (!admin?.role) return "";
   const u = String(admin.service_unit_name || "").trim();
   const s = String(admin.sub_unit_name || "").trim();
@@ -9,6 +9,13 @@ export function leaderScopeLabel(admin) {
   if (admin.role === "data_entry_admin") return "All branches (data entry)";
   if (admin.role === "country_super_admin") {
     const cc = String(admin.branch_country || "").trim();
+    const st = String(admin.branch_state || "").trim();
+    if (viewMode === "state" && cc && st) {
+      return `${branchCountryLabel(cc)} · ${branchStateLabel(cc, st)}`;
+    }
+    if (cc && st) {
+      return `${branchCountryLabel(cc)} · HQ ${branchStateLabel(cc, st)}`;
+    }
     return cc ? branchCountryLabel(cc) : "Country";
   }
   if (admin.role === "state_super_admin") {

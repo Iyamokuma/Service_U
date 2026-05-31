@@ -83,6 +83,12 @@ export function branchStatesForCountry(countryCode) {
   return [...states].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Default headquarters state for a Country Admin (first state in dataset). */
+export function defaultHeadquartersStateForCountry(countryCode) {
+  const states = branchStatesForCountry(countryCode);
+  return states[0]?.code || "";
+}
+
 /** True if stateCode exists for country (codes compared uppercase). */
 export function isStateValidForCountry(countryCode, stateCode) {
   const sc = normCode(stateCode);

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { signAdminToken } from "../_shared/jwt.ts";
+import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -55,35 +56,37 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     await supabase.from("admins").update({ last_login: now }).eq("id", admin.id);
 
+    const resolved = await ensureCountryAdminHeadquarters(supabase, admin as Record<string, unknown>);
+
     await supabase.from("activity_logs").insert({
-      admin_id: admin.id,
-      admin_name: admin.full_name,
+      admin_id: resolved.id,
+      admin_name: resolved.full_name,
       action: "admin.login",
       entity_type: "admin",
-      entity_id: String(admin.id),
+      entity_id: String(resolved.id),
       description: "Admin logged in",
       ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "",
     });
 
     let service_unit_name = "";
-    if (admin.service_unit_id != null) {
-      const { data: u } = await supabase.from("service_units").select("name").eq("id", admin.service_unit_id).maybeSingle();
+    if (resolved.service_unit_id != null) {
+      const { data: u } = await supabase.from("service_units").select("name").eq("id", resolved.service_unit_id).maybeSingle();
       service_unit_name = String(u?.name || "");
     }
 
-    const token = await signAdminToken(Number(admin.id), jwtSecret);
+    const token = await signAdminToken(Number(resolved.id), jwtSecret);
 
     const shaped = {
-      id: admin.id,
-      full_name: admin.full_name,
-      username: admin.username,
-      email: admin.email,
-      role: admin.role,
-      service_unit_id: admin.service_unit_id,
-      sub_unit_name: admin.sub_unit_name || "",
-      branch_country: admin.branch_country ?? "",
-      branch_state: admin.branch_state ?? "",
-      satellite_site: admin.satellite_site ?? "",
+      id: resolved.id,
+      full_name: resolved.full_name,
+      username: resolved.username,
+      email: resolved.email,
+      role: resolved.role,
+      service_unit_id: resolved.service_unit_id,
+      sub_unit_name: resolved.sub_unit_name || "",
+      branch_country: resolved.branch_country ?? "",
+      branch_state: resolved.branch_state ?? "",
+      satellite_site: resolved.satellite_site ?? "",
       service_unit_name,
     };
 

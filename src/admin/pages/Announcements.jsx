@@ -140,7 +140,7 @@ function statusLabel(st) {
 
 export function Announcements() {
   const toast = useToast();
-  const { admin } = useAdminAuth();
+  const { admin, viewMode } = useAdminAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
@@ -396,6 +396,7 @@ export function Announcements() {
           saving={saving}
           unitList={unitList}
           admin={admin}
+          viewMode={viewMode}
         />
       ) : null}
     </>

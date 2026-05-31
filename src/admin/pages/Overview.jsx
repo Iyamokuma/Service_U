@@ -3,6 +3,8 @@ import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { leaderScopeLabel } from "../leaderScope.js";
 import { isGlobalAdminRole } from "../roles.js";
+import { isActingAsStateAdmin } from "../adminViewMode.js";
+import { branchStateLabel, branchCountryLabel } from "../branchRegions.js";
 import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
 import { StatusDonut } from "../components/StatusDonut.jsx";
@@ -433,10 +435,11 @@ function DashStatCard({ label, value, sub, highlight, overdueState }) {
 }
 
 export function Overview({ units, setPage, navigateToQueue }) {
-  const { admin } = useAdminAuth();
+  const { admin, viewMode } = useAdminAuth();
+  const actingAsState = isActingAsStateAdmin(admin, viewMode);
   const isServiceLeader = admin?.role === "service_unit_leader";
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
-  const scope = leaderScopeLabel(admin);
+  const scope = leaderScopeLabel(admin, viewMode);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rangeDays, setRangeDays] = useState(28);
@@ -448,7 +451,7 @@ export function Overview({ units, setPage, navigateToQueue }) {
       .stats({ viewer: admin, trend_days: 365 })
       .then(setData)
       .finally(() => setLoading(false));
-  }, [admin]);
+  }, [admin, viewMode]);
 
   if (isGlobalAdminRole(admin?.role)) {
     return <SuperAdminOverview units={units} setPage={setPage} navigateToQueue={navigateToQueue} admin={admin} />;
@@ -478,7 +481,12 @@ export function Overview({ units, setPage, navigateToQueue }) {
   });
 
   const showBarAndTrend = !isServiceLeader && !isSubUnitLeader;
-  const trendSubtitle = scope && scope !== "—" ? scope : "Your visible registrations";
+  const trendSubtitle =
+    actingAsState && admin?.branch_state
+      ? `${branchStateLabel(admin.branch_country, admin.branch_state) || admin.branch_state} registrations`
+      : scope && scope !== "—"
+        ? scope
+        : "Your visible registrations";
   const overdueVisual =
     (totals.overdue_count ?? 0) === 0
       ? { state: "zero", sub: "On track" }

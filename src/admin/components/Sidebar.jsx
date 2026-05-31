@@ -1,6 +1,8 @@
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useState } from "react";
 import { leaderScopeLabel } from "../leaderScope.js";
+import { canSwitchAdminView, effectiveUiRole, isActingAsStateAdmin } from "../adminViewMode.js";
+import { branchStateLabel } from "../branchRegions.js";
 
 const NAV_SUPER = [
   {
@@ -69,10 +71,9 @@ const NAV_COUNTRY_ADMIN = [
     items: [
       { id: "overview", label: "Country analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
-      { id: "members", label: "Unit members", icon: <UsersIcon /> },
-      { id: "admins", label: "Admin accounts", icon: <UsersIcon /> },
+      { id: "workforce", label: "Workforce", icon: <LayersIcon /> },
+      { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "locations", label: "Locations", icon: <MapPinIcon /> },
-      { id: "requests", label: "Requests & approvals", icon: <RequestIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
@@ -87,8 +88,8 @@ const NAV_STATE_ADMIN = [
       { id: "overview", label: "State analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
       { id: "members", label: "Unit members", icon: <UsersIcon /> },
-      { id: "admins", label: "Admin accounts", icon: <UsersIcon /> },
-      { id: "requests", label: "My requests", icon: <RequestIcon /> },
+      { id: "workforce", label: "Workforce", icon: <LayersIcon /> },
+      { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
@@ -135,12 +136,20 @@ const ROLE_LABELS = {
 };
 
 export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
-  const { admin, logout } = useAdminAuth();
+  const { admin, logout, viewMode, setViewMode } = useAdminAuth();
   const [logoError, setLogoError] = useState(false);
   const initials = admin?.full_name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "SA";
-  const scope = leaderScopeLabel(admin);
+  const scope = leaderScopeLabel(admin, viewMode);
+  const uiRole = effectiveUiRole(admin, viewMode);
+  const canSwitch = canSwitchAdminView(admin);
+  const actingAsState = isActingAsStateAdmin(admin, viewMode);
+  const hqStateLabel =
+    canSwitch && admin?.branch_state
+      ? branchStateLabel(admin.branch_country, admin.branch_state)
+      : "";
+
   const nav =
-    admin?.role === "super_admin" || admin?.role === "general_admin"
+    uiRole === "super_admin" || uiRole === "general_admin"
       ? NAV_SUPER
       : admin?.role === "data_entry_admin"
         ? NAV_DATA_ENTRY
@@ -150,11 +159,16 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
         ? NAV_SUB_UNIT
         : admin?.role === "service_unit_leader"
           ? NAV_LEADER
-          : admin?.role === "country_super_admin"
+          : uiRole === "country_super_admin"
             ? NAV_COUNTRY_ADMIN
-            : admin?.role === "state_super_admin"
+            : uiRole === "state_super_admin"
               ? NAV_STATE_ADMIN
               : NAV_LEADER;
+
+  const displayRole =
+    actingAsState && admin?.role === "country_super_admin"
+      ? "State Branch Admin"
+      : ROLE_LABELS[admin?.role] || String(admin?.role || "").replace(/_/g, " ");
 
   return (
     <aside className="sa-sidebar">
@@ -166,9 +180,37 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
         )}
         <div>
           <div className="sa-brand-name">Salvation Ministries</div>
-          <div className="sa-brand-sub">{ROLE_LABELS[admin?.role] || String(admin?.role || "").replace(/_/g, " ")}</div>
+          <div className="sa-brand-sub">{displayRole}</div>
         </div>
       </div>
+
+      {canSwitch && (
+        <div className="sa-role-toggle-wrap">
+          <div className="sa-role-toggle-head">
+            <span className="sa-role-toggle-title">Dashboard view</span>
+            {hqStateLabel ? (
+              <span className="sa-role-toggle-hq sa-text-muted sa-text-sm">{hqStateLabel}</span>
+            ) : null}
+          </div>
+          <label className="sa-role-toggle" title={`Switch to ${viewMode === "state" ? "Country Admin" : "State Branch Admin"} view`}>
+            <span className={`sa-role-toggle-label${viewMode === "country" ? " is-active" : ""}`}>Country</span>
+            <span className="sa-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="Switch between Country Admin and State Branch Admin dashboard"
+                checked={viewMode === "state"}
+                onChange={(e) => {
+                  setViewMode(e.target.checked ? "state" : "country");
+                  setPage("overview");
+                }}
+              />
+              <span className="sa-switch-ui" aria-hidden />
+            </span>
+            <span className={`sa-role-toggle-label${viewMode === "state" ? " is-active" : ""}`}>State</span>
+          </label>
+        </div>
+      )}
 
       <nav className="sa-nav">
         {nav.map((group) => (
@@ -199,7 +241,7 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
           <div className="sa-avatar">{initials}</div>
           <div>
             <div className="sa-user-name">{admin?.full_name}</div>
-            <div className="sa-user-role">{ROLE_LABELS[admin?.role] || String(admin?.role || "").replace(/_/g, " ")}</div>
+            <div className="sa-user-role">{displayRole}</div>
             {scope ? <div className="sa-user-unit">{scope}</div> : null}
           </div>
         </div>

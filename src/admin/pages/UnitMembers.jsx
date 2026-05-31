@@ -3,14 +3,16 @@ import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { isCountrySuperAdmin, isStateSuperAdmin } from "../roles.js";
+import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStatesForCountry } from "../branchRegions.js";
 import { exportCsv } from "../exportCsv.js";
 
 export function UnitMembers({ units }) {
   const toast = useToast();
-  const { admin } = useAdminAuth();
-  const isCountryAdmin = isCountrySuperAdmin(admin?.role);
-  const isStateAdmin = isStateSuperAdmin(admin?.role);
+  const { admin, viewMode } = useAdminAuth();
+  const actingAsState = isActingAsStateAdmin(admin, viewMode);
+  const isCountryAdmin = isCountrySuperAdmin(admin?.role) && !actingAsState;
+  const isStateAdmin = isStateSuperAdmin(admin?.role) || actingAsState;
   const isLeader = ["service_unit_leader", "sub_unit_leader"].includes(admin?.role);
   const isServiceUnitLeader = admin?.role === "service_unit_leader";
   const isSubUnitLeader = admin?.role === "sub_unit_leader";

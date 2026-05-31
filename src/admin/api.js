@@ -1,5 +1,6 @@
 import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 import { functionsBaseUrl, supabaseAnonHeaders } from "../lib/supabaseEnv.js";
+import { readAdminViewMode, canSwitchAdminView } from "./adminViewMode.js";
 
 function adminToken() {
   try {
@@ -48,6 +49,19 @@ async function adminFetch(op, params = {}, { timeoutMs = 30000 } = {}) {
     throw new Error(body?.error || `Request failed (${res.status})`);
   }
   return body;
+}
+
+function withScopeParams(params = {}) {
+  try {
+    const raw = localStorage.getItem("admin_user");
+    const admin = raw ? JSON.parse(raw) : null;
+    if (canSwitchAdminView(admin) && readAdminViewMode(admin?.id) === "state") {
+      return { ...params, scope_mode: "state" };
+    }
+  } catch {
+    /* ignore */
+  }
+  return params;
 }
 
 async function adminLoginFetch(username, password) {
@@ -127,11 +141,11 @@ export const api = {
   },
 
   async stats(params = {}) {
-    return adminFetch("stats", params);
+    return adminFetch("stats", withScopeParams(params));
   },
 
   async queue(params = {}) {
-    return adminFetch("queue", params);
+    return adminFetch("queue", withScopeParams(params));
   },
 
   async updateStatus(id, body) {
@@ -179,16 +193,16 @@ export const api = {
   },
 
   async admins() {
-    const r = await adminFetch("admins", {});
+    const r = await adminFetch("admins", withScopeParams({}));
     return { data: mapAdminsList(r.data) };
   },
 
   async createAdmin(body) {
-    return adminFetch("createAdmin", { body });
+    return adminFetch("createAdmin", withScopeParams({ body }));
   },
 
   async updateAdmin(id, body) {
-    return adminFetch("updateAdmin", { id, body });
+    return adminFetch("updateAdmin", withScopeParams({ id, body }));
   },
 
   async updateRegistrationBranch(id, body) {
@@ -196,19 +210,19 @@ export const api = {
   },
 
   async deleteAdmin(id, body = {}) {
-    return adminFetch("deleteAdmin", { id, body });
+    return adminFetch("deleteAdmin", withScopeParams({ id, body }));
   },
 
   async members(params = {}) {
-    return adminFetch("members", params);
+    return adminFetch("members", withScopeParams(params));
   },
 
   async requests(params = {}) {
-    return adminFetch("requests", params);
+    return adminFetch("requests", withScopeParams(params));
   },
 
   async createRequest(body) {
-    return adminFetch("createRequest", { body });
+    return adminFetch("createRequest", withScopeParams({ body }));
   },
 
   async updateRequest(id, body) {
@@ -236,7 +250,7 @@ export const api = {
   },
 
   async overdueAlerts(_viewer) {
-    return adminFetch("overdueAlerts", {});
+    return adminFetch("overdueAlerts", withScopeParams({}));
   },
 
   async notifications() {
@@ -256,7 +270,7 @@ export const api = {
   },
 
   async createAnnouncement(body) {
-    return adminFetch("createAnnouncement", { body });
+    return adminFetch("createAnnouncement", withScopeParams({ body }));
   },
 
   async updateAnnouncement(id, body) {

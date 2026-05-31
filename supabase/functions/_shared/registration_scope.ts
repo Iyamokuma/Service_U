@@ -9,10 +9,21 @@ function up(s: unknown): string {
   return norm(s).toUpperCase();
 }
 
+/** Country Admin in State view: scope data to headquarters state only (Country Admin account only). */
+export function effectiveScopeAdmin(admin: AdminRow, scopeMode?: unknown): AdminRow {
+  const role = norm(admin.role);
+  if (role !== "country_super_admin") return admin;
+  if (norm(scopeMode) !== "state") return admin;
+  const st = up(admin.branch_state);
+  if (!st) return admin;
+  return { ...admin, role: "state_super_admin" };
+}
+
 /** Apply role-based filters to a PostgREST `registrations` query (Supabase client). */
 // deno-lint-ignore no-explicit-any
-export function applyRegistrationScopeQuery(q: any, admin: AdminRow): any {
-  const role = norm(admin.role);
+export function applyRegistrationScopeQuery(q: any, admin: AdminRow, scopeMode?: unknown): any {
+  const scoped = effectiveScopeAdmin(admin, scopeMode);
+  const role = norm(scoped.role);
   if (role === "super_admin" || role === "general_admin" || role === "data_entry_admin") return q;
   if (role === "country_super_admin") {
     const c = up(admin.branch_country);
@@ -58,8 +69,9 @@ export function applyRegistrationScopeQuery(q: any, admin: AdminRow): any {
 }
 
 /** True if this admin may read or mutate the given registration row. */
-export function canAccessRegistration(admin: AdminRow, row: Record<string, unknown>): boolean {
-  const role = norm(admin.role);
+export function canAccessRegistration(admin: AdminRow, row: Record<string, unknown>, scopeMode?: unknown): boolean {
+  const scoped = effectiveScopeAdmin(admin, scopeMode);
+  const role = norm(scoped.role);
   if (role === "super_admin" || role === "general_admin" || role === "data_entry_admin") return true;
   if (role === "country_super_admin") {
     return up(admin.branch_country) === up(row.branch_country);

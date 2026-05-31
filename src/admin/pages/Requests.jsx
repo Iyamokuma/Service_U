@@ -9,6 +9,7 @@ import {
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { roleDisplayLabel } from "../roles.js";
+import { isActingAsStateAdmin } from "../adminViewMode.js";
 
 function parsePayload(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -107,9 +108,10 @@ function LocationProposalSummary({ payload }) {
 
 export function Requests() {
   const toast = useToast();
-  const { admin } = useAdminAuth();
+  const { admin, viewMode } = useAdminAuth();
   const isSuper = admin?.role === "super_admin" || admin?.role === "general_admin";
-  const isCountryAdmin = admin?.role === "country_super_admin";
+  const actingAsState = isActingAsStateAdmin(admin, viewMode);
+  const isCountryAdmin = admin?.role === "country_super_admin" && !actingAsState;
   const canApprove = isSuper || isCountryAdmin;
   const [rows, setRows] = useState([]);
 

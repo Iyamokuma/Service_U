@@ -6,6 +6,7 @@ import { Modal } from "../components/Modal.jsx";
 import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
 import { branchCountryLabel, branchStatesForCountry, branchStateLabel } from "../branchRegions.js";
 import { isCountrySuperAdmin, isSupervisoryBranchRole } from "../roles.js";
+import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { leaderScopeLabel } from "../leaderScope.js";
 import { RegistrationDetails, fmtDate, fullName } from "./Queue.jsx";
 
@@ -17,8 +18,9 @@ const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
  */
 export function BranchOversight({ units }) {
   const toast = useToast();
-  const { admin } = useAdminAuth();
-  const isCountry = isCountrySuperAdmin(admin?.role);
+  const { admin, viewMode } = useAdminAuth();
+  const actingAsState = isActingAsStateAdmin(admin, viewMode);
+  const isCountry = isCountrySuperAdmin(admin?.role) && !actingAsState;
   const canAction = isCountry;
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);

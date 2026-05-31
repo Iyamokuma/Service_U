@@ -54,17 +54,28 @@ export function isSupervisoryBranchRole(role) {
   );
 }
 
-/** Admin roles a country super admin may create, edit, or delete (within their country). */
-export const COUNTRY_MANAGED_ADMIN_ROLES = [
-  "satellite_church_admin",
-  "state_super_admin",
-  "service_unit_leader",
-  "sub_unit_leader",
-];
+/** Roles a country admin may create directly (no request flow). */
+export const COUNTRY_DIRECT_CREATE_ROLES = ["state_super_admin"];
+
+/** Admin roles a country super admin may manage on the Users tab (within their country). */
+export const COUNTRY_MANAGED_ADMIN_ROLES = ["state_super_admin"];
+
+/** Headquarters state on Country Admin (required; set at creation or auto-assigned on login). */
+export function countryAdminHomeState(admin) {
+  if (admin?.role !== "country_super_admin") return "";
+  return String(admin.branch_state || "").trim();
+}
+
+export function countryAdminActsAsStateAdmin(admin) {
+  return !!countryAdminHomeState(admin);
+}
 
 export function canCountryAdminManageRole(targetRole) {
   return COUNTRY_MANAGED_ADMIN_ROLES.includes(targetRole);
 }
+
+/** Roles a state branch admin (or Country Admin in state view) may create directly. */
+export const STATE_DIRECT_CREATE_ROLES = ["satellite_church_admin"];
 
 /** Admin roles a state branch admin may manage (within their state). */
 export const STATE_MANAGED_ADMIN_ROLES = ["satellite_church_admin"];
@@ -75,7 +86,26 @@ export function canStateAdminManageRole(targetRole) {
 
 /** Whether this admin role uses the request→approval flow instead of direct creation. */
 export function mustUseRequestFlow(role) {
-  return ["country_super_admin", "state_super_admin", "satellite_church_admin"].includes(role);
+  return ["state_super_admin", "satellite_church_admin"].includes(role);
+}
+
+/** Request vs direct create when adding a new admin account. */
+export function mustUseRequestFlowForCreate(actorRole, targetRole, viewMode) {
+  if (actorRole === "country_super_admin" && COUNTRY_DIRECT_CREATE_ROLES.includes(targetRole)) {
+    return false;
+  }
+  if (
+    actorRole === "country_super_admin" &&
+    viewMode === "state" &&
+    STATE_DIRECT_CREATE_ROLES.includes(targetRole)
+  ) {
+    return false;
+  }
+  if (actorRole === "state_super_admin" && STATE_DIRECT_CREATE_ROLES.includes(targetRole)) {
+    return false;
+  }
+  if (actorRole === "country_super_admin") return true;
+  return mustUseRequestFlow(actorRole);
 }
 
 export function isServiceUnitLeader(role) {

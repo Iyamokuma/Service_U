@@ -28,9 +28,18 @@ export function countryAdminFor(admins, countryCode) {
 export function stateAdminFor(admins, countryCode, stateCode) {
   const cc = normUp(countryCode);
   const st = normUp(stateCode);
-  return activeAdmin(
-    admins,
-    (a) => a.role === "state_super_admin" && normUp(a.branch_country) === cc && normUp(a.branch_state) === st,
+  return (
+    activeAdmin(
+      admins,
+      (a) => a.role === "state_super_admin" && normUp(a.branch_country) === cc && normUp(a.branch_state) === st,
+    ) ||
+    activeAdmin(
+      admins,
+      (a) =>
+        a.role === "country_super_admin" &&
+        normUp(a.branch_country) === cc &&
+        normUp(a.branch_state) === st,
+    )
   );
 }
 
