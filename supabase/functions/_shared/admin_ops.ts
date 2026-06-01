@@ -102,6 +102,24 @@ function assertAdminLocationFields(role: string, branchCountry: string, branchSt
   }
 }
 
+/** Clear scope fields on the admin row that do not apply to the new role (does not delete branch data). */
+function normalizeAdminScopeForRole(role: string, patch: Record<string, unknown>): void {
+  const r = norm(role);
+  if (!ROLES_REQUIRING_COUNTRY.has(r)) {
+    patch.branch_country = null;
+  }
+  if (!ROLES_REQUIRING_STATE.has(r) && r !== "country_super_admin") {
+    patch.branch_state = null;
+  }
+  if (r !== "satellite_church_admin") {
+    patch.satellite_site = null;
+  }
+  if (!["service_unit_leader", "sub_unit_leader"].includes(r)) {
+    patch.service_unit_id = null;
+    patch.sub_unit_name = null;
+  }
+}
+
 const PENDING_ADMIN_REQUEST_STATUSES = ["open", "in_review"];
 
 function adminPayloadFromRequest(req: Record<string, unknown>): Record<string, unknown> {
@@ -733,6 +751,9 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
     if (r) q = q.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
   }
   if (norm(params.filter_branch_state)) q = q.eq("branch_state", normUp(params.filter_branch_state));
+  if (params.filter_country) q = q.eq("branch_country", normUp(params.filter_country));
+  if (params.filter_state) q = q.eq("branch_state", normUp(params.filter_state));
+  if (params.filter_branch) q = q.eq("satellite_site", norm(params.filter_branch));
 
   const sortKey = ["submitted_at", "surname", "unit_name", "status"].includes(norm(params.sort))
     ? norm(params.sort)
@@ -763,6 +784,9 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
       if (r) oq = oq.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
     }
     if (norm(params.filter_branch_state)) oq = oq.eq("branch_state", normUp(params.filter_branch_state));
+    if (params.filter_country) oq = oq.eq("branch_country", normUp(params.filter_country));
+    if (params.filter_state) oq = oq.eq("branch_state", normUp(params.filter_state));
+    if (params.filter_branch) oq = oq.eq("satellite_site", norm(params.filter_branch));
     const { data: rawOverdue, error: oErr } = await oq.limit(8000);
     if (oErr) throw new Error(oErr.message);
     const { globalDays, unitThresholds } = await loadOverdueConfig(supabase);
@@ -1348,9 +1372,14 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
       targetId,
     );
   }
+  const roleChanged = norm(target.role) !== finalRole;
+  if (["super_admin", "general_admin"].includes(actorRole) && roleChanged) {
+    normalizeAdminScopeForRole(finalRole, patch);
+  }
   const { error } = await supabase.from("admins").update(patch).eq("id", targetId);
   if (error) throw new Error(error.message);
-  await logActivity(supabase, admin, "admin.update", "admin", String(targetId), "Updated admin", ip);
+  const logMsg = roleChanged ? `Reassigned admin to ${finalRole}` : "Updated admin";
+  await logActivity(supabase, admin, "admin.update", "admin", String(targetId), logMsg, ip);
   return { data: { id: targetId, ...patch } };
 }
 
@@ -1419,6 +1448,9 @@ async function handleMembers(supabase: SupabaseClient, params: Record<string, un
   if (params.unit_id) q = q.eq("unit_id", Number(params.unit_id));
   if (params.sub_unit) q = q.eq("sub_unit", norm(params.sub_unit));
   if (norm(params.filter_branch_state)) q = q.eq("branch_state", normUp(params.filter_branch_state));
+  if (params.filter_country) q = q.eq("branch_country", normUp(params.filter_country));
+  if (params.filter_state) q = q.eq("branch_state", normUp(params.filter_state));
+  if (params.filter_branch) q = q.eq("satellite_site", norm(params.filter_branch));
   if (params.search) {
     const r = norm(params.search).replace(/%/g, "").slice(0, 120);
     if (r) q = q.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
@@ -1899,6 +1931,23 @@ function parseAnnouncementDestination(body: Record<string, unknown>) {
   return { destinationType, destinationConfig: cfg };
 }
 
+const ANNOUNCEMENT_ADMIN_ROLES_BY_SENDER: Record<string, string[]> = {
+  country_super_admin: ["state_super_admin", "satellite_church_admin"],
+  state_super_admin: ["state_super_admin", "satellite_church_admin", "service_unit_leader", "sub_unit_leader"],
+  satellite_church_admin: ["satellite_church_admin", "service_unit_leader", "sub_unit_leader"],
+  service_unit_leader: ["service_unit_leader", "sub_unit_leader"],
+  sub_unit_leader: ["sub_unit_leader"],
+};
+
+function clampAnnouncementAdminRoles(admin: AdminRow, cfg: Record<string, unknown>): void {
+  const allowed = ANNOUNCEMENT_ADMIN_ROLES_BY_SENDER[norm(admin.role)];
+  if (!allowed?.length) return;
+  const raw = (cfg as { roles?: unknown }).roles;
+  if (!Array.isArray(raw)) return;
+  const filtered = raw.map((r) => norm(r)).filter((r) => allowed.includes(r));
+  (cfg as { roles: string[] }).roles = filtered.length ? filtered : [...allowed];
+}
+
 /**
  * Server-side enforcement: force geo/unit fields in destination_config
  * to the admin's own scope when the admin is below global level.
@@ -1909,7 +1958,7 @@ function clampAnnouncementScope(
   scopeMode?: unknown,
 ): void {
   const role = norm(admin.role);
-  if (["super_admin", "general_admin"].includes(role)) return;
+  if (["super_admin", "general_admin", "data_entry_admin"].includes(role)) return;
 
   if (role === "country_super_admin") {
     const cc = normUp(admin.branch_country);
@@ -1920,23 +1969,63 @@ function clampAnnouncementScope(
     }
     cfg.branch_country = cc;
     if (norm(scopeMode) === "state" && normUp(admin.branch_state)) {
-      cfg.branch_state = normUp(admin.branch_state);
-      return;
+      const st = normUp(admin.branch_state);
+      const reqSt = normUp(cfg.branch_state);
+      if (reqSt && reqSt !== st) {
+        throw new Error("In state view, announcements are limited to your headquarters state.");
+      }
+      cfg.branch_state = st;
+    } else if (cfg.branch_state) {
+      cfg.branch_state = normUp(cfg.branch_state);
     }
+    clampAnnouncementAdminRoles(admin, cfg);
+    return;
+  }
+
+  if (role === "state_super_admin") {
+    const cc = normUp(admin.branch_country);
+    const st = normUp(admin.branch_state);
+    if (!cc || !st) throw new Error("Your state scope is not configured.");
+    if (normUp(cfg.branch_country) && normUp(cfg.branch_country) !== cc) {
+      throw new Error("State branch admins may only send announcements within their assigned country.");
+    }
+    if (normUp(cfg.branch_state) && normUp(cfg.branch_state) !== st) {
+      throw new Error("State branch admins may only send announcements within their assigned state.");
+    }
+    cfg.branch_country = cc;
+    cfg.branch_state = st;
+    clampAnnouncementAdminRoles(admin, cfg);
     return;
   }
 
   if (admin.branch_country) cfg.branch_country = normUp(admin.branch_country);
   if (admin.branch_state) cfg.branch_state = normUp(admin.branch_state);
-  if (role === "satellite_church_admin" && admin.satellite_site) {
-    cfg.satellite_site = norm(admin.satellite_site);
+
+  if (role === "satellite_church_admin") {
+    if (!admin.satellite_site) throw new Error("Your satellite scope is not configured.");
+    const site = norm(admin.satellite_site);
+    const req = norm(cfg.satellite_site);
+    if (req && req !== site) {
+      throw new Error("Satellite admins may only send announcements within their assigned satellite.");
+    }
+    cfg.satellite_site = site;
+    clampAnnouncementAdminRoles(admin, cfg);
+    return;
   }
-  if (role === "service_unit_leader" && admin.service_unit_id) {
-    cfg.service_unit_id = Number(admin.service_unit_id);
+
+  if (role === "service_unit_leader") {
+    if (admin.satellite_site) cfg.satellite_site = norm(admin.satellite_site);
+    if (admin.service_unit_id) cfg.service_unit_id = Number(admin.service_unit_id);
+    clampAnnouncementAdminRoles(admin, cfg);
+    return;
   }
+
   if (role === "sub_unit_leader") {
+    if (admin.satellite_site) cfg.satellite_site = norm(admin.satellite_site);
     if (admin.service_unit_id) cfg.service_unit_id = Number(admin.service_unit_id);
     if (admin.sub_unit_name) cfg.sub_unit = norm(admin.sub_unit_name);
+    clampAnnouncementAdminRoles(admin, cfg);
+    return;
   }
 }
 

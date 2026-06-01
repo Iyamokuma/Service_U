@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
-import { isCountrySuperAdmin, isStateSuperAdmin } from "../roles.js";
+import { isCountrySuperAdmin, isStateSuperAdmin, isGlobalAdminRole } from "../roles.js";
+import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStatesForCountry } from "../branchRegions.js";
 import { exportCsv } from "../exportCsv.js";
@@ -16,6 +17,8 @@ export function UnitMembers({ units }) {
   const isLeader = ["service_unit_leader", "sub_unit_leader"].includes(admin?.role);
   const isServiceUnitLeader = admin?.role === "service_unit_leader";
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
+  const isGlobalAdmin = isGlobalAdminRole(admin?.role);
+  const geo = useAdminGeoFilters();
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
@@ -48,6 +51,9 @@ export function UnitMembers({ units }) {
         if (isStateAdmin && filters.filter_branch_state) {
           body.filter_branch_state = filters.filter_branch_state;
         }
+        if (isGlobalAdmin) {
+          Object.assign(body, geo.apiParams);
+        }
         const res = await api.members(body);
         setRows(res.data || []);
         setPag(res.pagination || { page: 1, pages: 1, total: 0 });
@@ -68,6 +74,8 @@ export function UnitMembers({ units }) {
       isSubUnitLeader,
       isCountryAdmin,
       isStateAdmin,
+      isGlobalAdmin,
+      geo.apiParams,
       toast,
     ]
   );
@@ -94,6 +102,7 @@ export function UnitMembers({ units }) {
       else if (isServiceUnitLeader && filters.sub_unit) body.sub_unit = filters.sub_unit;
       else if (isCountryAdmin && filters.sub_unit) body.sub_unit = filters.sub_unit;
       if (isStateAdmin && filters.filter_branch_state) body.filter_branch_state = filters.filter_branch_state;
+      if (isGlobalAdmin) Object.assign(body, geo.apiParams);
       const res = await api.members(body);
       const all = res.data || [];
       if (!all.length) { toast("No records to export.", "error"); return; }

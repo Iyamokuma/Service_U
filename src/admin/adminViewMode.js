@@ -48,7 +48,6 @@ export function apiScopeMode(admin, viewMode) {
 const COUNTRY_PAGES = [
   "overview",
   "oversight",
-  "workforce",
   "users",
   "locations",
   "activity",
@@ -60,7 +59,6 @@ export const STATE_LEVEL_PAGES = [
   "overview",
   "oversight",
   "members",
-  "workforce",
   "users",
   "activity",
   "announcements",
@@ -71,7 +69,7 @@ const STATE_PAGES = STATE_LEVEL_PAGES;
 
 /** Normalize page id for State Branch Admin nav (including Country Admin in state view). */
 export function normalizeStateAdminPage(page) {
-  if (page === "admins" || page === "requests") return "users";
+  if (page === "admins" || page === "requests" || page === "workforce") return "users";
   if (STATE_LEVEL_PAGES.includes(page)) return page;
   return "overview";
 }
@@ -79,7 +77,7 @@ export function normalizeStateAdminPage(page) {
 export function normalizePageForViewMode(page, admin, viewMode) {
   if (!canSwitchAdminView(admin)) return page;
   const allowed = viewMode === "state" ? STATE_PAGES : COUNTRY_PAGES;
-  if (page === "admins") return "users";
+  if (page === "admins" || page === "workforce") return "users";
   if (page === "requests" && viewMode === "state") return "users";
   if (allowed.includes(page)) return page;
   return "overview";

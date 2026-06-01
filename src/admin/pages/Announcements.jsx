@@ -3,8 +3,11 @@ import { api } from "../api.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { canPostAnnouncements, isGlobalAdminRole } from "../roles.js";
 import { AnnouncementCreateModal } from "../components/AnnouncementCreateModal.jsx";
+import { AnnouncementStatusTabs } from "../components/AnnouncementStatusTabs.jsx";
+import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 
 /** Admin destination roles aligned with AnnouncementCreateModal options. */
 const ADMIN_DEST_ROLE_KEYS = [
@@ -12,14 +15,54 @@ const ADMIN_DEST_ROLE_KEYS = [
   "country_super_admin",
   "state_super_admin",
   "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
 ];
 
 const ADMIN_DEST_LABELS = {
   general_admin: "General Admin",
   country_super_admin: "Country Admin",
   state_super_admin: "State Branch Admin",
-  satellite_church_admin: "Satellite / Branch Admin",
+  satellite_church_admin: "Satellite Pastor Admin",
+  service_unit_leader: "Service Unit Leader",
+  sub_unit_leader: "Sub-unit Leader",
 };
+
+function parseAnnouncementConfig(r) {
+  if (r.destination_config && typeof r.destination_config === "object") return r.destination_config;
+  if (typeof r.destination_config === "string" && r.destination_config.trim()) {
+    try {
+      const parsed = JSON.parse(r.destination_config);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      /* ignore */
+    }
+  }
+  return {};
+}
+
+/** Normalized geo on a row for super-admin list filters. */
+function announcementRowGeo(r) {
+  const cfg = parseAnnouncementConfig(r);
+  const country = String(r.branch_country || cfg.branch_country || "")
+    .trim()
+    .toUpperCase();
+  const state = String(r.scope_branch_state || cfg.branch_state || "")
+    .trim()
+    .toUpperCase();
+  const satellite = String(r.scope_satellite_site || cfg.satellite_site || "").trim();
+  return { country, state, satellite };
+}
+
+function announcementMatchesGeoFilter(r, filters) {
+  const { country, state, satellite } = filters;
+  if (!country && !state && !satellite) return true;
+  const geo = announcementRowGeo(r);
+  if (country && geo.country !== String(country).trim().toUpperCase()) return false;
+  if (state && geo.state !== String(state).trim().toUpperCase()) return false;
+  if (satellite && geo.satellite !== String(satellite).trim()) return false;
+  return true;
+}
 
 function formatMedium(r) {
   const e = Number(r.medium_email) === 1;
@@ -32,17 +75,7 @@ function formatMedium(r) {
 
 function formatDestination(r, unitNames) {
   const type = r.destination_type || "admins";
-  let cfg = {};
-  if (r.destination_config && typeof r.destination_config === "object") {
-    cfg = r.destination_config;
-  } else if (typeof r.destination_config === "string" && r.destination_config.trim()) {
-    try {
-      const parsed = JSON.parse(r.destination_config);
-      if (parsed && typeof parsed === "object") cfg = parsed;
-    } catch {
-      cfg = {};
-    }
-  }
+  const cfg = parseAnnouncementConfig(r);
 
   if (type === "members") {
     const m = cfg;
@@ -122,14 +155,6 @@ function timelineCell(r) {
   return { primary: fmtDateTime(r.sent_at || r.created_at), hint: "Sent" };
 }
 
-function statusBadgeClass(st) {
-  if (st === "sent") return "active";
-  if (st === "draft") return "in_review";
-  if (st === "scheduled") return "open";
-  if (st === "archived") return "archived";
-  return "inactive";
-}
-
 function statusLabel(st) {
   if (st === "sent") return "Sent";
   if (st === "draft") return "Draft";
@@ -141,9 +166,11 @@ function statusLabel(st) {
 export function Announcements() {
   const toast = useToast();
   const { admin, viewMode } = useAdminAuth();
+  const geo = useAdminGeoFilters();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusTab, setStatusTab] = useState("draft");
+  const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [unitNames, setUnitNames] = useState({});
@@ -171,6 +198,10 @@ export function Announcements() {
   }, [load]);
 
   useEffect(() => {
+    setActionMenu({ id: null, anchor: null });
+  }, [statusTab, geo.filters]);
+
+  useEffect(() => {
     api
       .units()
       .then((res) => {
@@ -185,10 +216,42 @@ export function Announcements() {
       .catch(() => {});
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!statusFilter) return rows;
-    return rows.filter((r) => workflowRowStatus(r) === statusFilter);
-  }, [rows, statusFilter]);
+  const scopeRows = useMemo(() => {
+    if (!geo.enabled) return rows;
+    return rows.filter((r) => announcementMatchesGeoFilter(r, geo.filters));
+  }, [rows, geo.enabled, geo.filters]);
+
+  const tabCounts = useMemo(() => {
+    const counts = { draft: 0, scheduled: 0, sent: 0, archived: 0 };
+    scopeRows.forEach((r) => {
+      const st = workflowRowStatus(r);
+      if (st in counts) counts[st] += 1;
+    });
+    return counts;
+  }, [scopeRows]);
+
+  const filtered = useMemo(
+    () => scopeRows.filter((r) => workflowRowStatus(r) === statusTab),
+    [scopeRows, statusTab],
+  );
+
+  const actionTarget = useMemo(
+    () => filtered.find((r) => Number(r.id) === Number(actionMenu.id)) ?? rows.find((r) => Number(r.id) === Number(actionMenu.id)),
+    [filtered, rows, actionMenu.id],
+  );
+
+  function closeActionMenu() {
+    setActionMenu({ id: null, anchor: null });
+  }
+
+  function openActions(e, row) {
+    e.stopPropagation();
+    if (actionMenu.id === row.id) {
+      closeActionMenu();
+      return;
+    }
+    setActionMenu({ id: row.id, anchor: e.currentTarget });
+  }
 
   async function handleCreate(payload, validationError) {
     if (validationError) {
@@ -244,86 +307,71 @@ export function Announcements() {
     return Number(r.created_by_admin_id) === Number(admin?.id);
   }
 
-  function renderActions(r) {
-    if (!canManageRow(r)) return "—";
-    const st = r.workflow_status || "sent";
-    return (
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {st === "draft" && (
-          <>
-            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" onClick={() => runAction(r.id, { action: "send" }, "Sent.")}>
-              Send
-            </button>
-            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => runAction(r.id, { action: "archive" }, "Archived.")}>
-              Archive
-            </button>
-          </>
-        )}
-        {st === "scheduled" && (
-          <>
-            <button type="button" className="sa-btn sa-btn-primary sa-btn-sm" onClick={() => runAction(r.id, { action: "send" }, "Sent now.")}>
-              Send now
-            </button>
-            <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => runAction(r.id, { action: "archive" }, "Archived.")}>
-              Archive
-            </button>
-          </>
-        )}
-        {st === "sent" && (
-          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => runAction(r.id, { action: "archive" }, "Archived.")}>
-            Archive
-          </button>
-        )}
-        <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAnnouncement(r.id)}>
-          Delete
-        </button>
-      </div>
-    );
-  }
+  const actionMenuItems = useMemo(() => {
+    if (!actionTarget || !canManageRow(actionTarget)) return [];
+    const st = workflowRowStatus(actionTarget);
+    const items = [];
+
+    if (st === "draft") {
+      items.push({
+        id: "send",
+        label: "Send",
+        onClick: () => {
+          closeActionMenu();
+          runAction(actionTarget.id, { action: "send" }, "Sent.");
+        },
+      });
+    }
+    if (st === "scheduled") {
+      items.push({
+        id: "send",
+        label: "Send now",
+        onClick: () => {
+          closeActionMenu();
+          runAction(actionTarget.id, { action: "send" }, "Sent now.");
+        },
+      });
+    }
+    if (st === "draft" || st === "scheduled" || st === "sent") {
+      items.push({
+        id: "archive",
+        label: "Archive",
+        onClick: () => {
+          closeActionMenu();
+          runAction(actionTarget.id, { action: "archive" }, "Archived.");
+        },
+      });
+    }
+    items.push({
+      id: "delete",
+      label: "Delete",
+      danger: true,
+      onClick: () => {
+        closeActionMenu();
+        removeAnnouncement(actionTarget.id);
+      },
+    });
+    return items;
+  }, [actionTarget, admin?.id]);
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Announcements</h2>
-          <p className="sa-text-muted sa-text-sm">
-            Broadcast to members, leaders, or admins by email and/or SMS. SMS delivery requires provider setup on the server.
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Announcements</h2>
+          <p className="sa-text-muted sa-text-sm" style={{ margin: "6px 0 0", maxWidth: 520, lineHeight: 1.55 }}>
+            Broadcast to members, leaders, or admins by email and/or SMS.
           </p>
         </div>
-        {canCreate && (
+        {canCreate ? (
           <button type="button" className="sa-btn sa-btn-primary" onClick={() => setShowCreate(true)}>
             + Create announcement
           </button>
-        )}
+        ) : null}
       </div>
 
       <div className="sa-card">
-        <div className="sa-card-body sa-ann-toolbar">
-          <div>
-            <div className="sa-ann-toolbar-title">General</div>
-            <p className="sa-text-muted sa-text-sm" style={{ margin: "6px 0 0", maxWidth: 520 }}>
-              All announcements appear here — drafts, scheduled, sent, and archived together. Narrow the table with status below.
-            </p>
-          </div>
-          <div className="sa-ann-toolbar-filters">
-            <label htmlFor="ann-status-filter" className="sa-sr-only">
-              Filter by status
-            </label>
-            <select
-              id="ann-status-filter"
-              className="sa-select sa-ann-status-select"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">Status: All</option>
-              <option value="sent">Sent</option>
-              <option value="draft">Draft</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="archived">Archived</option>
-            </select>
-          </div>
-        </div>
-
+        <AnnouncementStatusTabs active={statusTab} onChange={setStatusTab} counts={tabCounts} />
         <div className="sa-table-wrap">
           {loading ? (
             <div className="sa-loading">
@@ -340,27 +388,31 @@ export function Announcements() {
           ) : filtered.length === 0 ? (
             <div className="sa-empty">
               <div className="sa-empty-text">
-                {statusFilter ? `No announcements with status “${statusLabel(statusFilter)}”.` : "No announcements yet."}
+                {geo.hasFilters
+                  ? `No ${statusLabel(statusTab).toLowerCase()} announcements match the scope filters above.`
+                  : `No ${statusLabel(statusTab).toLowerCase()} announcements yet.`}
               </div>
+              {geo.hasFilters ? (
+                <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" style={{ marginTop: 12 }} onClick={geo.clear}>
+                  Clear scope filters
+                </button>
+              ) : null}
             </div>
           ) : (
-            <table className="sa-table">
+            <table className="sa-table sa-table-admins-simple">
               <thead>
                 <tr>
                   <th>Message title</th>
                   <th>Destination</th>
                   <th>Message</th>
                   <th>Email / SMS</th>
-                  <th>Status</th>
                   <th>Timeline</th>
                   <th>By</th>
-                  <th>Actions</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((r) => {
-                  const st = workflowRowStatus(r);
-                  const badgeCls = statusBadgeClass(st);
                   const time = timelineCell(r);
                   return (
                     <tr key={r.id}>
@@ -368,9 +420,6 @@ export function Announcements() {
                       <td className="sa-text-sm sa-text-muted">{formatDestination(r, unitNames)}</td>
                       <td style={{ maxWidth: 280 }}>{r.body}</td>
                       <td>{formatMedium(r)}</td>
-                      <td>
-                        <span className={`sa-badge ${badgeCls}`}>{statusLabel(st)}</span>
-                      </td>
                       <td className="sa-text-sm">
                         <div className="sa-text-muted" style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>
                           {time.hint}
@@ -378,7 +427,13 @@ export function Announcements() {
                         <div>{time.primary}</div>
                       </td>
                       <td className="sa-text-sm">{r.created_by_name || "—"}</td>
-                      <td>{renderActions(r)}</td>
+                      <td>
+                        {canManageRow(r) ? (
+                          <AdminRowActionsTrigger onOpen={(e) => openActions(e, r)} label="Action" />
+                        ) : (
+                          <span className="sa-text-muted sa-text-sm">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -387,6 +442,13 @@ export function Announcements() {
           )}
         </div>
       </div>
+
+      <AdminRowActionsMenu
+        open={!!actionMenu.id}
+        anchorEl={actionMenu.anchor}
+        onClose={closeActionMenu}
+        items={actionMenuItems}
+      />
 
       {showCreate ? (
         <AnnouncementCreateModal

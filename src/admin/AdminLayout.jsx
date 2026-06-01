@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar.jsx";
+import { AdminBrandLogo } from "./components/AdminBrandLogo.jsx";
+import { GlobalAdminGeoFilterBar } from "./components/GlobalAdminGeoFilterBar.jsx";
+import { AdminGeoFilterProvider } from "./AdminGeoFilterContext.jsx";
+import { AdminViewModeFloat } from "./components/AdminViewModeFloat.jsx";
 import { Overview } from "./pages/Overview.jsx";
 import { Queue } from "./pages/Queue.jsx";
 import { ServiceUnits } from "./pages/ServiceUnits.jsx";
@@ -15,9 +19,7 @@ import { DataEntryLocationForm } from "./pages/DataEntryLocationForm.jsx";
 import { SatelliteUnitRequest } from "./pages/SatelliteUnitRequest.jsx";
 import { BranchCatalog } from "./pages/BranchCatalog.jsx";
 import { Announcements } from "./pages/Announcements.jsx";
-import { CountryWorkforce } from "./pages/CountryWorkforce.jsx";
 import { CountryUsers } from "./pages/CountryUsers.jsx";
-import { StateWorkforce } from "./pages/StateWorkforce.jsx";
 import { StateUsers } from "./pages/StateUsers.jsx";
 import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
@@ -30,6 +32,7 @@ import {
   isStateLevelUi,
   normalizePageForViewMode,
   normalizeStateAdminPage,
+  canSwitchAdminView,
 } from "./adminViewMode.js";
 
 const PAGE_TITLES_DEFAULT = {
@@ -212,14 +215,18 @@ export function AdminLayout() {
       admin?.role === "state_super_admin");
 
   return (
+    <AdminGeoFilterProvider admin={admin}>
     <div className="sa-root" data-theme={theme}>
       <Sidebar page={page} setPage={setPage} pendingCount={pendingCount} requestOpenCount={openRequestCount} />
 
       <div className="sa-main">
         <div className="sa-topbar">
-          <div className="sa-page-title-block">
-            <div className="sa-page-title">{getPageTitle(page, uiRole)}</div>
-            {showLeaderScope ? <div className="sa-page-scope">{leaderScope}</div> : null}
+          <div className="sa-topbar-left">
+            <AdminBrandLogo variant="topbar" className="sa-topbar-logo-mobile" />
+            <div className="sa-page-title-block">
+              <div className="sa-page-title">{getPageTitle(page, uiRole)}</div>
+              {showLeaderScope ? <div className="sa-page-scope">{leaderScope}</div> : null}
+            </div>
           </div>
           <div className="sa-topbar-right">
             <button
@@ -235,7 +242,11 @@ export function AdminLayout() {
           </div>
         </div>
 
-        {actingAsState && admin?.branch_state ? (
+        <GlobalAdminGeoFilterBar />
+
+        <AdminViewModeFloat setPage={setPage} />
+
+        {actingAsState && admin?.branch_state && !canSwitchAdminView(admin) ? (
           <div className="sa-state-view-banner" role="status">
             <span className="sa-state-view-banner-label">State branch dashboard</span>
             <span>
@@ -244,7 +255,6 @@ export function AdminLayout() {
                 ? ` · ${branchCountryLabel(admin.branch_country)}`
                 : ""}
             </span>
-            <span className="sa-text-muted sa-text-sm">Country-wide tools are hidden. Toggle off in the sidebar to return to Country Admin.</span>
           </div>
         ) : null}
 
@@ -268,22 +278,17 @@ export function AdminLayout() {
           {page === "activity"  && <ActivityLog />}
           {page === "oversight" && <BranchOversight units={units} />}
           {page === "announcements" && <Announcements />}
-          {page === "workforce" && isCountrySuperAdmin(admin?.role) && !actingAsState && (
-            <CountryWorkforce admins={admins} reload={loadAdmins} setPage={setPage} />
-          )}
           {page === "users" && isCountrySuperAdmin(admin?.role) && !actingAsState && (
-            <CountryUsers admins={admins} reload={loadAdmins} />
-          )}
-          {page === "workforce" && isStateLevelUi(admin, viewMode) && (
-            <StateWorkforce admins={admins} reload={loadAdmins} setPage={setPage} />
+            <CountryUsers admins={admins} reload={loadAdmins} setPage={setPage} />
           )}
           {page === "users" && isStateLevelUi(admin, viewMode) && (
-            <StateUsers admins={admins} reload={loadAdmins} />
+            <StateUsers admins={admins} reload={loadAdmins} setPage={setPage} />
           )}
           {page === "settings"  && canPlatformSettings && <Settings />}
           {page === "profile"   && !canPlatformSettings && <ProfileSettings />}
         </div>
       </div>
     </div>
+    </AdminGeoFilterProvider>
   );
 }

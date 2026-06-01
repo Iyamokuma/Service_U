@@ -14,7 +14,7 @@ import {
 } from "../stateAdminForm.js";
 import { exportCsv } from "../exportCsv.js";
 
-export function CountryWorkforce({ admins: adminsPayload, reload, setPage }) {
+export function CountryWorkforce({ admins: adminsPayload, reload, setPage, embedded = false, onAssignVacant }) {
   const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
   const countryLabel = branchCountryLabel(countryCode);
@@ -114,49 +114,58 @@ export function CountryWorkforce({ admins: adminsPayload, reload, setPage }) {
 
   return (
     <>
-      <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
-        <div>
-          <h1 className="sa-admins-title">Workforce</h1>
-          <p className="sa-admins-subtitle">
-            State-level leadership coverage across {countryLabel || "your country"}. Each state needs one leader —
-            either a State Branch Admin you appoint, or your own headquarters state if you serve in both roles.
-            Manage accounts on the Users tab.
+      {!embedded ? (
+        <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
+          <div>
+            <h1 className="sa-admins-title">Workforce</h1>
+            <p className="sa-admins-subtitle">
+              State-level leadership coverage across {countryLabel || "your country"}. Each state needs one leader —
+              either a State Branch Admin you appoint, or your own headquarters state if you serve in both roles.
+            </p>
+          </div>
+          <div className="sa-admins-hero-actions">
+            <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
+              Export CSV
+            </button>
+          </div>
+        </header>
+      ) : (
+        <div className="sa-admins-panel-toolbar" style={{ marginBottom: 12 }}>
+          <p className="sa-users-meta" style={{ margin: 0, flex: 1 }}>
+            {stats.statesTotal} states · {stats.statesCovered} covered · {stats.statesVacant} vacant
           </p>
-        </div>
-        <div className="sa-admins-hero-actions">
-          <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
+          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
             Export CSV
           </button>
-          <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("users")}>
-            Manage users
-          </button>
         </div>
-      </header>
+      )}
 
-      <div className="sa-stat-grid" style={{ marginBottom: 20 }}>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">States in country</span>
+      {!embedded ? (
+        <div className="sa-stat-grid" style={{ marginBottom: 20 }}>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">States in country</span>
+            </div>
+            <div className="sa-stat-value">{stats.statesTotal}</div>
           </div>
-          <div className="sa-stat-value">{stats.statesTotal}</div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">States covered</span>
+            </div>
+            <div className="sa-stat-value">{stats.statesCovered}</div>
+            <div className="sa-stat-trend">With an assigned leader</div>
+          </div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Vacant states</span>
+            </div>
+            <div className="sa-stat-value">{stats.statesVacant}</div>
+            <div className="sa-stat-trend">
+              {stats.statesVacant > 0 ? "Appoint leaders on Users" : "All states covered"}
+            </div>
+          </div>
         </div>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">States covered</span>
-          </div>
-          <div className="sa-stat-value">{stats.statesCovered}</div>
-          <div className="sa-stat-trend">With an assigned leader</div>
-        </div>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">Vacant states</span>
-          </div>
-          <div className="sa-stat-value">{stats.statesVacant}</div>
-          <div className="sa-stat-trend">
-            {stats.statesVacant > 0 ? "Appoint leaders on Users" : "All states covered"}
-          </div>
-        </div>
-      </div>
+      ) : null}
 
       <div className="sa-card">
         <div className="sa-card-head sa-admins-card-head">
@@ -232,6 +241,16 @@ export function CountryWorkforce({ admins: adminsPayload, reload, setPage }) {
                     <td className="sa-text-sm sa-text-muted">{r.leaderType}</td>
                     <td>
                       <span className={`sa-badge ${r.vacant ? "in_review" : "active"}`}>{r.status}</span>
+                      {r.vacant && onAssignVacant ? (
+                        <button
+                          type="button"
+                          className="sa-btn sa-btn-outline sa-btn-sm"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => onAssignVacant(r.code)}
+                        >
+                          Assign
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

@@ -26,6 +26,7 @@ export function SatellitePastorAdminModal({
   pendingRequests = [],
   initialSatellite = "",
   editData = null,
+  reassignOnly = false,
 }) {
   const isEdit = !!editData?.id;
   const cc = String(countryCode || "").toUpperCase();
@@ -110,7 +111,9 @@ export function SatellitePastorAdminModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit Satellite Pastor Admin" : "New Satellite Pastor Admin"}
+      title={
+        reassignOnly ? "Reassign Satellite Pastor Admin" : isEdit ? "Edit Satellite Pastor Admin" : "New Satellite Pastor Admin"
+      }
       size="md"
       footer={
         <>
@@ -123,33 +126,39 @@ export function SatellitePastorAdminModal({
             onClick={submit}
             disabled={saving || (!isEdit && satelliteOptions.length === 0 && !initialSatellite)}
           >
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create account"}
+            {saving ? "Saving…" : reassignOnly ? "Save reassignment" : isEdit ? "Save changes" : "Create account"}
           </button>
         </>
       }
     >
       <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-        Assign one Satellite Pastor Admin per church in{" "}
-        <strong>
-          {branchStateLabel(cc, st) || st}, {branchCountryLabel(cc) || cc}
-        </strong>
-        . They manage team leaders and registrations for that satellite only.
+        {reassignOnly
+          ? "Move this pastor admin to a different satellite church in your state."
+          : `Assign one Satellite Pastor Admin per church in ${branchStateLabel(cc, st) || st}, ${branchCountryLabel(cc) || cc}.`}
       </p>
-      <div className="sa-form-row">
-        <div className="sa-field">
-          <label className="sa-label">Country</label>
-          <input className="sa-input" value={branchCountryLabel(cc) || cc} disabled readOnly />
+      {reassignOnly && isEdit ? (
+        <div className="sa-field" style={{ marginBottom: 16 }}>
+          <label className="sa-label">Admin</label>
+          <input className="sa-input" value={form.full_name} disabled readOnly />
         </div>
-        <div className="sa-field">
-          <label className="sa-label">State / region</label>
-          <input className="sa-input" value={branchStateLabel(cc, st) || st} disabled readOnly />
+      ) : null}
+      {!reassignOnly ? (
+        <div className="sa-form-row">
+          <div className="sa-field">
+            <label className="sa-label">Country</label>
+            <input className="sa-input" value={branchCountryLabel(cc) || cc} disabled readOnly />
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">State / region</label>
+            <input className="sa-input" value={branchStateLabel(cc, st) || st} disabled readOnly />
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="sa-field">
         <label className="sa-label">
           Satellite church <span className="sa-required">*</span>
         </label>
-        {isEdit ? (
+        {isEdit && !reassignOnly ? (
           <input className="sa-input" value={form.satellite_site} disabled readOnly />
         ) : (
           <SearchableDropdown
@@ -174,54 +183,58 @@ export function SatellitePastorAdminModal({
           <div className="sa-field-hint">Every satellite in this state already has a pastor admin assigned.</div>
         )}
       </div>
-      <div className="sa-form-row">
-        <div className="sa-field">
-          <label className="sa-label">
-            Full name <span className="sa-required">*</span>
-          </label>
-          <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
-        </div>
-        <div className="sa-field">
-          <label className="sa-label">
-            Username {!isEdit && <span className="sa-required">*</span>}
-          </label>
-          <input
-            className="sa-input"
-            value={form.username}
-            onChange={set("username")}
-            placeholder="ng.la.ikeja.pastor"
-            disabled={isEdit}
-          />
-        </div>
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">
-          Email <span className="sa-required">*</span>
-        </label>
-        <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">
-          {isEdit ? "New password (optional)" : "Password"}{" "}
-          {!isEdit && <span className="sa-required">*</span>}
-        </label>
-        <input
-          className="sa-input"
-          type="password"
-          value={form.password}
-          onChange={set("password")}
-          placeholder="Min 8 characters"
-        />
-      </div>
-      {isEdit && (
-        <div className="sa-field">
-          <label className="sa-label">Status</label>
-          <select className="sa-field-select" value={form.is_active} onChange={set("is_active")}>
-            <option value={1}>Active</option>
-            <option value={0}>Inactive</option>
-          </select>
-        </div>
-      )}
+      {!reassignOnly ? (
+        <>
+          <div className="sa-form-row">
+            <div className="sa-field">
+              <label className="sa-label">
+                Full name <span className="sa-required">*</span>
+              </label>
+              <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">
+                Username {!isEdit && <span className="sa-required">*</span>}
+              </label>
+              <input
+                className="sa-input"
+                value={form.username}
+                onChange={set("username")}
+                placeholder="ng.la.ikeja.pastor"
+                disabled={isEdit}
+              />
+            </div>
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">
+              Email <span className="sa-required">*</span>
+            </label>
+            <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">
+              {isEdit ? "New password (optional)" : "Password"}{" "}
+              {!isEdit && <span className="sa-required">*</span>}
+            </label>
+            <input
+              className="sa-input"
+              type="password"
+              value={form.password}
+              onChange={set("password")}
+              placeholder="Min 8 characters"
+            />
+          </div>
+          {isEdit ? (
+            <div className="sa-field">
+              <label className="sa-label">Status</label>
+              <select className="sa-field-select" value={form.is_active} onChange={set("is_active")}>
+                <option value={1}>Active</option>
+                <option value={0}>Inactive</option>
+              </select>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </Modal>
   );
 }

@@ -3,6 +3,13 @@ import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { StateBranchAdminModal } from "../components/StateBranchAdminModal.jsx";
+import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
+import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../components/adminRowMenuItems.js";
+import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
+import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
+import { CountryAdminHqSettings } from "../components/CountryAdminHqSettings.jsx";
+import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
+import { CountryWorkforce } from "./CountryWorkforce.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
 import { countryAdminHomeState } from "../roles.js";
 import {
@@ -12,28 +19,34 @@ import {
 } from "../stateAdminForm.js";
 import { exportCsv } from "../exportCsv.js";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function fmtDate(str) {
-  if (!str) return "Never";
-  const d = new Date(str);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+function adminLocationLabel(admin, countryCode) {
+  const cc = branchCountryLabel(admin.branch_country || countryCode);
+  if (admin.role === "country_super_admin") {
+    const hq = branchStateLabel(admin.branch_country || countryCode, admin.branch_state);
+    return hq ? `${hq} (HQ) · ${cc || countryCode}` : cc ? `${cc} — National oversight` : "National oversight";
+  }
+  const st = branchStateLabel(admin.branch_country || countryCode, admin.branch_state);
+  if (st && cc) return `${st}, ${cc}`;
+  return st || cc || "—";
 }
 
-export function CountryUsers({ admins: adminsPayload, reload }) {
+export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
   const toast = useToast();
   const { admin: me, refreshAdmin } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
   const countryLabel = branchCountryLabel(countryCode);
   const myHomeState = countryAdminHomeState(me);
 
+  const [sectionTab, setSectionTab] = useState("admins");
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [stateModal, setStateModal] = useState(null);
+  const [reassignOnly, setReassignOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingHome, setSavingHome] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [homeStateDraft, setHomeStateDraft] = useState(myHomeState);
+  const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
 
   const allAdmins = adminsPayload?.data ?? [];
 
@@ -47,18 +60,23 @@ export function CountryUsers({ admins: adminsPayload, reload }) {
     [countryAdmins],
   );
 
+  /** Country Admin (you) first, then State Branch Admins in this country. */
+  const countryAdminSelf = useMemo(() => {
+    if (me?.role !== "country_super_admin") return null;
+    return countryAdmins.find((a) => Number(a.id) === Number(me?.id)) || me;
+  }, [countryAdmins, me]);
+
+  const managedAdmins = useMemo(() => {
+    const others = stateBranchAdmins
+      .filter((a) => !countryAdminSelf || Number(a.id) !== Number(countryAdminSelf.id))
+      .sort((a, b) => String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" }));
+    return countryAdminSelf ? [countryAdminSelf, ...others] : others;
+  }, [countryAdminSelf, stateBranchAdmins]);
+
   const loadPending = useCallback(() => {
     api
       .requests({ per_page: 200, page: 1 })
-      .then((res) => {
-        setPendingRequests(
-          (res.data || []).filter(
-            (r) =>
-              r.request_type === "admin_account" &&
-              (r.status === "open" || r.status === "in_review"),
-          ),
-        );
-      })
+      .then((res) => setPendingRequests(res.data || []))
       .catch(() => setPendingRequests([]));
   }, []);
 
@@ -82,14 +100,42 @@ export function CountryUsers({ admins: adminsPayload, reload }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return stateBranchAdmins.filter((a) => {
+    return managedAdmins.filter((a) => {
       if (!showInactive && Number(a.is_active) !== 1) return false;
       if (!q) return true;
-      const stateLabel = branchStateLabel(a.branch_country, a.branch_state) || a.branch_state || "";
-      const hay = [a.full_name, a.username, a.email, stateLabel].join(" ").toLowerCase();
+      const loc = adminLocationLabel(a, countryCode);
+      const hay = [a.full_name, a.username, a.email, loc, a.role === "country_super_admin" ? "country admin default" : ""]
+        .join(" ")
+        .toLowerCase();
       return hay.includes(q);
     });
-  }, [stateBranchAdmins, search, showInactive]);
+  }, [managedAdmins, search, showInactive, countryCode]);
+
+  const actionTarget = useMemo(
+    () => managedAdmins.find((a) => Number(a.id) === Number(actionMenu.id)),
+    [managedAdmins, actionMenu.id],
+  );
+
+  const isSelfRow = (row) => countryAdminSelf && Number(row?.id) === Number(countryAdminSelf.id);
+
+  function closeActionMenu() {
+    setActionMenu({ id: null, anchor: null });
+  }
+
+  function openActions(e, row) {
+    e.stopPropagation();
+    if (actionMenu.id === row.id) {
+      closeActionMenu();
+      return;
+    }
+    setActionMenu({ id: row.id, anchor: e.currentTarget });
+  }
+
+  function goAssignVacant(stateCode) {
+    setSectionTab("admins");
+    setReassignOnly(false);
+    setStateModal({ initialState: stateCode });
+  }
 
   async function saveStateAdmin(form, validationError) {
     if (validationError) {
@@ -104,6 +150,7 @@ export function CountryUsers({ admins: adminsPayload, reload }) {
       else await api.createAdmin(payload);
       toast(form.id ? "State Branch Admin updated." : "State Branch Admin created.", "success");
       setStateModal(null);
+      setReassignOnly(false);
       reload?.();
       loadPending();
     } catch (e) {
@@ -114,9 +161,30 @@ export function CountryUsers({ admins: adminsPayload, reload }) {
   }
 
   async function toggleActive(row) {
+    closeActionMenu();
+    const activating = !isAdminActive(row);
     try {
-      await api.updateAdmin(row.id, { is_active: row.is_active ? 0 : 1, viewer: me });
-      toast(row.is_active ? "Account deactivated." : "Account activated.", "success");
+      await api.updateAdmin(row.id, { is_active: nextAdminActiveValue(row), viewer: me });
+      toast(activating ? "Account activated." : "Account deactivated.", "success");
+      reload?.();
+      loadPending();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function deleteAdmin(row) {
+    closeActionMenu();
+    if (
+      !window.confirm(
+        `Delete ${row.full_name}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.deleteAdmin(row.id, { viewer: me });
+      toast("Admin account deleted.", "success");
       reload?.();
       loadPending();
     } catch (e) {
@@ -147,16 +215,13 @@ export function CountryUsers({ admins: adminsPayload, reload }) {
     exportCsv(filtered, {
       filename: `state-branch-admins-${countryCode}-${new Date().toISOString().slice(0, 10)}.csv`,
       columns: [
-        { key: "full_name", label: "Full Name" },
-        { key: "username", label: "Username" },
-        { key: "email", label: "Email" },
+        { key: "full_name", label: "Name of admin" },
         {
           key: "branch_state",
-          label: "State",
-          format: (v, row) => branchStateLabel(row.branch_country, v) || v || "—",
+          label: "Location of admin",
+          format: (v, row) => adminLocationLabel(row, countryCode),
         },
         { key: "is_active", label: "Status", format: (v) => (Number(v) === 1 ? "Active" : "Inactive") },
-        { key: "last_login", label: "Last login", format: (v) => (v ? fmtDate(v) : "Never") },
       ],
     });
     toast(`Exported ${filtered.length} record${filtered.length !== 1 ? "s" : ""}.`, "success");
@@ -165,213 +230,192 @@ export function CountryUsers({ admins: adminsPayload, reload }) {
   const takenCount = occupiedStateCodes(countryAdmins, pendingRequests, countryCode).size;
   const statesTotal = branchStatesForCountry(countryCode).length;
 
+  const menuItems = useMemo(() => {
+    if (!actionTarget || isSelfRow(actionTarget) || actionTarget.role !== "state_super_admin") {
+      return [];
+    }
+    return buildAdminRowMenuItems({
+      row: actionTarget,
+      includeReassign: false,
+      onEdit: () => {
+        setReassignOnly(false);
+        setStateModal(actionTarget);
+      },
+      onToggleActive: () => toggleActive(actionTarget),
+      onDelete: () => deleteAdmin(actionTarget),
+    });
+  }, [actionTarget, actionTarget?.is_active, countryAdminSelf, me?.id]);
+
+  const activeStateAdminCount = stateBranchAdmins.filter((a) => Number(a.is_active) === 1).length;
+
   return (
     <>
-      <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
-        <div>
+      <header className="sa-users-page-head">
+        <div className="sa-users-page-head-top">
           <h1 className="sa-admins-title">Users</h1>
-          <p className="sa-admins-subtitle">
-            State Branch Admins for {countryLabel || "your country"}. You oversee all states nationally; optionally
-            designate one state as your headquarters where you also act as State Branch Admin.
-          </p>
+          {sectionTab === "admins" ? (
+            <div className="sa-users-page-actions">
+              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
+                Export CSV
+              </button>
+              {vacantStates.length > 0 ? (
+                <button
+                  type="button"
+                  className="sa-btn sa-btn-primary sa-btn-sm"
+                  onClick={() => {
+                    setReassignOnly(false);
+                    setStateModal({});
+                  }}
+                >
+                  + New State Branch Admin
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        <div className="sa-admins-hero-actions">
-          <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
-            Export CSV
-          </button>
-          {vacantStates.length > 0 && (
-            <button type="button" className="sa-btn sa-btn-primary" onClick={() => setStateModal({})}>
-              + New State Branch Admin
-            </button>
-          )}
+        <div className="sa-users-page-head-tabs">
+          <UsersSectionTabs active={sectionTab} onChange={setSectionTab} />
         </div>
+        <UsersPageMeta
+          items={[
+            `${activeStateAdminCount} active state admin${activeStateAdminCount !== 1 ? "s" : ""}`,
+            `${takenCount}/${statesTotal} states covered`,
+            vacantStates.length
+              ? `${vacantStates.length} vacant state${vacantStates.length !== 1 ? "s" : ""}`
+              : "All states covered",
+          ]}
+        />
       </header>
 
-      <div className="sa-card" style={{ marginBottom: 20 }}>
-        <div className="sa-card-head">
-          <span className="sa-card-title">Your headquarters state (optional)</span>
-        </div>
-        <div className="sa-card-body">
-          <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", maxWidth: 640, lineHeight: 1.55 }}>
-            Your headquarters state is set when your Country Admin account is created (or assigned automatically on
-            first login). You oversee all states nationally from here, and use the sidebar toggle to switch into State
-            Branch Admin tools for this state. That state cannot have a separate State Branch Admin account.
-          </p>
-          <div className="sa-form-row" style={{ alignItems: "flex-end", maxWidth: 520 }}>
-            <div className="sa-field" style={{ flex: 1 }}>
-              <label className="sa-label">Headquarters state</label>
-              <select
-                className="sa-field-select"
-                value={homeStateDraft}
-                onChange={(e) => setHomeStateDraft(e.target.value)}
-              >
-                <option value="">None — country oversight only</option>
-                {homeStateOptions.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button
-              type="button"
-              className="sa-btn sa-btn-primary"
-              onClick={saveHomeState}
-              disabled={savingHome || homeStateDraft === myHomeState}
-            >
-              {savingHome ? "Saving…" : "Save headquarters"}
-            </button>
-          </div>
-          {myHomeState && (
-            <p className="sa-text-sm sa-text-muted" style={{ margin: "12px 0 0" }}>
-              Current headquarters:{" "}
-              <strong>{branchStateLabel(countryCode, myHomeState) || myHomeState}</strong> — you appear as leader for
-              this state on Workforce. Use the <strong>Country / State</strong> switch in the sidebar to manage satellite
-              pastor admins for this state on Workforce and Users.
-            </p>
-          )}
-        </div>
-      </div>
+      <UsersPendingQueue
+        compact
+        requests={pendingRequests}
+        onOpenQueue={() => setPage?.("oversight")}
+      />
 
-      <div className="sa-stat-grid" style={{ marginBottom: 20 }}>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">State Branch Admins</span>
-          </div>
-          <div className="sa-stat-value">
-            {stateBranchAdmins.filter((a) => Number(a.is_active) === 1).length}
-          </div>
-          <div className="sa-stat-trend">Active accounts</div>
-        </div>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">States covered</span>
-          </div>
-          <div className="sa-stat-value">
-            {takenCount}/{statesTotal}
-          </div>
-          <div className="sa-stat-trend">Including your HQ if set</div>
-        </div>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">Vacant states</span>
-          </div>
-          <div className="sa-stat-value">{vacantStates.length}</div>
-        </div>
-      </div>
-
-      <div className="sa-card">
-        <div className="sa-card-head sa-admins-card-head">
-          <div>
-            <div className="sa-card-title">State Branch Admins</div>
-            <p className="sa-admins-card-meta sa-text-muted sa-text-sm" style={{ margin: "4px 0 0" }}>
-              One active account per state. They create and manage satellite pastor admins in their state.
-            </p>
-          </div>
-        </div>
-        <div className="sa-admins-filters" role="toolbar" aria-label="Filter users">
-          <div className="sa-search">
-            <span className="sa-search-icon" aria-hidden>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-            </span>
-            <input
-              type="search"
-              placeholder="Search name, email, state…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <label className="sa-field-toggle">
-            <span className="sa-field-toggle-label">Show inactive</span>
-            <span className="sa-switch">
+      {sectionTab === "workforce" ? (
+        <CountryWorkforce
+          embedded
+          admins={adminsPayload}
+          reload={reload}
+          onAssignVacant={goAssignVacant}
+        />
+      ) : (
+        <div className="sa-card">
+          <div className="sa-admins-filters" role="toolbar" aria-label="Filter admins">
+            <div className="sa-search">
+              <span className="sa-search-icon" aria-hidden>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </span>
               <input
-                type="checkbox"
-                role="switch"
-                checked={showInactive}
-                onChange={(e) => setShowInactive(e.target.checked)}
+                type="search"
+                placeholder="Search name or location…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
               />
-              <span className="sa-switch-ui" aria-hidden />
-            </span>
-          </label>
-          <span className="sa-admins-filter-count">
-            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-        <div className="sa-table-wrap">
-          {filtered.length === 0 ? (
-            <div className="sa-empty">
-              <div className="sa-empty-text">
-                {stateBranchAdmins.length === 0
-                  ? "No State Branch Admins yet. Create one for each state you want to assign."
-                  : "No accounts match your filters."}
-              </div>
             </div>
-          ) : (
-            <table className="sa-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>State</th>
-                  <th>Status</th>
-                  <th>Last login</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((a) => (
-                  <tr key={a.id}>
-                    <td>
-                      <div className="sa-fw-600">{a.full_name}</div>
-                      <div className="sa-text-sm sa-text-muted">{a.username}</div>
-                    </td>
-                    <td className="sa-text-sm">
-                      {branchStateLabel(a.branch_country, a.branch_state) || a.branch_state || "—"}
-                    </td>
-                    <td>
-                      <span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>
-                        {a.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="sa-text-sm sa-text-muted">{fmtDate(a.last_login)}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="sa-btn sa-btn-outline sa-btn-sm"
-                          onClick={() => setStateModal(a)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="sa-btn sa-btn-outline sa-btn-sm"
-                          onClick={() => toggleActive(a)}
-                        >
-                          {a.is_active ? "Deactivate" : "Activate"}
-                        </button>
-                      </div>
-                    </td>
+            <label className="sa-field-toggle">
+              <span className="sa-field-toggle-label">Show inactive</span>
+              <span className="sa-switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={showInactive}
+                  onChange={(e) => setShowInactive(e.target.checked)}
+                />
+                <span className="sa-switch-ui" aria-hidden />
+              </span>
+            </label>
+            <span className="sa-admins-filter-count">
+              {filtered.length} admin{filtered.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="sa-table-wrap">
+            {filtered.length === 0 ? (
+              <div className="sa-empty">
+                <div className="sa-empty-text">
+                  {managedAdmins.length === 0
+                    ? "No administrators in this country yet."
+                    : "No accounts match your filters."}
+                </div>
+              </div>
+            ) : (
+              <table className="sa-table sa-table-admins-simple">
+                <thead>
+                  <tr>
+                    <th>Name of admin</th>
+                    <th>Location of admin</th>
+                    <th>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {filtered.map((a) => (
+                    <tr key={a.id}>
+                      <td>
+                        <div className="sa-fw-600">{a.full_name}</div>
+                        <div className="sa-text-sm sa-text-muted">{a.username}</div>
+                        {isSelfRow(a) ? (
+                          <span className="sa-badge viewer" style={{ marginTop: 6 }}>
+                            Default admin
+                          </span>
+                        ) : null}
+                        {Number(a.is_active) !== 1 ? (
+                          <span className="sa-badge inactive" style={{ marginTop: 6 }}>
+                            Inactive
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
+                      <td>
+                        {isSelfRow(a) || a.role !== "state_super_admin" ? (
+                          <span className="sa-text-muted sa-text-sm">—</span>
+                        ) : (
+                          <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      <AdminRowActionsMenu
+        open={!!actionMenu.id}
+        anchorEl={actionMenu.anchor}
+        onClose={closeActionMenu}
+        items={menuItems}
+      />
 
       <StateBranchAdminModal
         open={!!stateModal}
         countryCode={countryCode}
         existingAdmins={countryAdmins}
         pendingRequests={pendingRequests}
-        initialStateCode={stateModal?.initialState || ""}
+        initialStateCode={stateModal?.initialState || stateModal?.branch_state || ""}
         editData={stateModal?.id ? stateModal : null}
         saving={saving}
-        onClose={() => setStateModal(null)}
+        onClose={() => {
+          setStateModal(null);
+          setReassignOnly(false);
+        }}
         onSave={saveStateAdmin}
+        reassignOnly={reassignOnly}
+      />
+
+      <CountryAdminHqSettings
+        countryCode={countryCode}
+        homeStateDraft={homeStateDraft}
+        homeStateOptions={homeStateOptions}
+        myHomeState={myHomeState}
+        savingHome={savingHome}
+        onChangeHomeState={setHomeStateDraft}
+        onSave={saveHomeState}
       />
     </>
   );

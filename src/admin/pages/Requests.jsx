@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import {
   branchCountryCodeFromIso2,
@@ -10,6 +10,8 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { roleDisplayLabel } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
+import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
+import { matchesRequestGeo } from "../geoFilterUtils.js";
 
 function parsePayload(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -110,6 +112,7 @@ export function Requests() {
   const toast = useToast();
   const { admin, viewMode } = useAdminAuth();
   const isSuper = admin?.role === "super_admin" || admin?.role === "general_admin";
+  const geo = useAdminGeoFilters();
   const actingAsState = isActingAsStateAdmin(admin, viewMode);
   const isCountryAdmin = admin?.role === "country_super_admin" && !actingAsState;
   const canApprove = isSuper || isCountryAdmin;
@@ -142,6 +145,11 @@ export function Requests() {
   };
 
   const isTerminal = (status) => status === "rejected" || status === "resolved";
+
+  const visibleRows = useMemo(() => {
+    if (!isSuper || !geo.enabled) return rows;
+    return rows.filter((r) => matchesRequestGeo(r, geo.filters));
+  }, [rows, isSuper, geo.enabled, geo.filters]);
 
   const approve = async (r) => {
     try {
@@ -208,7 +216,14 @@ export function Requests() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
+            {visibleRows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="sa-text-muted sa-text-sm" style={{ padding: 24, textAlign: "center" }}>
+                  {geo.hasFilters ? "No requests match the scope filters above." : "No requests yet."}
+                </td>
+              </tr>
+            ) : null}
+            {visibleRows.map((r) => {
               const p = parsePayload(r.payload);
               const isLoc = r.request_type === "location_catalog";
               const isUnit = r.request_type === "service_unit_proposal";

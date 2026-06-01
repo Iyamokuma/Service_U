@@ -6,7 +6,8 @@ import { Modal } from "../components/Modal.jsx";
 import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
-import { isServiceUnitLeader } from "../roles.js";
+import { isServiceUnitLeader, isGlobalAdminRole } from "../roles.js";
+import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { leaderScopeLabel } from "../leaderScope.js";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
@@ -126,6 +127,8 @@ export function Queue({ units, initialTab = "all" }) {
   const isServiceLeader = isServiceUnitLeader(admin?.role);
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
   const isLeader = isServiceLeader || isSubUnitLeader;
+  const isGlobalAdmin = isGlobalAdminRole(admin?.role);
+  const geo = useAdminGeoFilters();
   const leaderScope = leaderScopeLabel(admin);
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, per_page: 25, total: 0, pages: 1 });
@@ -164,6 +167,7 @@ export function Queue({ units, initialTab = "all" }) {
         viewer: admin,
         unit_id: isServiceLeader || isSubUnitLeader ? admin?.service_unit_id : filters.unit_id,
         sub_unit: subUnitForQueue,
+        ...(isGlobalAdmin ? geo.apiParams : {}),
       };
       delete scoped.overdue_only;
       switch (statusTab) {
@@ -191,7 +195,7 @@ export function Queue({ units, initialTab = "all" }) {
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, statusTab, isLeader]
+    [filters, admin, isServiceLeader, isSubUnitLeader, statusTab, isLeader, isGlobalAdmin, geo.apiParams]
   );
 
   useEffect(() => {
@@ -220,7 +224,7 @@ export function Queue({ units, initialTab = "all" }) {
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
-  }, [filters, statusTab, load, mergedQueueParams]);
+  }, [filters, statusTab, load, mergedQueueParams, geo.apiParams]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const gotoPage = (p) => load(mergedQueueParams(p));

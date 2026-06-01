@@ -11,7 +11,7 @@ import {
 } from "../stateSatelliteForm.js";
 import { exportCsv } from "../exportCsv.js";
 
-export function StateWorkforce({ admins: adminsPayload, reload, setPage }) {
+export function StateWorkforce({ admins: adminsPayload, reload, setPage, embedded = false, onAssignVacant }) {
   const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
   const stateCode = String(me?.branch_state || "").toUpperCase();
@@ -123,49 +123,58 @@ export function StateWorkforce({ admins: adminsPayload, reload, setPage }) {
 
   return (
     <>
-      <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
-        <div>
-          <h1 className="sa-admins-title">Workforce</h1>
-          <p className="sa-admins-subtitle">
-            Satellite pastor coverage for {stateLabel}
-            {countryLabel ? `, ${countryLabel}` : ""}. Each satellite church needs one Satellite Pastor Admin.
-            Create and manage accounts on the Users tab.
+      {!embedded ? (
+        <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
+          <div>
+            <h1 className="sa-admins-title">Workforce</h1>
+            <p className="sa-admins-subtitle">
+              Satellite pastor coverage for {stateLabel}
+              {countryLabel ? `, ${countryLabel}` : ""}. Each satellite church needs one Satellite Pastor Admin.
+            </p>
+          </div>
+          <div className="sa-admins-hero-actions">
+            <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
+              Export CSV
+            </button>
+          </div>
+        </header>
+      ) : (
+        <div className="sa-admins-panel-toolbar" style={{ marginBottom: 12 }}>
+          <p className="sa-users-meta" style={{ margin: 0, flex: 1 }}>
+            {stats.satellitesTotal} satellites · {stats.satellitesCovered} covered · {stats.satellitesVacant} vacant
           </p>
-        </div>
-        <div className="sa-admins-hero-actions">
-          <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
+          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
             Export CSV
           </button>
-          <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("users")}>
-            Manage users
-          </button>
         </div>
-      </header>
+      )}
 
-      <div className="sa-stat-grid" style={{ marginBottom: 20 }}>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">Satellites in state</span>
+      {!embedded ? (
+        <div className="sa-stat-grid" style={{ marginBottom: 20 }}>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Satellites in state</span>
+            </div>
+            <div className="sa-stat-value">{stats.satellitesTotal}</div>
           </div>
-          <div className="sa-stat-value">{stats.satellitesTotal}</div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Satellites covered</span>
+            </div>
+            <div className="sa-stat-value">{stats.satellitesCovered}</div>
+            <div className="sa-stat-trend">With an assigned pastor admin</div>
+          </div>
+          <div className="sa-stat-card">
+            <div className="sa-stat-header">
+              <span className="sa-stat-label">Vacant satellites</span>
+            </div>
+            <div className="sa-stat-value">{stats.satellitesVacant}</div>
+            <div className="sa-stat-trend">
+              {stats.satellitesVacant > 0 ? "Appoint pastors on Users" : "All satellites covered"}
+            </div>
+          </div>
         </div>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">Satellites covered</span>
-          </div>
-          <div className="sa-stat-value">{stats.satellitesCovered}</div>
-          <div className="sa-stat-trend">With an assigned pastor admin</div>
-        </div>
-        <div className="sa-stat-card">
-          <div className="sa-stat-header">
-            <span className="sa-stat-label">Vacant satellites</span>
-          </div>
-          <div className="sa-stat-value">{stats.satellitesVacant}</div>
-          <div className="sa-stat-trend">
-            {stats.satellitesVacant > 0 ? "Appoint pastors on Users" : "All satellites covered"}
-          </div>
-        </div>
-      </div>
+      ) : null}
 
       <div className="sa-card">
         <div className="sa-card-head sa-admins-card-head">
@@ -234,6 +243,16 @@ export function StateWorkforce({ admins: adminsPayload, reload, setPage }) {
                     </td>
                     <td>
                       <span className={`sa-badge ${r.vacant ? "in_review" : "active"}`}>{r.status}</span>
+                      {r.vacant && onAssignVacant ? (
+                        <button
+                          type="button"
+                          className="sa-btn sa-btn-outline sa-btn-sm"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => onAssignVacant(r.name)}
+                        >
+                          Assign
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

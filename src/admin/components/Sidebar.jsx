@@ -1,8 +1,7 @@
 import { useAdminAuth } from "../AdminContext.jsx";
-import { useState } from "react";
 import { leaderScopeLabel } from "../leaderScope.js";
-import { canSwitchAdminView, effectiveUiRole, isActingAsStateAdmin } from "../adminViewMode.js";
-import { branchStateLabel } from "../branchRegions.js";
+import { AdminBrandLogo } from "./AdminBrandLogo.jsx";
+import { effectiveUiRole, isActingAsStateAdmin } from "../adminViewMode.js";
 
 const NAV_SUPER = [
   {
@@ -71,7 +70,6 @@ const NAV_COUNTRY_ADMIN = [
     items: [
       { id: "overview", label: "Country analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
-      { id: "workforce", label: "Workforce", icon: <LayersIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "locations", label: "Locations", icon: <MapPinIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
@@ -88,7 +86,6 @@ const NAV_STATE_ADMIN = [
       { id: "overview", label: "State analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
       { id: "members", label: "Unit members", icon: <UsersIcon /> },
-      { id: "workforce", label: "Workforce", icon: <LayersIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
@@ -136,17 +133,11 @@ const ROLE_LABELS = {
 };
 
 export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
-  const { admin, logout, viewMode, setViewMode } = useAdminAuth();
-  const [logoError, setLogoError] = useState(false);
+  const { admin, logout, viewMode } = useAdminAuth();
   const initials = admin?.full_name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "SA";
   const scope = leaderScopeLabel(admin, viewMode);
   const uiRole = effectiveUiRole(admin, viewMode);
-  const canSwitch = canSwitchAdminView(admin);
   const actingAsState = isActingAsStateAdmin(admin, viewMode);
-  const hqStateLabel =
-    canSwitch && admin?.branch_state
-      ? branchStateLabel(admin.branch_country, admin.branch_state)
-      : "";
 
   const nav =
     uiRole === "super_admin" || uiRole === "general_admin"
@@ -173,44 +164,12 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
   return (
     <aside className="sa-sidebar">
       <div className="sa-sidebar-brand">
-        {!logoError ? (
-          <img className="sa-brand-logo" src="/smh.png" alt="Salvation Ministries logo" onError={() => setLogoError(true)} />
-        ) : (
-          <div className="sa-brand-mark">S</div>
-        )}
+        <AdminBrandLogo variant="sidebar" />
         <div>
           <div className="sa-brand-name">Salvation Ministries</div>
           <div className="sa-brand-sub">{displayRole}</div>
         </div>
       </div>
-
-      {canSwitch && (
-        <div className="sa-role-toggle-wrap">
-          <div className="sa-role-toggle-head">
-            <span className="sa-role-toggle-title">Dashboard view</span>
-            {hqStateLabel ? (
-              <span className="sa-role-toggle-hq sa-text-muted sa-text-sm">{hqStateLabel}</span>
-            ) : null}
-          </div>
-          <label className="sa-role-toggle" title={`Switch to ${viewMode === "state" ? "Country Admin" : "State Branch Admin"} view`}>
-            <span className={`sa-role-toggle-label${viewMode === "country" ? " is-active" : ""}`}>Country</span>
-            <span className="sa-switch">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label="Switch between Country Admin and State Branch Admin dashboard"
-                checked={viewMode === "state"}
-                onChange={(e) => {
-                  setViewMode(e.target.checked ? "state" : "country");
-                  setPage("overview");
-                }}
-              />
-              <span className="sa-switch-ui" aria-hidden />
-            </span>
-            <span className={`sa-role-toggle-label${viewMode === "state" ? " is-active" : ""}`}>State</span>
-          </label>
-        </div>
-      )}
 
       <nav className="sa-nav">
         {nav.map((group) => (

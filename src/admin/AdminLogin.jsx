@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useAdminAuth } from "./AdminContext.jsx";
+import { AdminBrandLogo } from "./components/AdminBrandLogo.jsx";
 
 export function AdminLogin() {
   const { login, loading, error } = useAdminAuth();
   const [form, setForm] = useState({ username: "", password: "" });
-  const [logoError, setLogoError] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -17,19 +17,10 @@ export function AdminLogin() {
     <div className="sa-login-page">
       <form className="sa-login-card" onSubmit={onSubmit}>
         <div className="sa-login-logo">
-          {!logoError ? (
-            <img
-              className="sa-login-mark-logo"
-              src="/smh.png"
-              alt="Salvation Ministries logo"
-              onError={() => setLogoError(true)}
-            />
-          ) : (
-            <div className="sa-login-mark">S</div>
-          )}
+          <AdminBrandLogo variant="login" />
           <div>
             <div className="sa-login-title">Salvation Ministries</div>
-            <div className="sa-login-sub">Super Admin Portal</div>
+            <div className="sa-login-sub">Admin Portal</div>
           </div>
         </div>
 

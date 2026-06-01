@@ -23,6 +23,7 @@ export function StateBranchAdminModal({
   pendingRequests = [],
   initialStateCode = "",
   editData = null,
+  reassignOnly = false,
 }) {
   const isEdit = !!editData?.id;
   const cc = String(countryCode || "").toUpperCase();
@@ -105,7 +106,7 @@ export function StateBranchAdminModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit State Branch Admin" : "New State Branch Admin"}
+      title={reassignOnly ? "Reassign State Branch Admin" : isEdit ? "Edit State Branch Admin" : "New State Branch Admin"}
       size="md"
       footer={
         <>
@@ -118,15 +119,22 @@ export function StateBranchAdminModal({
             onClick={submit}
             disabled={saving || (!isEdit && stateOptions.length === 0 && !initialStateCode)}
           >
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create account"}
+            {saving ? "Saving…" : reassignOnly ? "Save reassignment" : isEdit ? "Save changes" : "Create account"}
           </button>
         </>
       }
     >
       <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-        Assign one State Branch Admin per state in <strong>{countryLabel || cc}</strong>. They manage satellite
-        pastor accounts for their state.
+        {reassignOnly
+          ? "Move this admin to a different state. The previous state becomes vacant."
+          : `Assign one State Branch Admin per state in ${countryLabel || cc}. They manage satellite pastor accounts for their state.`}
       </p>
+      {reassignOnly && isEdit ? (
+        <div className="sa-field" style={{ marginBottom: 16 }}>
+          <label className="sa-label">Admin</label>
+          <input className="sa-input" value={form.full_name} disabled readOnly />
+        </div>
+      ) : null}
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">Country</label>
@@ -136,7 +144,7 @@ export function StateBranchAdminModal({
           <label className="sa-label">
             State / region <span className="sa-required">*</span>
           </label>
-          {isEdit ? (
+          {isEdit && !reassignOnly ? (
             <input className="sa-input" value={editStateLabel || form.branch_state} disabled readOnly />
           ) : (
             <select className="sa-field-select" value={form.branch_state} onChange={set("branch_state")} disabled={!cc}>
@@ -153,57 +161,61 @@ export function StateBranchAdminModal({
           )}
         </div>
       </div>
-      <div className="sa-form-row">
-        <div className="sa-field">
-          <label className="sa-label">
-            Full name <span className="sa-required">*</span>
-          </label>
-          <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
-        </div>
-        <div className="sa-field">
-          <label className="sa-label">
-            Username {!isEdit && <span className="sa-required">*</span>}
-          </label>
-          <input
-            className="sa-input"
-            value={form.username}
-            onChange={set("username")}
-            placeholder="ng.la.admin"
-            disabled={isEdit}
-          />
-          {!isEdit && (
-            <div className="sa-field-hint">Usernames are unique worldwide — use country and state codes.</div>
-          )}
-        </div>
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">
-          Email <span className="sa-required">*</span>
-        </label>
-        <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">
-          {isEdit ? "New password (optional)" : "Password"}{" "}
-          {!isEdit && <span className="sa-required">*</span>}
-        </label>
-        <input
-          className="sa-input"
-          type="password"
-          value={form.password}
-          onChange={set("password")}
-          placeholder="Min 8 characters"
-        />
-      </div>
-      {isEdit && (
-        <div className="sa-field">
-          <label className="sa-label">Status</label>
-          <select className="sa-field-select" value={form.is_active} onChange={set("is_active")}>
-            <option value={1}>Active</option>
-            <option value={0}>Inactive</option>
-          </select>
-        </div>
-      )}
+      {!reassignOnly ? (
+        <>
+          <div className="sa-form-row">
+            <div className="sa-field">
+              <label className="sa-label">
+                Full name <span className="sa-required">*</span>
+              </label>
+              <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">
+                Username {!isEdit && <span className="sa-required">*</span>}
+              </label>
+              <input
+                className="sa-input"
+                value={form.username}
+                onChange={set("username")}
+                placeholder="ng.la.admin"
+                disabled={isEdit}
+              />
+              {!isEdit && (
+                <div className="sa-field-hint">Usernames are unique worldwide — use country and state codes.</div>
+              )}
+            </div>
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">
+              Email <span className="sa-required">*</span>
+            </label>
+            <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">
+              {isEdit ? "New password (optional)" : "Password"}{" "}
+              {!isEdit && <span className="sa-required">*</span>}
+            </label>
+            <input
+              className="sa-input"
+              type="password"
+              value={form.password}
+              onChange={set("password")}
+              placeholder="Min 8 characters"
+            />
+          </div>
+          {isEdit ? (
+            <div className="sa-field">
+              <label className="sa-label">Status</label>
+              <select className="sa-field-select" value={form.is_active} onChange={set("is_active")}>
+                <option value={1}>Active</option>
+                <option value={0}>Inactive</option>
+              </select>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </Modal>
   );
 }
