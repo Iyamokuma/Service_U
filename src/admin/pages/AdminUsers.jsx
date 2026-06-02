@@ -149,6 +149,11 @@ function adminFromRequestPayload(req) {
   return payload.admin && typeof payload.admin === "object" ? payload.admin : {};
 }
 
+function isLeaderAdminRole(role) {
+  const r = String(role || "").trim();
+  return r === "service_unit_leader" || r === "sub_unit_leader";
+}
+
 export function AdminUsers({ data, units, reload }) {
   const toast = useToast();
   const { admin: me, viewMode } = useAdminAuth();
@@ -163,6 +168,9 @@ export function AdminUsers({ data, units, reload }) {
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [countryFilter, setCountryFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState("all");
+  const [satelliteFilter, setSatelliteFilter] = useState("all");
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [pendingAdminRequests, setPendingAdminRequests] = useState([]);
@@ -230,9 +238,15 @@ export function AdminUsers({ data, units, reload }) {
   const admins = useMemo(() => {
     if (!isGlobalAdmin) return visibilityFiltered;
     const q = search.trim().toLowerCase();
+    const countryCode = countryFilter === "all" ? "" : countryFilter;
+    const stateCode = stateFilter === "all" ? "" : stateFilter;
+    const satelliteName = satelliteFilter === "all" ? "" : satelliteFilter;
     const filtered = visibilityFiltered.filter((a) => {
       if (!matchesAdminGeo(a, geo.filters)) return false;
       if (roleFilter !== "all" && a.role !== roleFilter) return false;
+      if (countryCode && String(a.branch_country || "").toUpperCase() !== countryCode) return false;
+      if (stateCode && String(a.branch_state || "").toUpperCase() !== stateCode) return false;
+      if (satelliteName && String(a.satellite_site || "").trim() !== satelliteName) return false;
       if (!q) return true;
       const hay = [
         a.full_name,
@@ -263,7 +277,53 @@ export function AdminUsers({ data, units, reload }) {
       if (rd !== 0) return rd;
       return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" });
     });
-  }, [visibilityFiltered, isGlobalAdmin, search, roleFilter, geo.filters]);
+  }, [
+    visibilityFiltered,
+    isGlobalAdmin,
+    search,
+    roleFilter,
+    countryFilter,
+    stateFilter,
+    satelliteFilter,
+    geo.filters,
+  ]);
+
+  const countryFilterOptions = useMemo(() => {
+    if (!isGlobalAdmin) return [];
+    return [...new Set(visibilityFiltered.map((a) => String(a.branch_country || "").toUpperCase()).filter(Boolean))]
+      .sort((a, b) => (branchCountryLabel(a) || a).localeCompare(branchCountryLabel(b) || b))
+      .map((code) => ({ value: code, label: branchCountryLabel(code) || code }));
+  }, [isGlobalAdmin, visibilityFiltered]);
+
+  const stateFilterOptions = useMemo(() => {
+    if (!isGlobalAdmin) return [];
+    const currentCountry = countryFilter === "all" ? "" : countryFilter;
+    return [...new Set(
+      visibilityFiltered
+        .filter((a) => !currentCountry || String(a.branch_country || "").toUpperCase() === currentCountry)
+        .map((a) => String(a.branch_state || "").toUpperCase())
+        .filter(Boolean),
+    )]
+      .sort((a, b) => {
+        const la = branchStateLabel(currentCountry, a) || a;
+        const lb = branchStateLabel(currentCountry, b) || b;
+        return la.localeCompare(lb);
+      })
+      .map((code) => ({ value: code, label: branchStateLabel(currentCountry, code) || code }));
+  }, [isGlobalAdmin, visibilityFiltered, countryFilter]);
+
+  const satelliteFilterOptions = useMemo(() => {
+    if (!isGlobalAdmin) return [];
+    const currentCountry = countryFilter === "all" ? "" : countryFilter;
+    const currentState = stateFilter === "all" ? "" : stateFilter;
+    return [...new Set(
+      visibilityFiltered
+        .filter((a) => !currentCountry || String(a.branch_country || "").toUpperCase() === currentCountry)
+        .filter((a) => !currentState || String(a.branch_state || "").toUpperCase() === currentState)
+        .map((a) => String(a.satellite_site || "").trim())
+        .filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b));
+  }, [isGlobalAdmin, visibilityFiltered, countryFilter, stateFilter]);
 
   const adminStats = useMemo(() => {
     if (!isGlobalAdmin) return null;
@@ -465,9 +525,12 @@ export function AdminUsers({ data, units, reload }) {
 
     return buildAdminRowMenuItems({
       row: actionTarget,
-      includeReassign: canModifyOthers && isGlobalAdmin,
+      includeReassign: canModifyOthers && isGlobalAdmin && !isLeaderAdminRole(actionTarget.role),
       onEdit: canEdit ? () => openGlobalAdminEdit(actionTarget) : undefined,
-      onReassign: canModifyOthers ? () => openGlobalAdminReassign(actionTarget) : undefined,
+      onReassign:
+        canModifyOthers && !isLeaderAdminRole(actionTarget.role)
+          ? () => openGlobalAdminReassign(actionTarget)
+          : undefined,
       onToggleActive: canModifyOthers
         ? () => {
             closeActionMenu();
@@ -643,6 +706,52 @@ export function AdminUsers({ data, units, reload }) {
                 {ROLES.map((r) => (
                   <option key={r.value} value={r.value}>
                     {r.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="sa-select"
+                value={countryFilter}
+                onChange={(e) => {
+                  setCountryFilter(e.target.value);
+                  setStateFilter("all");
+                  setSatelliteFilter("all");
+                }}
+                aria-label="Filter by country"
+              >
+                <option value="all">All countries</option>
+                {countryFilterOptions.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="sa-select"
+                value={stateFilter}
+                onChange={(e) => {
+                  setStateFilter(e.target.value);
+                  setSatelliteFilter("all");
+                }}
+                aria-label="Filter by state"
+              >
+                <option value="all">All states</option>
+                {stateFilterOptions.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="sa-select"
+                value={satelliteFilter}
+                onChange={(e) => setSatelliteFilter(e.target.value)}
+                aria-label="Filter by satellite"
+              >
+                <option value="all">All satellites</option>
+                {satelliteFilterOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>

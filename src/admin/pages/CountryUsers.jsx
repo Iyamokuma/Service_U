@@ -30,6 +30,17 @@ function adminLocationLabel(admin, countryCode) {
   return st || cc || "—";
 }
 
+function adminRoleLabel(role) {
+  if (role === "country_super_admin") return "Country Admin";
+  if (role === "state_super_admin") return "State Branch Admin";
+  if (role === "satellite_church_admin") return "Satellite Pastor Admin";
+  if (role === "service_unit_leader") return "Service Unit Leader";
+  if (role === "sub_unit_leader") return "Sub-unit Leader";
+  if (role === "general_admin") return "General Admin";
+  if (role === "super_admin") return "Super Admin";
+  return String(role || "—");
+}
+
 export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
   const toast = useToast();
   const { admin: me, refreshAdmin } = useAdminAuth();
@@ -46,6 +57,7 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
   const [savingHome, setSavingHome] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [homeStateDraft, setHomeStateDraft] = useState(myHomeState);
+  const [openHqSignal, setOpenHqSignal] = useState(0);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
 
   const allAdmins = adminsPayload?.data ?? [];
@@ -231,9 +243,22 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
   const statesTotal = branchStatesForCountry(countryCode).length;
 
   const menuItems = useMemo(() => {
-    if (!actionTarget || isSelfRow(actionTarget) || actionTarget.role !== "state_super_admin") {
+    if (!actionTarget) {
       return [];
     }
+    if (isSelfRow(actionTarget)) {
+      return [
+        {
+          id: "manage-hq-state",
+          label: "Manage HQ state",
+          onClick: () => {
+            closeActionMenu();
+            setOpenHqSignal((n) => n + 1);
+          },
+        },
+      ];
+    }
+    if (actionTarget.role !== "state_super_admin") return [];
     return buildAdminRowMenuItems({
       row: actionTarget,
       includeReassign: false,
@@ -258,18 +283,16 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
                 Export CSV
               </button>
-              {vacantStates.length > 0 ? (
-                <button
-                  type="button"
-                  className="sa-btn sa-btn-primary sa-btn-sm"
-                  onClick={() => {
-                    setReassignOnly(false);
-                    setStateModal({});
-                  }}
-                >
-                  + New State Branch Admin
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="sa-btn sa-btn-primary sa-btn-sm"
+                onClick={() => {
+                  setReassignOnly(false);
+                  setStateModal({});
+                }}
+              >
+                + New State Branch Admin
+              </button>
             </div>
           ) : null}
         </div>
@@ -348,7 +371,9 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
                   <tr>
                     <th>Name of admin</th>
                     <th>Location of admin</th>
-                    <th>Action</th>
+                    <th>Status</th>
+                    <th>Role</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -370,11 +395,13 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
                       </td>
                       <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
                       <td>
-                        {isSelfRow(a) || a.role !== "state_super_admin" ? (
-                          <span className="sa-text-muted sa-text-sm">—</span>
-                        ) : (
-                          <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
-                        )}
+                        <span className={`sa-badge ${Number(a.is_active) === 1 ? "active" : "inactive"}`}>
+                          {Number(a.is_active) === 1 ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="sa-text-sm">{adminRoleLabel(a.role)}</td>
+                      <td>
+                        <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
                       </td>
                     </tr>
                   ))}
@@ -414,6 +441,7 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
         homeStateOptions={homeStateOptions}
         myHomeState={myHomeState}
         savingHome={savingHome}
+        forceOpenSignal={openHqSignal}
         onChangeHomeState={setHomeStateDraft}
         onSave={saveHomeState}
       />

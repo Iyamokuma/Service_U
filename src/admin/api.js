@@ -226,11 +226,11 @@ export const api = {
   },
 
   async updateRequest(id, body) {
-    return adminFetch("updateRequest", { id, body });
+    return adminFetch("updateRequest", withScopeParams({ id, body }));
   },
 
   async approveServiceUnitProposal(id) {
-    return adminFetch("approveServiceUnitProposal", { id });
+    return adminFetch("approveServiceUnitProposal", withScopeParams({ id }));
   },
 
   async settings() {

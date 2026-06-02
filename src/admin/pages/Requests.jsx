@@ -117,6 +117,9 @@ export function Requests() {
   const isCountryAdmin = admin?.role === "country_super_admin" && !actingAsState;
   const canApprove = isSuper || isCountryAdmin;
   const [rows, setRows] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   const load = async () => {
     try {
@@ -147,9 +150,32 @@ export function Requests() {
   const isTerminal = (status) => status === "rejected" || status === "resolved";
 
   const visibleRows = useMemo(() => {
-    if (!isSuper || !geo.enabled) return rows;
-    return rows.filter((r) => matchesRequestGeo(r, geo.filters));
-  }, [rows, isSuper, geo.enabled, geo.filters]);
+    const q = String(search || "").trim().toLowerCase();
+    return rows
+      .filter((r) => (isSuper && geo.enabled ? matchesRequestGeo(r, geo.filters) : true))
+      .filter((r) => (statusFilter === "all" ? true : String(r.status || "") === statusFilter))
+      .filter((r) => (typeFilter === "all" ? true : String(r.request_type || "") === typeFilter))
+      .filter((r) => {
+        if (!q) return true;
+        const p = parsePayload(r.payload);
+        const hay = [
+          r.from_name,
+          r.from_role,
+          r.message,
+          r.request_type,
+          p?.admin?.full_name,
+          p?.admin?.username,
+          p?.admin?.email,
+          p?.unitName,
+          p?.stateName,
+          p?.lgaName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      });
+  }, [rows, isSuper, geo.enabled, geo.filters, statusFilter, typeFilter, search]);
 
   const approve = async (r) => {
     try {
@@ -200,6 +226,38 @@ export function Requests() {
             ? "Review and action pending requests from your downline administrators."
             : "Track the status of requests you\u2019ve submitted for approval."}
         </p>
+      </div>
+      <div className="sa-filters">
+        <div className="sa-search" style={{ minWidth: 240 }}>
+          <span className="sa-search-icon" aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </span>
+          <input
+            type="search"
+            placeholder="Search requester, type, details…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <select className="sa-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="all">All types</option>
+          <option value="admin_account">Admin account</option>
+          <option value="service_unit_proposal">Service unit proposal</option>
+          <option value="location_catalog">Location proposal</option>
+          <option value="general">General</option>
+        </select>
+        <select className="sa-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="open">Open</option>
+          <option value="in_review">In review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <span className="sa-text-muted sa-text-sm">{visibleRows.length} request{visibleRows.length !== 1 ? "s" : ""}</span>
       </div>
 
       <div className="sa-table-wrap">
@@ -298,13 +356,6 @@ export function Requests() {
                 </tr>
               );
             })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>
-                  No requests found.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

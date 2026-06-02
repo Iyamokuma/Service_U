@@ -269,7 +269,7 @@ async function notifyGlobalAdminsOfRequest(
   title: string,
   body: string,
 ): Promise<void> {
-  const { data: supers } = await supabase.from("admins").select("id").in("role", ["super_admin", "general_admin"]).eq(
+  const { data: supers } = await supabase.from("admins").select("id,email").in("role", ["super_admin", "general_admin"]).eq(
     "is_active",
     1,
   );
@@ -282,6 +282,31 @@ async function notifyGlobalAdminsOfRequest(
       entity_type: "request",
       entity_id: String(requestId),
     });
+    const email = norm((row as { email?: unknown }).email).toLowerCase();
+    await trySendAdminEmail(
+      email,
+      title,
+      `<p>${body}</p><p><strong>Request ID:</strong> ${requestId}</p>`,
+    );
+  }
+}
+
+async function trySendAdminEmail(to: string, subject: string, html: string): Promise<void> {
+  const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
+  const key = denoEnv?.get?.("RESEND_API_KEY") || "";
+  const from = denoEnv?.get?.("RESEND_FROM_EMAIL") || "";
+  if (!key || !from || !to) return;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    });
+  } catch {
+    /* email is best-effort and should not break request flow */
   }
 }
 
@@ -475,10 +500,7 @@ export async function ensureCountryAdminHeadquarters(
 }
 
 const COUNTRY_MANAGED_ADMIN_ROLES = [
-  "satellite_church_admin",
   "state_super_admin",
-  "service_unit_leader",
-  "sub_unit_leader",
 ];
 
 const STATE_MANAGED_ADMIN_ROLES = [
@@ -487,7 +509,7 @@ const STATE_MANAGED_ADMIN_ROLES = [
 
 function assertCountryManagedRole(role: string): void {
   if (!COUNTRY_MANAGED_ADMIN_ROLES.includes(norm(role))) {
-    throw new Error("Country admins may only manage branch, state, service unit, and sub-unit admin accounts.");
+    throw new Error("Country admins may only create and manage State Branch Admin accounts.");
   }
 }
 
@@ -1577,6 +1599,12 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
   const { data, error } = await supabase.from("admin_requests").insert(row).select("*").single();
   if (error) throw new Error(error.message);
   await logActivity(supabase, admin, "request.create", "request", String(data.id), "Created request", ip);
+  await notifyGlobalAdminsOfRequest(
+    supabase,
+    Number(data.id),
+    "New request submitted",
+    `${admin.full_name} submitted a ${requestType.replace(/_/g, " ")} request.`,
+  );
   return { data };
 }
 
@@ -1586,6 +1614,9 @@ async function handleUpdateRequest(supabase: SupabaseClient, params: Record<stri
   if (!ALLOWED_APPROVERS.includes(approverRole)) throw new Error("Not allowed.");
   const body = (params.body || {}) as Record<string, unknown>;
   const newStatus = norm(body.status);
+  if (!["approved", "rejected", "resolved", "in_review", "open"].includes(newStatus)) {
+    throw new Error("Invalid request status.");
+  }
   const { data: req } = await supabase.from("admin_requests").select("*").eq("id", params.id).maybeSingle();
   if (!req) throw new Error("Request not found.");
   if (approverRole === "country_super_admin") {
@@ -1613,6 +1644,26 @@ async function handleUpdateRequest(supabase: SupabaseClient, params: Record<stri
   }
   const { error } = await supabase.from("admin_requests").update({ status: newStatus }).eq("id", params.id);
   if (error) throw new Error(error.message);
+  const fromAdminId = Number((req as { from_admin_id?: unknown }).from_admin_id || 0);
+  if (fromAdminId > 0) {
+    const title = "Request status updated";
+    const bodyText = `Your ${reqType.replace(/_/g, " ")} request is now "${newStatus}".`;
+    await supabase.from("admin_notifications").insert({
+      admin_id: fromAdminId,
+      type: "request_update",
+      title,
+      body: bodyText,
+      entity_type: "request",
+      entity_id: String(params.id),
+    });
+    const { data: fromAdmin } = await supabase.from("admins").select("email").eq("id", fromAdminId).maybeSingle();
+    const requesterEmail = norm((fromAdmin as { email?: unknown })?.email).toLowerCase();
+    await trySendAdminEmail(
+      requesterEmail,
+      title,
+      `<p>${bodyText}</p><p><strong>Request ID:</strong> ${String(params.id)}</p>`,
+    );
+  }
   await logActivity(supabase, admin, "request.update", "request", String(params.id), "Updated request", ip);
   return { data: { id: params.id } };
 }
@@ -1672,9 +1723,13 @@ async function handleApproveServiceUnitProposal(
   if (!req) throw new Error("Request not found.");
   if (norm(admin.role) === "country_super_admin") {
     const fromAdminId = Number((req as { from_admin_id?: unknown }).from_admin_id);
-    const { data: fromAdmin } = await supabase.from("admins").select("branch_country").eq("id", fromAdminId).maybeSingle();
+    const { data: fromAdmin } = await supabase.from("admins").select("role,branch_country").eq("id", fromAdminId).maybeSingle();
     if (normUp((fromAdmin as { branch_country?: string })?.branch_country) !== normUp(admin.branch_country)) {
       throw new Error("Cannot approve requests outside your country.");
+    }
+    const fromRole = norm((fromAdmin as { role?: string })?.role);
+    if (!["state_super_admin", "satellite_church_admin"].includes(fromRole)) {
+      throw new Error("Country admins can only approve requests from State Branch Admins and Satellite Pastor Admins within their country.");
     }
   }
   const payload = (req.payload || {}) as Record<string, unknown>;
@@ -1698,6 +1753,26 @@ async function handleApproveServiceUnitProposal(
     await supabase.from("sub_units").insert({ unit_id: nextId, name, sort_order: order++, is_active: 1 });
   }
   await supabase.from("admin_requests").update({ status: "resolved" }).eq("id", req.id);
+  const requesterId = Number((req as { from_admin_id?: unknown }).from_admin_id || 0);
+  if (requesterId > 0) {
+    const title = "Request approved";
+    const bodyText = `Your service unit proposal "${unitName}" was approved and has been created.`;
+    await supabase.from("admin_notifications").insert({
+      admin_id: requesterId,
+      type: "request_update",
+      title,
+      body: bodyText,
+      entity_type: "request",
+      entity_id: String(req.id),
+    });
+    const { data: requester } = await supabase.from("admins").select("email").eq("id", requesterId).maybeSingle();
+    const requesterEmail = norm((requester as { email?: unknown })?.email).toLowerCase();
+    await trySendAdminEmail(
+      requesterEmail,
+      title,
+      `<p>${bodyText}</p><p><strong>Request ID:</strong> ${String(req.id)}</p>`,
+    );
+  }
   await logActivity(supabase, admin, "request.approve_unit", "request", String(req.id), "Approved service unit proposal", ip);
   return { ok: true };
 }
@@ -2241,6 +2316,11 @@ function buildCatalogStats(regs: Array<Record<string, unknown>>) {
 
 async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
   requireCatalogEditor(admin);
+  const role = norm(admin.role);
+  const scopedCountry = normUp(admin.branch_country);
+  const scopedState = normUp(admin.branch_state);
+  const scopedSatellite = norm(admin.satellite_site);
+
   const { data: countries, error: e1 } = await supabase.from("directory_countries").select("*").order("name");
   if (e1) throw new Error(e1.message);
   const { data: states, error: e2 } = await supabase.from("directory_states").select("*").order("country_id").order("name");
@@ -2273,13 +2353,79 @@ async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
   ).limit(15000);
   if (!regRes.error) regs = (regRes.data || []) as Record<string, unknown>[];
 
+  let scopedCountries = (countries || []) as Record<string, unknown>[];
+  let scopedStates = (states || []) as Record<string, unknown>[];
+  let scopedChurches = (churches || []) as Record<string, unknown>[];
+  let scopedSatellites = satellites;
+  let scopedAdmins = adminRows;
+  let scopedRegs = regs;
+
+  const isGlobalCatalogView = ["super_admin", "general_admin", "data_entry_admin"].includes(role);
+  if (!isGlobalCatalogView) {
+    if (scopedCountry) {
+      scopedCountries = scopedCountries.filter(
+        (c) => normUp((c as { branch_country_code?: unknown }).branch_country_code) === scopedCountry,
+      );
+      const allowedCountryIds = new Set(
+        scopedCountries.map((c) => Number((c as { id?: unknown }).id)).filter((id) => Number.isFinite(id)),
+      );
+      scopedStates = scopedStates.filter((s) => allowedCountryIds.has(Number((s as { country_id?: unknown }).country_id)));
+      scopedChurches = scopedChurches.filter(
+        (c) => normUp((c as { branch_country?: unknown }).branch_country) === scopedCountry,
+      );
+      scopedSatellites = scopedSatellites.filter(
+        (s) => normUp((s as { branch_country?: unknown }).branch_country) === scopedCountry,
+      );
+      scopedAdmins = scopedAdmins.filter(
+        (a) => normUp((a as { branch_country?: unknown }).branch_country) === scopedCountry,
+      );
+      scopedRegs = scopedRegs.filter(
+        (r) => normUp((r as { branch_country?: unknown }).branch_country) === scopedCountry,
+      );
+    }
+
+    if (["state_super_admin", "satellite_church_admin", "service_unit_leader", "sub_unit_leader"].includes(role) && scopedState) {
+      scopedStates = scopedStates.filter(
+        (s) => normUp((s as { branch_state_code?: unknown }).branch_state_code) === scopedState,
+      );
+      scopedChurches = scopedChurches.filter(
+        (c) => normUp((c as { branch_state?: unknown }).branch_state) === scopedState,
+      );
+      scopedSatellites = scopedSatellites.filter(
+        (s) => normUp((s as { branch_state?: unknown }).branch_state) === scopedState,
+      );
+      scopedAdmins = scopedAdmins.filter(
+        (a) => normUp((a as { branch_state?: unknown }).branch_state) === scopedState,
+      );
+      scopedRegs = scopedRegs.filter(
+        (r) => normUp((r as { branch_state?: unknown }).branch_state) === scopedState,
+      );
+    }
+
+    if (["satellite_church_admin", "service_unit_leader", "sub_unit_leader"].includes(role) && scopedSatellite) {
+      scopedChurches = scopedChurches.filter(
+        (c) => norm((c as { name?: unknown }).name) === scopedSatellite ||
+          norm((c as { satellite_site?: unknown }).satellite_site) === scopedSatellite,
+      );
+      scopedSatellites = scopedSatellites.filter(
+        (s) => norm((s as { site_name?: unknown }).site_name) === scopedSatellite,
+      );
+      scopedAdmins = scopedAdmins.filter(
+        (a) => norm((a as { satellite_site?: unknown }).satellite_site) === scopedSatellite,
+      );
+      scopedRegs = scopedRegs.filter(
+        (r) => norm((r as { satellite_site?: unknown }).satellite_site) === scopedSatellite,
+      );
+    }
+  }
+
   return {
-    countries: countries || [],
-    states: states || [],
-    churches: churches || [],
-    satellites,
-    admins: adminRows,
-    stats: buildCatalogStats(regs),
+    countries: scopedCountries,
+    states: scopedStates,
+    churches: scopedChurches,
+    satellites: scopedSatellites,
+    admins: scopedAdmins,
+    stats: buildCatalogStats(scopedRegs),
   };
 }
 

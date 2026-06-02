@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { branchStateLabel } from "../branchRegions.js";
 
 /**
@@ -11,13 +12,28 @@ export function CountryAdminHqSettings({
   savingHome,
   onChangeHomeState,
   onSave,
+  forceOpenSignal = 0,
 }) {
+  const detailsRef = useRef(null);
   const currentLabel = myHomeState
     ? branchStateLabel(countryCode, myHomeState)
     : "None (country oversight only)";
 
+  useEffect(() => {
+    if (!forceOpenSignal) return;
+    const details = detailsRef.current;
+    if (details) details.open = true;
+    setTimeout(() => {
+      const select = document.getElementById("sa-hq-state-select");
+      if (select) {
+        select.scrollIntoView({ behavior: "smooth", block: "center" });
+        select.focus();
+      }
+    }, 20);
+  }, [forceOpenSignal]);
+
   return (
-    <details className="sa-users-hq-settings">
+    <details className="sa-users-hq-settings" ref={detailsRef}>
       <summary className="sa-users-hq-settings-summary">
         <span className="sa-users-hq-settings-label">Headquarters state</span>
         <span className="sa-users-hq-settings-value">{currentLabel}</span>

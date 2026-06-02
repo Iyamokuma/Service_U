@@ -25,8 +25,6 @@ const ROLE_OPTIONS = [
   { value: "satellite_church_admin", label: "Satellite Pastor Admin" },
   { value: "data_entry_admin", label: "Data Entry Admin" },
   { value: "general_admin", label: "General Admin" },
-  { value: "service_unit_leader", label: "Service Unit Leader" },
-  { value: "sub_unit_leader", label: "Sub-unit Leader" },
   { value: "super_admin", label: "Super Admin" },
 ];
 
