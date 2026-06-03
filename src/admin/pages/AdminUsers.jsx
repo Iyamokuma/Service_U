@@ -44,6 +44,7 @@ import {
   ROLES_WITH_COUNTRY,
   ROLES_WITH_STATE,
   usesPlatformInviteCreate,
+  ADMIN_EMAIL_INVITES_ENABLED,
   validateAdminForm,
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
@@ -551,6 +552,7 @@ export function AdminUsers({ data, units, reload }) {
     const canModifyOthers = !isSelf && (isRootSuper || actionTarget.role !== "super_admin");
 
     const canResendInvite =
+      ADMIN_EMAIL_INVITES_ENABLED &&
       canModifyOthers &&
       isGlobalAdmin &&
       !["super_admin", "general_admin"].includes(actionTarget.role) &&

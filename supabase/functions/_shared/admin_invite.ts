@@ -25,7 +25,15 @@ export function isPlatformAdminRole(role: unknown): boolean {
   return r === "super_admin" || r === "general_admin";
 }
 
+/** Set ADMIN_EMAIL_INVITES=true in Supabase secrets to send Resend invite links on create. */
+export function isEmailInviteEnabled(): boolean {
+  const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
+  const v = norm(denoEnv?.get?.("ADMIN_EMAIL_INVITES") || "").toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
 export function usesInviteOnCreate(actorRole: unknown): boolean {
+  if (!isEmailInviteEnabled()) return false;
   return isPlatformAdminRole(actorRole);
 }
 

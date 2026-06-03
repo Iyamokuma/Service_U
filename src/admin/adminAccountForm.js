@@ -88,9 +88,12 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
   return "";
 }
 
-/** Super / General Admin creates accounts via email invite (no password on form). */
+/** Flip to true when Resend invite emails are configured (must match ADMIN_EMAIL_INVITES on Supabase). */
+export const ADMIN_EMAIL_INVITES_ENABLED = false;
+
+/** Super / General Admin creates accounts via email invite when enabled. */
 export function usesPlatformInviteCreate(actorRole, isEdit = false) {
-  if (isEdit) return false;
+  if (isEdit || !ADMIN_EMAIL_INVITES_ENABLED) return false;
   return actorRole === "super_admin" || actorRole === "general_admin";
 }
 

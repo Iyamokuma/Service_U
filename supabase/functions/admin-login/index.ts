@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { signAdminToken } from "../_shared/jwt.ts";
 import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
-import { isPlatformAdminRole, shapeAdminForClient } from "../_shared/admin_invite.ts";
+import { isPlatformAdminRole, shapeAdminForClient, isEmailInviteEnabled } from "../_shared/admin_invite.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
     if (!admin) return json(401, { error: "Invalid credentials." });
 
-    if (normText(admin.invite_token) && Number(admin.must_change_password) === 1) {
+    if (isEmailInviteEnabled() && normText(admin.invite_token) && Number(admin.must_change_password) === 1) {
       return json(401, {
         error:
           "This account is not activated yet. Open the link in your invitation email to set your password.",
