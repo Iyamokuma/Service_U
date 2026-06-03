@@ -43,6 +43,7 @@ import {
   occupiedCountryCodes,
   ROLES_WITH_COUNTRY,
   ROLES_WITH_STATE,
+  usesPlatformInviteCreate,
   validateAdminForm,
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
@@ -357,10 +358,12 @@ export function AdminUsers({ data, units, reload }) {
       form.branch_country,
       form.id,
     );
+    const inviteCreate = usesPlatformInviteCreate(me?.role, !form.id);
     const validationMsg = validateAdminForm(form, {
       takenCountries,
       takenStates,
       isEdit: !!form.id,
+      inviteCreate,
     });
     if (validationMsg) {
       toast(validationMsg, "error");
@@ -380,9 +383,23 @@ export function AdminUsers({ data, units, reload }) {
         loadPendingAdminRequests();
       } else {
         const payload = { ...form, viewer: me };
-        if (form.id) await api.updateAdmin(form.id, payload);
-        else await api.createAdmin(payload);
-        toast(form.id ? "Admin updated." : "Admin created.", "success");
+        if (form.id) {
+          await api.updateAdmin(form.id, payload);
+          toast("Admin updated.", "success");
+        } else {
+          const res = await api.createAdmin(payload);
+          const sent = res?.data?.invite_email_sent;
+          if (inviteCreate) {
+            toast(
+              sent
+                ? `Invitation email sent to ${form.email}.`
+                : `Admin created but invitation email was not sent. Check Resend configuration.`,
+              sent ? "success" : "error",
+            );
+          } else {
+            toast("Admin created.", "success");
+          }
+        }
       }
       setModal(null);
       reload();
@@ -1069,6 +1086,7 @@ function AdminModal({
   const isSatellitePastor = me?.role === "satellite_church_admin";
   const isServiceLeader = isServiceUnitLeader(me?.role);
   const isEdit = !!data?.id;
+  const inviteCreate = usesPlatformInviteCreate(me?.role, !isEdit);
   const emptyForm = useCallback(
     () => ({
       full_name: "",
@@ -1224,31 +1242,43 @@ function AdminModal({
           <label className="sa-label">Full Name <span className="sa-required">*</span></label>
           <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="John Doe" />
         </div>
-        <div className="sa-field">
-          <label className="sa-label">Username <span className="sa-required">*</span></label>
-          <input
-            className="sa-input"
-            value={form.username}
-            onChange={set("username")}
-            placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
-            disabled={isEdit}
-          />
-          {form.role === "country_super_admin" && !isEdit && (
-            <div className="sa-field-hint">
-              Usernames are unique across all countries. For United Kingdom use something like{" "}
-              <strong>gb.country.admin</strong> (not <strong>country.admin</strong>, which is already used).
-            </div>
-          )}
-        </div>
+        {!inviteCreate ? (
+          <div className="sa-field">
+            <label className="sa-label">Username <span className="sa-required">*</span></label>
+            <input
+              className="sa-input"
+              value={form.username}
+              onChange={set("username")}
+              placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
+              disabled={isEdit}
+            />
+            {form.role === "country_super_admin" && !isEdit && (
+              <div className="sa-field-hint">
+                Usernames are unique across all countries. For United Kingdom use something like{" "}
+                <strong>gb.country.admin</strong> (not <strong>country.admin</strong>, which is already used).
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
       <div className="sa-field">
         <label className="sa-label">Email <span className="sa-required">*</span></label>
         <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="john@example.com" />
+        {inviteCreate ? (
+          <div className="sa-field-hint">
+            An invitation email with an activation link will be sent to this address. They sign in with email only.
+          </div>
+        ) : null}
       </div>
-      <div className="sa-field">
-        <label className="sa-label">{isEdit ? "New Password (leave blank to keep current)" : "Password"} {!isEdit && <span className="sa-required">*</span>}</label>
-        <input className="sa-input" type="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" />
-      </div>
+      {!inviteCreate ? (
+        <div className="sa-field">
+          <label className="sa-label">
+            {isEdit ? "New Password (leave blank to keep current)" : "Password"}{" "}
+            {!isEdit && <span className="sa-required">*</span>}
+          </label>
+          <input className="sa-input" type="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" />
+        </div>
+      ) : null}
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">Role</label>

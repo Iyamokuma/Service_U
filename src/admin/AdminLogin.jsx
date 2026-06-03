@@ -4,13 +4,13 @@ import { AdminBrandLogo } from "./components/AdminBrandLogo.jsx";
 
 export function AdminLogin() {
   const { login, loading, error } = useAdminAuth();
-  const [form, setForm] = useState({ username: "", password: "" });
+  const [form, setForm] = useState({ email: "", password: "" });
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    await login(form.username, form.password);
+    await login(form.email, form.password);
   };
 
   return (
@@ -27,16 +27,19 @@ export function AdminLogin() {
         {error && <div className="sa-login-err">{error}</div>}
 
         <div className="sa-login-group">
-          <label className="sa-login-label">Username or Email</label>
+          <label className="sa-login-label">Email</label>
           <input
             className="sa-login-input"
-            type="text"
+            type="email"
             autoComplete="username"
-            placeholder="superadmin"
-            value={form.username}
-            onChange={set("username")}
+            placeholder="you@church.org"
+            value={form.email}
+            onChange={set("email")}
             required
           />
+          <div className="sa-field-hint" style={{ marginTop: 6 }}>
+            Super Admin may also sign in with username. All other roles use email only.
+          </div>
         </div>
 
         <div className="sa-login-group">

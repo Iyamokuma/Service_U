@@ -105,21 +105,25 @@ export function AdminAuthProvider({ children }) {
     localStorage.setItem("admin_user", JSON.stringify(next));
   }, []);
 
-  const login = useCallback(async (username, password) => {
+  const loginWithToken = useCallback(async (token, adminUser) => {
+    localStorage.setItem("admin_token", token);
+    localStorage.setItem("admin_user", JSON.stringify(adminUser));
+    setAdmin(adminUser);
+    if (adminUser?.role === "country_super_admin") {
+      const refreshed = await api.refreshSession(adminUser);
+      if (refreshed) {
+        setAdmin(refreshed);
+        localStorage.setItem("admin_user", JSON.stringify(refreshed));
+      }
+    }
+  }, []);
+
+  const login = useCallback(async (email, password) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.login({ username, password });
-      localStorage.setItem("admin_token", res.token);
-      localStorage.setItem("admin_user", JSON.stringify(res.admin));
-      setAdmin(res.admin);
-      if (res.admin?.role === "country_super_admin") {
-        const refreshed = await api.refreshSession(res.admin);
-        if (refreshed) {
-          setAdmin(refreshed);
-          localStorage.setItem("admin_user", JSON.stringify(refreshed));
-        }
-      }
+      const res = await api.login({ email, password });
+      await loginWithToken(res.token, res.admin);
       return true;
     } catch (e) {
       setError(e.message);
@@ -127,7 +131,7 @@ export function AdminAuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loginWithToken]);
 
   const logout = useCallback(async () => {
     try { await api.logout(); } catch { /* ignore */ }
@@ -137,7 +141,7 @@ export function AdminAuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ admin, loading, error, login, logout, refreshAdmin, viewMode, setViewMode }}>
+    <AuthCtx.Provider value={{ admin, loading, error, login, loginWithToken, logout, refreshAdmin, viewMode, setViewMode }}>
       {children}
     </AuthCtx.Provider>
   );

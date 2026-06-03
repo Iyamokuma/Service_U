@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { signAdminToken } from "../_shared/jwt.ts";
 import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
+import { isPlatformAdminRole, shapeAdminForClient } from "../_shared/admin_invite.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -39,22 +40,34 @@ Deno.serve(async (req) => {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-    const body = (await req.json()) as { username?: string; password?: string };
-    const username = normText(body?.username).toLowerCase();
+    const body = (await req.json()) as { username?: string; email?: string; password?: string };
+    const loginId = normText(body?.email || body?.username).toLowerCase();
     const password = normText(body?.password);
-    if (!username || !password) return json(400, { error: "Username and password are required." });
+    if (!loginId || !password) return json(400, { error: "Email and password are required." });
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
     const { data: rows, error } = await supabase.from("admins").select("*").eq("is_active", 1);
     if (error) return json(500, { error: error.message });
 
-    const admin = (rows || []).find(
-      (a) =>
-        normText(a.username).toLowerCase() === username ||
-        normText(a.email).toLowerCase() === username,
-    );
+    const admin = (rows || []).find((a) => {
+      const role = normText(a.role);
+      const emailMatch = normText(a.email).toLowerCase() === loginId;
+      const userMatch = normText(a.username).toLowerCase() === loginId;
+      if (isPlatformAdminRole(role)) return emailMatch || userMatch;
+      return emailMatch;
+    });
+
+    if (!admin) return json(401, { error: "Invalid credentials." });
+
+    if (normText(admin.invite_token) && Number(admin.must_change_password) === 1) {
+      return json(401, {
+        error:
+          "This account is not activated yet. Open the link in your invitation email to set your password.",
+      });
+    }
+
     const storedPassword = normalizeAdminPassword(admin?.password);
-    if (!admin || !storedPassword || storedPassword !== password) {
+    if (!storedPassword || storedPassword !== password) {
       return json(401, { error: "Invalid credentials." });
     }
 
@@ -80,20 +93,7 @@ Deno.serve(async (req) => {
     }
 
     const token = await signAdminToken(Number(resolved.id), jwtSecret);
-
-    const shaped = {
-      id: resolved.id,
-      full_name: resolved.full_name,
-      username: resolved.username,
-      email: resolved.email,
-      role: resolved.role,
-      service_unit_id: resolved.service_unit_id,
-      sub_unit_name: resolved.sub_unit_name || "",
-      branch_country: resolved.branch_country ?? "",
-      branch_state: resolved.branch_state ?? "",
-      satellite_site: resolved.satellite_site ?? "",
-      service_unit_name,
-    };
+    const shaped = shapeAdminForClient(resolved as Record<string, unknown>, service_unit_name);
 
     return json(200, { token, admin: shaped });
   } catch (err) {

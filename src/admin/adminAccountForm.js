@@ -41,7 +41,7 @@ export function occupiedCountryCodes(admins, pendingRequests, excludeId) {
   return set;
 }
 
-export function validateAdminForm(form, { takenCountries, takenStates, isEdit } = {}) {
+export function validateAdminForm(form, { takenCountries, takenStates, isEdit, inviteCreate } = {}) {
   if (ROLES_WITH_COUNTRY.includes(form.role) && !String(form.branch_country || "").trim()) {
     return "Country is required for this role.";
   }
@@ -79,13 +79,19 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit } 
   if (form.role === "satellite_church_admin" && !String(form.satellite_site || "").trim()) {
     return "Select a satellite church for this pastor admin.";
   }
-  if (!isEdit) {
+  if (!isEdit && !inviteCreate) {
     const pw = String(form.password || "").trim();
     if (!pw || pw.length < 8) {
       return "Password is required (minimum 8 characters).";
     }
   }
   return "";
+}
+
+/** Super / General Admin creates accounts via email invite (no password on form). */
+export function usesPlatformInviteCreate(actorRole, isEdit = false) {
+  if (isEdit) return false;
+  return actorRole === "super_admin" || actorRole === "general_admin";
 }
 
 /** Validates role/scope change on reassign (login fields unchanged). */

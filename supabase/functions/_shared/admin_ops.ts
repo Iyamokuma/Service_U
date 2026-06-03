@@ -16,6 +16,17 @@ import {
   loadOverdueConfig,
   processOverdueEscalations,
 } from "./overdue.ts";
+import {
+  generateInviteToken,
+  getAdminAppUrl,
+  inviteExpiresAt,
+  isPlatformAdminRole,
+  randomInternalPassword,
+  resolveAvailableUsername,
+  sendAdminInviteEmail,
+  shapeAdminForClient,
+  usesInviteOnCreate,
+} from "./admin_invite.ts";
 
 type AdminRow = Record<string, unknown>;
 type Ctx = { admin: AdminRow; ip: string };
@@ -372,11 +383,24 @@ async function insertAdminFromBody(
   actor: AdminRow,
   ip: string,
 ): Promise<Record<string, unknown>> {
-  const row = {
+  const inviteCreate = usesInviteOnCreate(actor.role);
+  const email = norm(body.email).toLowerCase();
+  if (!email) throw new Error("Email is required.");
+
+  let username = normalizeAdminUsername(body.username);
+  if (inviteCreate) {
+    username = await resolveAvailableUsername(supabase, email);
+  }
+
+  const password = inviteCreate
+    ? randomInternalPassword()
+    : normalizeAdminPassword(body.password);
+
+  const row: Record<string, unknown> = {
     full_name: norm(body.full_name),
-    username: normalizeAdminUsername(body.username),
-    email: norm(body.email).toLowerCase(),
-    password: normalizeAdminPassword(body.password),
+    username,
+    email,
+    password,
     role: norm(body.role),
     service_unit_id: body.service_unit_id ? Number(body.service_unit_id) : null,
     sub_unit_name: norm(body.sub_unit_name),
@@ -384,9 +408,16 @@ async function insertAdminFromBody(
     branch_state: normUp(body.branch_state),
     satellite_site: norm(body.satellite_site),
     is_active: Number(body.is_active ?? 1),
+    must_change_password: inviteCreate ? 1 : 0,
+    invite_token: null,
+    invite_expires_at: null,
   };
+
   if (!row.full_name) throw new Error("Full name is required.");
-  assertAdminPasswordFormat(row.password);
+  if (!inviteCreate) {
+    assertAdminPasswordFormat(String(row.password));
+    assertAdminUsernameFormat(String(row.username));
+  }
   if (row.role === "country_super_admin" && !row.branch_country) {
     throw new Error("Country is required for Country Admin accounts.");
   }
@@ -413,12 +444,42 @@ async function insertAdminFromBody(
   if (row.role === "sub_unit_leader" && row.service_unit_id) {
     await assertSubUnitInServiceUnit(supabase, Number(row.service_unit_id), row.sub_unit_name);
   }
-  await assertAdminUsernameAvailable(supabase, row.username);
-  await assertAdminEmailAvailable(supabase, row.email);
+  if (!inviteCreate) {
+    await assertAdminUsernameAvailable(supabase, String(row.username));
+  }
+  await assertAdminEmailAvailable(supabase, email);
+
+  if (inviteCreate) {
+    const token = await generateInviteToken();
+    row.invite_token = token;
+    row.invite_expires_at = inviteExpiresAt(72);
+  }
+
   const { data, error } = await supabase.from("admins").insert(row).select("*").single();
   if (error) throwAdminPersistError(error);
-  await logActivity(supabase, actor, "admin.create", "admin", String(data.id), `Created admin ${data.username}`, ip);
-  return data as Record<string, unknown>;
+
+  let invite_email_sent = false;
+  if (inviteCreate && data) {
+    const appUrl = getAdminAppUrl();
+    if (!appUrl) {
+      throw new Error(
+        "ADMIN_APP_URL is not configured on the server. Set it in Supabase Edge Function secrets (e.g. https://your-site.vercel.app/admin).",
+      );
+    }
+    const inviteUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(String(row.invite_token))}`;
+    invite_email_sent = await sendAdminInviteEmail(email, String(row.full_name), inviteUrl);
+  }
+
+  await logActivity(
+    supabase,
+    actor,
+    "admin.create",
+    "admin",
+    String(data.id),
+    inviteCreate ? `Created admin ${data.username} (invite email)` : `Created admin ${data.username}`,
+    ip,
+  );
+  return { ...(data as Record<string, unknown>), invite_email_sent };
 }
 
 async function applyAdminAccountRequest(
@@ -679,19 +740,7 @@ export async function dispatchAdminOp(
         service_unit_name = String(u?.name || "");
       }
       return {
-        admin: {
-          id: resolved.id,
-          full_name: resolved.full_name,
-          username: resolved.username,
-          email: resolved.email,
-          role: resolved.role,
-          service_unit_id: resolved.service_unit_id,
-          sub_unit_name: resolved.sub_unit_name || "",
-          branch_country: resolved.branch_country ?? "",
-          branch_state: resolved.branch_state ?? "",
-          satellite_site: resolved.satellite_site ?? "",
-          service_unit_name,
-        },
+        admin: shapeAdminForClient(resolved as Record<string, unknown>, service_unit_name),
       };
     }
     case "logout":
@@ -727,6 +776,8 @@ export async function dispatchAdminOp(
       return handleAdmins(supabase, params, admin);
     case "createAdmin":
       return handleCreateAdmin(supabase, params, admin, ip);
+    case "resendAdminInvite":
+      return handleResendAdminInvite(supabase, params, admin, ip);
     case "updateAdmin":
       return handleUpdateAdmin(supabase, params, admin, ip);
     case "deleteAdmin":
@@ -1455,6 +1506,9 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
   if (body.password) {
     patch.password = normalizeAdminPassword(body.password);
     assertAdminPasswordFormat(String(patch.password));
+    patch.must_change_password = 0;
+    patch.invite_token = null;
+    patch.invite_expires_at = null;
   }
   const finalRole = norm(patch.role);
   const finalCountry = normUp(patch.branch_country);
@@ -1490,6 +1544,51 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
   const logMsg = roleChanged ? `Reassigned admin to ${finalRole}` : "Updated admin";
   await logActivity(supabase, admin, "admin.update", "admin", String(targetId), logMsg, ip);
   return { data: { id: targetId, ...patch } };
+}
+
+async function handleResendAdminInvite(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  admin: AdminRow,
+  ip: string,
+) {
+  if (!isPlatformAdminRole(admin.role)) {
+    throw new Error("Only Super Admin or General Admin can resend invitations.");
+  }
+  const targetId = Number(params.id);
+  const { data: target } = await supabase.from("admins").select("*").eq("id", targetId).maybeSingle();
+  if (!target) throw new Error("Admin not found.");
+  if (isPlatformAdminRole(target.role)) {
+    throw new Error("Platform admin accounts do not use email invitations.");
+  }
+  const email = norm(target.email).toLowerCase();
+  if (!email) throw new Error("This account has no email address.");
+
+  const token = await generateInviteToken();
+  const { error: updErr } = await supabase
+    .from("admins")
+    .update({
+      invite_token: token,
+      invite_expires_at: inviteExpiresAt(72),
+      must_change_password: 1,
+    })
+    .eq("id", targetId);
+  if (updErr) throw new Error(updErr.message);
+
+  const appUrl = getAdminAppUrl();
+  if (!appUrl) {
+    throw new Error("ADMIN_APP_URL is not configured on the server.");
+  }
+  const inviteUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token)}`;
+  const invite_email_sent = await sendAdminInviteEmail(email, String(target.full_name), inviteUrl);
+  if (!invite_email_sent) {
+    throw new Error(
+      "Invitation was reset but email could not be sent. Check RESEND_API_KEY and RESEND_FROM_EMAIL in Supabase secrets.",
+    );
+  }
+
+  await logActivity(supabase, admin, "admin.invite_resend", "admin", String(targetId), "Resent admin invite email", ip);
+  return { ok: true, invite_email_sent: true };
 }
 
 async function handleDeleteAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {

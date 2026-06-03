@@ -64,14 +64,34 @@ function withScopeParams(params = {}) {
   return params;
 }
 
-async function adminLoginFetch(username, password) {
+async function adminInviteFetch(op, params = {}) {
+  const res = await fetch(`${functionsBaseUrl()}/admin-invite`, {
+    method: "POST",
+    headers: {
+      ...supabaseAnonHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ op, ...params }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`);
+  return body;
+}
+
+async function adminLoginFetch(emailOrUsername, password) {
+  const loginId = String(emailOrUsername || "").trim();
   const res = await fetch(`${functionsBaseUrl()}/admin-login`, {
     method: "POST",
     headers: {
       ...supabaseAnonHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ email: loginId, username: loginId, password }),
   });
 
   let body = null;
@@ -106,9 +126,24 @@ export const api = {
   },
 
   async login(body) {
-    const username = String(body?.username || "").trim();
+    const email = String(body?.email ?? body?.username ?? "").trim();
     const password = String(body?.password || "").trim();
-    return adminLoginFetch(username, password);
+    return adminLoginFetch(email, password);
+  },
+
+  async validateInvite(token) {
+    return adminInviteFetch("validateInvite", { token: String(token || "").trim() });
+  },
+
+  async completeInvite(token, password) {
+    return adminInviteFetch("completeInvite", {
+      token: String(token || "").trim(),
+      password: String(password || "").trim(),
+    });
+  },
+
+  async resendAdminInvite(id) {
+    return adminFetch("resendAdminInvite", { id });
   },
 
   async refreshSession(stored) {
