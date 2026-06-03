@@ -16,11 +16,11 @@ import { ProfileSettings } from "./pages/ProfileSettings.jsx";
 import { BranchOversight } from "./pages/BranchOversight.jsx";
 import { RoleDashboard } from "./pages/RoleDashboard.jsx";
 import { DataEntryLocationForm } from "./pages/DataEntryLocationForm.jsx";
-import { SatelliteUnitRequest } from "./pages/SatelliteUnitRequest.jsx";
 import { BranchCatalog } from "./pages/BranchCatalog.jsx";
 import { Announcements } from "./pages/Announcements.jsx";
 import { CountryUsers } from "./pages/CountryUsers.jsx";
 import { StateUsers } from "./pages/StateUsers.jsx";
+import { SatelliteUsers } from "./pages/SatelliteUsers.jsx";
 import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
@@ -32,8 +32,10 @@ import {
   isStateLevelUi,
   normalizePageForViewMode,
   normalizeStateAdminPage,
+  normalizeSatelliteAdminPage,
   canSwitchAdminView,
 } from "./adminViewMode.js";
+import { writeUsersSectionTab } from "./usersSectionTab.js";
 
 const PAGE_TITLES_DEFAULT = {
   overview: "Overview",
@@ -60,7 +62,7 @@ const PAGE_TITLES_BY_ROLE = {
   satellite_church_admin: {
     "role-dashboard": "Dashboard",
     oversight: "Application Queue",
-    admins: "Admin Accounts",
+    users: "Users",
     requests: "My Requests",
   },
   country_super_admin: {
@@ -133,22 +135,17 @@ export function AdminLayout() {
   useEffect(() => {
     if (!admin) return;
     if (admin.role === "country_super_admin") {
-      setPage((p) => normalizePageForViewMode(p, admin, viewMode));
+      setPage((p) => {
+        if (p === "members") writeUsersSectionTab("members");
+        return normalizePageForViewMode(p, admin, viewMode);
+      });
     } else if (admin.role === "state_super_admin") {
-      setPage((p) => normalizeStateAdminPage(p));
+      setPage((p) => {
+        if (p === "members") writeUsersSectionTab("members");
+        return normalizeStateAdminPage(p);
+      });
     } else if (admin.role === "satellite_church_admin") {
-      setPage((p) =>
-        [
-          "role-dashboard",
-          "oversight",
-          "admins",
-          "requests",
-          "announcements",
-          "profile",
-        ].includes(p)
-          ? p
-          : "role-dashboard",
-      );
+      setPage((p) => normalizeSatelliteAdminPage(p));
     } else if (admin.role === "data_entry_admin") {
       setPage((p) =>
         [
@@ -180,7 +177,14 @@ export function AdminLayout() {
   }, [page, admin]);
 
   useEffect(() => {
-    if (!admin || !isGlobalAdminRole(admin.role)) {
+    if (!admin) {
+      setOpenRequestCount(0);
+      return;
+    }
+    const loadApproverQueue =
+      isGlobalAdminRole(admin.role) ||
+      (isCountrySuperAdmin(admin.role) && !actingAsState);
+    if (!loadApproverQueue) {
       setOpenRequestCount(0);
       return;
     }
@@ -193,7 +197,7 @@ export function AdminLayout() {
         setOpenRequestCount(pending);
       })
       .catch(() => {});
-  }, [page, admin]);
+  }, [page, admin, actingAsState]);
 
   useEffect(() => {
     try { localStorage.setItem("sm_admin_theme", theme); } catch { /* ignore */ }
@@ -271,8 +275,10 @@ export function AdminLayout() {
           {page === "units" && (
             <ServiceUnits data={units} reload={() => { loadUnits(); loadAdmins(); }} />
           )}
-          {page === "members"   && <UnitMembers units={units} />}
-          {page === "admins"    && <AdminUsers   data={admins} units={units} reload={loadAdmins} />}
+          {page === "members" && !isStateLevelUi(admin, viewMode) && <UnitMembers units={units} />}
+          {page === "admins"    && admin?.role !== "satellite_church_admin" && (
+            <AdminUsers data={admins} units={units} reload={loadAdmins} />
+          )}
           {/* unit-request removed — satellite pastors no longer request service units */}
           {page === "requests"  && <Requests />}
           {page === "activity"  && <ActivityLog />}
@@ -282,7 +288,10 @@ export function AdminLayout() {
             <CountryUsers admins={admins} reload={loadAdmins} setPage={setPage} />
           )}
           {page === "users" && isStateLevelUi(admin, viewMode) && (
-            <StateUsers admins={admins} reload={loadAdmins} setPage={setPage} />
+            <StateUsers admins={admins} units={units} reload={loadAdmins} setPage={setPage} />
+          )}
+          {page === "users" && admin?.role === "satellite_church_admin" && (
+            <SatelliteUsers admins={admins} units={units} reload={loadAdmins} setPage={setPage} />
           )}
           {page === "settings"  && canPlatformSettings && <Settings />}
           {page === "profile"   && !canPlatformSettings && <ProfileSettings />}

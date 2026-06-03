@@ -3527,6 +3527,34 @@
   outline: 2px solid var(--sa-accent);
   outline-offset: 2px;
 }
+.sa-users-context-switch {
+  margin-bottom: 14px;
+}
+.sa-users-context-switch .sa-view-mode-bar-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sa-users-context-switch .sa-view-mode-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sa-users-context-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--sa-text-muted);
+}
+.sa-view-mode-bar-btn.is-active .sa-users-context-count {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--sa-accent);
+}
+.sa-root[data-theme="dark"] .sa-users-context-count {
+  background: rgba(255, 255, 255, 0.1);
+}
 .sa-table-admins-simple th:last-child,
 .sa-table-admins-simple td:last-child {
   width: 120px;

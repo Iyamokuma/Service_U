@@ -79,6 +79,12 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit } 
   if (form.role === "satellite_church_admin" && !String(form.satellite_site || "").trim()) {
     return "Select a satellite church for this pastor admin.";
   }
+  if (!isEdit) {
+    const pw = String(form.password || "").trim();
+    if (!pw || pw.length < 8) {
+      return "Password is required (minimum 8 characters).";
+    }
+  }
   return "";
 }
 

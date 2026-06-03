@@ -198,11 +198,21 @@ export const api = {
   },
 
   async createAdmin(body) {
-    return adminFetch("createAdmin", withScopeParams({ body }));
+    const normalized = { ...body };
+    if (normalized.password != null) {
+      normalized.password = String(normalized.password).trim();
+    }
+    return adminFetch("createAdmin", withScopeParams({ body: normalized }));
   },
 
   async updateAdmin(id, body) {
-    return adminFetch("updateAdmin", withScopeParams({ id, body }));
+    const normalized = { ...body };
+    if (normalized.password != null && String(normalized.password).trim()) {
+      normalized.password = String(normalized.password).trim();
+    } else if ("password" in normalized) {
+      delete normalized.password;
+    }
+    return adminFetch("updateAdmin", withScopeParams({ id, body: normalized }));
   },
 
   async updateRegistrationBranch(id, body) {

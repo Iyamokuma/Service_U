@@ -1,125 +1,119 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { UsersContextSwitch } from "../components/UsersContextSwitch.jsx";
+import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
+import { buildAdminRowMenuItems, isAdminActive } from "../components/adminRowMenuItems.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
-import { satelliteSitesForBranch } from "../satelliteSites.js";
-import {
-  availableSatellitesForState,
-  occupiedSatelliteSites,
-  satellitePastorForSite,
-} from "../stateSatelliteForm.js";
-import { exportCsv } from "../exportCsv.js";
+import { readStateWorkforceContext, writeStateWorkforceContext } from "../countryUsersContext.js";
+function leaderLocationLabel(admin, countryCode) {
+  const st = branchStateLabel(countryCode, admin.branch_state);
+  const sat = String(admin.satellite_site || "").trim();
+  if (sat && st) return `${sat} · ${st}`;
+  if (sat) return sat;
+  return st || "—";
+}
 
-export function StateWorkforce({ admins: adminsPayload, reload, setPage, embedded = false, onAssignVacant }) {
+function buildUnitNameMap(units) {
+  const map = new Map();
+  for (const u of units || []) {
+    map.set(Number(u.id), String(u.name || ""));
+  }
+  return map;
+}
+
+export function StateWorkforce({
+  admins: adminsPayload,
+  units: unitsPayload,
+  embedded = false,
+  actionMenu,
+  onOpenActions,
+  onCloseActionMenu,
+  menuItems,
+}) {
   const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
   const stateCode = String(me?.branch_state || "").toUpperCase();
   const countryLabel = branchCountryLabel(countryCode);
   const stateLabel = branchStateLabel(countryCode, stateCode) || stateCode;
 
+  const [leaderContext, setLeaderContextRaw] = useState(() => readStateWorkforceContext());
+  const setLeaderContext = useCallback((ctx) => {
+    writeStateWorkforceContext(ctx);
+    setLeaderContextRaw(ctx);
+  }, []);
+
   const [search, setSearch] = useState("");
-  const [coverageFilter, setCoverageFilter] = useState("all");
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [churches, setChurches] = useState([]);
+  const [showInactive, setShowInactive] = useState(false);
 
-  const allAdmins = adminsPayload?.data ?? [];
+  const unitNameById = useMemo(() => buildUnitNameMap(unitsPayload?.data), [unitsPayload?.data]);
 
-  const stateAdmins = useMemo(
-    () =>
-      allAdmins.filter(
+  const leaderRows = useMemo(() => {
+    return (adminsPayload?.data ?? [])
+      .filter(
         (a) =>
           String(a.branch_country || "").toUpperCase() === countryCode &&
-          String(a.branch_state || "").toUpperCase() === stateCode,
-      ),
-    [allAdmins, countryCode, stateCode],
-  );
-
-  const loadPending = useCallback(() => {
-    api
-      .requests({ per_page: 200, page: 1 })
-      .then((res) => {
-        setPendingRequests(
-          (res.data || []).filter(
-            (r) =>
-              r.request_type === "admin_account" &&
-              (r.status === "open" || r.status === "in_review"),
-          ),
-        );
+          String(a.branch_state || "").toUpperCase() === stateCode &&
+          ["service_unit_leader", "sub_unit_leader"].includes(a.role),
+      )
+      .map((a) => {
+        const unitId = Number(a.service_unit_id);
+        return {
+          ...a,
+          unitName: unitNameById.get(unitId) || (unitId ? `Unit #${unitId}` : "—"),
+          subUnit: a.role === "sub_unit_leader" ? String(a.sub_unit_name || "").trim() || "—" : "—",
+          location: leaderLocationLabel(a, countryCode),
+        };
       })
-      .catch(() => setPendingRequests([]));
-  }, []);
+      .sort((a, b) => {
+        const byUnit = a.unitName.localeCompare(b.unitName, undefined, { sensitivity: "base" });
+        if (byUnit !== 0) return byUnit;
+        return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, {
+          sensitivity: "base",
+        });
+      });
+  }, [adminsPayload, countryCode, stateCode, unitNameById]);
 
-  useEffect(() => {
-    loadPending();
-  }, [loadPending, adminsPayload]);
-
-  useEffect(() => {
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-  }, []);
-
-  const satellitesInDataset = useMemo(
-    () => satelliteSitesForBranch(churches, countryCode, stateCode),
-    [churches, countryCode, stateCode],
+  const unitLeaderRows = useMemo(
+    () => leaderRows.filter((r) => r.role === "service_unit_leader"),
+    [leaderRows],
+  );
+  const subLeaderRows = useMemo(
+    () => leaderRows.filter((r) => r.role === "sub_unit_leader"),
+    [leaderRows],
   );
 
-  const vacantSatellites = useMemo(
-    () => availableSatellitesForState(churches, countryCode, stateCode, stateAdmins, pendingRequests),
-    [churches, countryCode, stateCode, stateAdmins, pendingRequests],
-  );
-
-  const takenSites = useMemo(
-    () => occupiedSatelliteSites(stateAdmins, pendingRequests, countryCode, stateCode),
-    [stateAdmins, pendingRequests, countryCode, stateCode],
-  );
-
-  const satelliteRows = useMemo(() => {
-    return satellitesInDataset.map((name) => {
-      const pastor = satellitePastorForSite(stateAdmins, countryCode, stateCode, name);
-      const vacant = !pastor;
-      return {
-        name,
-        pastor,
-        vacant,
-        pastorName: pastor?.full_name || "—",
-        pastorUsername: pastor?.username || "",
-        status: vacant ? "Vacant" : "Covered",
-      };
-    });
-  }, [satellitesInDataset, stateAdmins, countryCode, stateCode]);
+  const contextRows = leaderContext === "sub_unit_leader" ? subLeaderRows : unitLeaderRows;
+  const isUnitView = leaderContext === "service_unit_leader";
 
   const stats = useMemo(
     () => ({
-      satellitesTotal: satellitesInDataset.length,
-      satellitesCovered: satelliteRows.filter((r) => !r.vacant).length,
-      satellitesVacant: vacantSatellites.length,
+      unitLeaders: unitLeaderRows.length,
+      subLeaders: subLeaderRows.length,
+      activeUnit: unitLeaderRows.filter((r) => isAdminActive(r)).length,
+      activeSub: subLeaderRows.filter((r) => isAdminActive(r)).length,
     }),
-    [satellitesInDataset.length, satelliteRows, vacantSatellites.length],
+    [unitLeaderRows, subLeaderRows],
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return satelliteRows.filter((r) => {
-      if (coverageFilter === "vacant" && !r.vacant) return false;
-      if (coverageFilter === "covered" && r.vacant) return false;
+    return contextRows.filter((r) => {
+      if (!showInactive && !isAdminActive(r)) return false;
       if (!q) return true;
-      const hay = [r.name, r.pastorName, r.pastorUsername, r.status].join(" ").toLowerCase();
+      const hay = [r.full_name, r.username, r.email, r.unitName, r.subUnit, r.location]
+        .join(" ")
+        .toLowerCase();
       return hay.includes(q);
     });
-  }, [satelliteRows, search, coverageFilter]);
+  }, [contextRows, search, showInactive]);
 
-  function handleExport() {
-    if (!filtered.length) return;
-    exportCsv(filtered, {
-      filename: `satellite-coverage-${stateCode}-${new Date().toISOString().slice(0, 10)}.csv`,
-      columns: [
-        { key: "name", label: "Satellite church" },
-        { key: "pastorName", label: "Pastor admin" },
-        { key: "pastorUsername", label: "Username" },
-        { key: "status", label: "Status" },
-      ],
-    });
-  }
+  const contextOptions = useMemo(
+    () => [
+      { id: "service_unit_leader", label: "Service unit leaders", count: stats.unitLeaders },
+      { id: "sub_unit_leader", label: "Sub-unit leaders", count: stats.subLeaders },
+    ],
+    [stats.unitLeaders, stats.subLeaders],
+  );
 
   return (
     <>
@@ -128,64 +122,21 @@ export function StateWorkforce({ admins: adminsPayload, reload, setPage, embedde
           <div>
             <h1 className="sa-admins-title">Workforce</h1>
             <p className="sa-admins-subtitle">
-              Satellite pastor coverage for {stateLabel}
-              {countryLabel ? `, ${countryLabel}` : ""}. Each satellite church needs one Satellite Pastor Admin.
+              Service unit and sub-unit leaders in {stateLabel}, {countryLabel}.
             </p>
           </div>
-          <div className="sa-admins-hero-actions">
-            <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
-              Export CSV
-            </button>
-          </div>
         </header>
-      ) : (
-        <div className="sa-admins-panel-toolbar" style={{ marginBottom: 12 }}>
-          <p className="sa-users-meta" style={{ margin: 0, flex: 1 }}>
-            {stats.satellitesTotal} satellites · {stats.satellitesCovered} covered · {stats.satellitesVacant} vacant
-          </p>
-          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
-            Export CSV
-          </button>
-        </div>
-      )}
-
-      {!embedded ? (
-        <div className="sa-stat-grid" style={{ marginBottom: 20 }}>
-          <div className="sa-stat-card">
-            <div className="sa-stat-header">
-              <span className="sa-stat-label">Satellites in state</span>
-            </div>
-            <div className="sa-stat-value">{stats.satellitesTotal}</div>
-          </div>
-          <div className="sa-stat-card">
-            <div className="sa-stat-header">
-              <span className="sa-stat-label">Satellites covered</span>
-            </div>
-            <div className="sa-stat-value">{stats.satellitesCovered}</div>
-            <div className="sa-stat-trend">With an assigned pastor admin</div>
-          </div>
-          <div className="sa-stat-card">
-            <div className="sa-stat-header">
-              <span className="sa-stat-label">Vacant satellites</span>
-            </div>
-            <div className="sa-stat-value">{stats.satellitesVacant}</div>
-            <div className="sa-stat-trend">
-              {stats.satellitesVacant > 0 ? "Appoint pastors on Users" : "All satellites covered"}
-            </div>
-          </div>
-        </div>
       ) : null}
 
       <div className="sa-card">
-        <div className="sa-card-head sa-admins-card-head">
-          <div>
-            <div className="sa-card-title">Satellite leadership overview</div>
-            <p className="sa-admins-card-meta sa-text-muted sa-text-sm" style={{ margin: "4px 0 0" }}>
-              Read-only view locked to your state. Create or edit Satellite Pastor Admins under Users.
-            </p>
-          </div>
-        </div>
-        <div className="sa-admins-filters" role="toolbar" aria-label="Filter satellite coverage">
+        <UsersContextSwitch
+          value={leaderContext}
+          onChange={setLeaderContext}
+          options={contextOptions}
+          ariaLabel="Workforce leader type"
+        />
+
+        <div className="sa-admins-filters" role="toolbar" aria-label="Filter workforce">
           <div className="sa-search">
             <span className="sa-search-icon" aria-hidden>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -195,64 +146,101 @@ export function StateWorkforce({ admins: adminsPayload, reload, setPage, embedde
             </span>
             <input
               type="search"
-              placeholder="Search satellite or pastor…"
+              placeholder={
+                isUnitView ? "Search unit leader, church, unit…" : "Search sub-unit leader, church…"
+              }
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select className="sa-select" value={coverageFilter} onChange={(e) => setCoverageFilter(e.target.value)}>
-            <option value="all">All satellites</option>
-            <option value="covered">Covered only</option>
-            <option value="vacant">Vacant only</option>
-          </select>
+          <label className="sa-field-toggle">
+            <span className="sa-field-toggle-label">Show inactive</span>
+            <span className="sa-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+              />
+              <span className="sa-switch-ui" aria-hidden />
+            </span>
+          </label>
           <span className="sa-admins-filter-count">
-            {filtered.length} satellite{filtered.length !== 1 ? "s" : ""}
+            {filtered.length} {isUnitView ? "unit leader" : "sub-unit leader"}
+            {filtered.length !== 1 ? "s" : ""}
           </span>
         </div>
+
         <div className="sa-table-wrap">
-          {satellitesInDataset.length === 0 ? (
+          {filtered.length === 0 ? (
             <div className="sa-empty">
               <div className="sa-empty-text">
-                No satellite churches are configured for {stateLabel}. Add locations under the branch directory.
+                {contextRows.length === 0
+                  ? `No ${isUnitView ? "service unit" : "sub-unit"} leaders in this state yet.`
+                  : "No leaders match your filters."}
               </div>
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="sa-empty">
-              <div className="sa-empty-text">No satellites match your filters.</div>
-            </div>
-          ) : (
-            <table className="sa-table">
+          ) : isUnitView ? (
+            <table className="sa-table sa-table-admins-simple">
               <thead>
                 <tr>
-                  <th>Satellite church</th>
-                  <th>Pastor admin</th>
+                  <th>Name</th>
+                  <th>Service unit</th>
+                  <th>Location</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr key={r.name}>
+                  <tr key={r.id}>
                     <td>
-                      <div className="sa-fw-600">{r.name}</div>
+                      <div className="sa-fw-600">{r.full_name}</div>
+                      <div className="sa-text-sm sa-text-muted">{r.username}</div>
+                    </td>
+                    <td className="sa-text-sm">{r.unitName}</td>
+                    <td className="sa-text-sm">{r.location}</td>
+                    <td>
+                      <span className={`sa-badge ${isAdminActive(r) ? "active" : "inactive"}`}>
+                        {isAdminActive(r) ? "Active" : "Inactive"}
+                      </span>
                     </td>
                     <td>
-                      <div className={r.vacant ? "sa-text-muted" : "sa-fw-600"}>{r.pastorName}</div>
-                      {!r.vacant && r.pastorUsername && (
-                        <div className="sa-text-sm sa-text-muted">{r.pastorUsername}</div>
-                      )}
+                      <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="sa-table sa-table-admins-simple">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Service unit</th>
+                  <th>Sub-unit</th>
+                  <th>Location</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <div className="sa-fw-600">{r.full_name}</div>
+                      <div className="sa-text-sm sa-text-muted">{r.username}</div>
+                    </td>
+                    <td className="sa-text-sm">{r.unitName}</td>
+                    <td className="sa-text-sm">{r.subUnit}</td>
+                    <td className="sa-text-sm">{r.location}</td>
+                    <td>
+                      <span className={`sa-badge ${isAdminActive(r) ? "active" : "inactive"}`}>
+                        {isAdminActive(r) ? "Active" : "Inactive"}
+                      </span>
                     </td>
                     <td>
-                      <span className={`sa-badge ${r.vacant ? "in_review" : "active"}`}>{r.status}</span>
-                      {r.vacant && onAssignVacant ? (
-                        <button
-                          type="button"
-                          className="sa-btn sa-btn-outline sa-btn-sm"
-                          style={{ marginLeft: 8 }}
-                          onClick={() => onAssignVacant(r.name)}
-                        >
-                          Assign
-                        </button>
-                      ) : null}
+                      <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
                     </td>
                   </tr>
                 ))}
@@ -260,13 +248,14 @@ export function StateWorkforce({ admins: adminsPayload, reload, setPage, embedde
             </table>
           )}
         </div>
-        {takenSites.size > 0 && vacantSatellites.length === 0 && satellitesInDataset.length > 0 && (
-          <p className="sa-text-sm sa-text-muted" style={{ padding: "12px 16px 16px", margin: 0 }}>
-            All {satellitesInDataset.length} satellite{satellitesInDataset.length !== 1 ? "s" : ""} in this state have
-            pastor admins assigned.
-          </p>
-        )}
       </div>
+
+      <AdminRowActionsMenu
+        open={!!actionMenu?.id}
+        anchorEl={actionMenu?.anchor}
+        onClose={onCloseActionMenu}
+        items={menuItems}
+      />
     </>
   );
 }

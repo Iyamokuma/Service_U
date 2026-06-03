@@ -7,6 +7,7 @@ export function UsersPendingQueue({
   requests = [],
   onOpenQueue,
   title = "Pending admin requests",
+  openButtonLabel = "Review requests",
   compact = false,
 }) {
   const pending = useMemo(
@@ -29,7 +30,7 @@ export function UsersPendingQueue({
         </span>
         {onOpenQueue ? (
           <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={onOpenQueue}>
-            Open queue
+            {openButtonLabel}
           </button>
         ) : null}
       </div>
@@ -45,7 +46,7 @@ export function UsersPendingQueue({
         </div>
         {onOpenQueue ? (
           <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={onOpenQueue}>
-            Open application queue
+            {openButtonLabel}
           </button>
         ) : null}
       </div>
@@ -67,7 +68,7 @@ export function UsersPendingQueue({
       </ul>
       {pending.length > 5 ? (
         <p className="sa-text-sm sa-text-muted" style={{ margin: "8px 0 0" }}>
-          +{pending.length - 5} more in the application queue
+          +{pending.length - 5} more pending request{pending.length - 5 !== 1 ? "s" : ""}
         </p>
       ) : null}
     </div>

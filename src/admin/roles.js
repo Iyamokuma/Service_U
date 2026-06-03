@@ -74,19 +74,30 @@ export function canCountryAdminManageRole(targetRole) {
   return COUNTRY_MANAGED_ADMIN_ROLES.includes(targetRole);
 }
 
+/** Roles a satellite pastor may create directly at their church. */
+export const SATELLITE_DIRECT_CREATE_ROLES = ["service_unit_leader", "sub_unit_leader"];
+
 /** Roles a state branch admin (or Country Admin in state view) may create directly. */
-export const STATE_DIRECT_CREATE_ROLES = ["satellite_church_admin"];
+export const STATE_DIRECT_CREATE_ROLES = [
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
 
 /** Admin roles a state branch admin may manage (within their state). */
-export const STATE_MANAGED_ADMIN_ROLES = ["satellite_church_admin"];
+export const STATE_MANAGED_ADMIN_ROLES = [
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
 
 export function canStateAdminManageRole(targetRole) {
   return STATE_MANAGED_ADMIN_ROLES.includes(targetRole);
 }
 
-/** Whether this admin role uses the request→approval flow instead of direct creation. */
+/** Whether this admin role generally uses request→approval for new accounts (legacy helper). */
 export function mustUseRequestFlow(role) {
-  return ["state_super_admin", "satellite_church_admin"].includes(role);
+  return role === "state_super_admin";
 }
 
 /** Request vs direct create when adding a new admin account. */
@@ -102,6 +113,9 @@ export function mustUseRequestFlowForCreate(actorRole, targetRole, viewMode) {
     return false;
   }
   if (actorRole === "state_super_admin" && STATE_DIRECT_CREATE_ROLES.includes(targetRole)) {
+    return false;
+  }
+  if (actorRole === "satellite_church_admin" && SATELLITE_DIRECT_CREATE_ROLES.includes(targetRole)) {
     return false;
   }
   if (actorRole === "country_super_admin") return true;

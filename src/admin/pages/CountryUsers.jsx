@@ -7,57 +7,73 @@ import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/Admin
 import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../components/adminRowMenuItems.js";
 import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
-import { CountryAdminHqSettings } from "../components/CountryAdminHqSettings.jsx";
 import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
+import { UsersContextSwitch } from "../components/UsersContextSwitch.jsx";
 import { CountryWorkforce } from "./CountryWorkforce.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
 import { countryAdminHomeState } from "../roles.js";
 import {
-  availableHomeStatesForCountryAdmin,
   availableStatesForCountryAdmin,
   occupiedStateCodes,
+  stateLeaderForCode,
 } from "../stateAdminForm.js";
+import { readCountryAdminsContext, writeCountryAdminsContext } from "../countryUsersContext.js";
+import { readUsersSectionTab, writeUsersSectionTab } from "../usersSectionTab.js";
 import { exportCsv } from "../exportCsv.js";
+
+const BRANCH_ADMIN_ROLES = new Set(["state_super_admin", "satellite_church_admin", "country_super_admin"]);
 
 function adminLocationLabel(admin, countryCode) {
   const cc = branchCountryLabel(admin.branch_country || countryCode);
-  if (admin.role === "country_super_admin") {
-    const hq = branchStateLabel(admin.branch_country || countryCode, admin.branch_state);
-    return hq ? `${hq} (HQ) · ${cc || countryCode}` : cc ? `${cc} — National oversight` : "National oversight";
-  }
   const st = branchStateLabel(admin.branch_country || countryCode, admin.branch_state);
+  const sat = String(admin.satellite_site || "").trim();
+  if (admin.role === "satellite_church_admin" && sat) {
+    return st ? `${sat} · ${st}` : sat;
+  }
   if (st && cc) return `${st}, ${cc}`;
   return st || cc || "—";
 }
 
-function adminRoleLabel(role) {
-  if (role === "country_super_admin") return "Country Admin";
-  if (role === "state_super_admin") return "State Branch Admin";
-  if (role === "satellite_church_admin") return "Satellite Pastor Admin";
-  if (role === "service_unit_leader") return "Service Unit Leader";
-  if (role === "sub_unit_leader") return "Sub-unit Leader";
-  if (role === "general_admin") return "General Admin";
-  if (role === "super_admin") return "Super Admin";
-  return String(role || "—");
+function adminRoleLabel(admin, { isDefaultStateRow } = {}) {
+  if (isDefaultStateRow && admin.role === "country_super_admin") {
+    return "State Branch Admin (HQ)";
+  }
+  if (admin.role === "state_super_admin") return "State Branch Admin";
+  if (admin.role === "satellite_church_admin") return "Satellite Pastor Admin";
+  return String(admin.role || "—");
+}
+
+function isBranchAdminRow(admin) {
+  return BRANCH_ADMIN_ROLES.has(admin.role);
 }
 
 export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
   const toast = useToast();
-  const { admin: me, refreshAdmin } = useAdminAuth();
+  const { admin: me, setViewMode } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
-  const countryLabel = branchCountryLabel(countryCode);
   const myHomeState = countryAdminHomeState(me);
 
-  const [sectionTab, setSectionTab] = useState("admins");
+  const [sectionTab, setSectionTabRaw] = useState(() => {
+    const tab = readUsersSectionTab();
+    return tab === "members" ? "admins" : tab;
+  });
+  const setSectionTab = useCallback((tab) => {
+    writeUsersSectionTab(tab);
+    setSectionTabRaw(tab);
+  }, []);
+
+  const [adminsContext, setAdminsContextRaw] = useState(() => readCountryAdminsContext());
+  const setAdminsContext = useCallback((ctx) => {
+    writeCountryAdminsContext(ctx);
+    setAdminsContextRaw(ctx);
+  }, []);
+
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [stateModal, setStateModal] = useState(null);
   const [reassignOnly, setReassignOnly] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savingHome, setSavingHome] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
-  const [homeStateDraft, setHomeStateDraft] = useState(myHomeState);
-  const [openHqSignal, setOpenHqSignal] = useState(0);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
 
   const allAdmins = adminsPayload?.data ?? [];
@@ -72,18 +88,73 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
     [countryAdmins],
   );
 
-  /** Country Admin (you) first, then State Branch Admins in this country. */
-  const countryAdminSelf = useMemo(() => {
-    if (me?.role !== "country_super_admin") return null;
-    return countryAdmins.find((a) => Number(a.id) === Number(me?.id)) || me;
-  }, [countryAdmins, me]);
+  const satellitePastors = useMemo(
+    () => countryAdmins.filter((a) => a.role === "satellite_church_admin"),
+    [countryAdmins],
+  );
 
+  /** HQ default first, then state branch admins, then satellite pastors (country scope). */
   const managedAdmins = useMemo(() => {
-    const others = stateBranchAdmins
-      .filter((a) => !countryAdminSelf || Number(a.id) !== Number(countryAdminSelf.id))
+    const hqState = String(myHomeState || "").toUpperCase();
+    const hqLeader = hqState ? stateLeaderForCode(countryAdmins, countryCode, hqState) : null;
+    const defaultRow = hqLeader?.admin && isBranchAdminRow(hqLeader.admin) ? hqLeader.admin : null;
+    const defaultId = defaultRow ? Number(defaultRow.id) : null;
+
+    const states = stateBranchAdmins
+      .filter((a) => defaultId == null || Number(a.id) !== defaultId)
       .sort((a, b) => String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" }));
-    return countryAdminSelf ? [countryAdminSelf, ...others] : others;
-  }, [countryAdminSelf, stateBranchAdmins]);
+
+    const satellites = satellitePastors
+      .slice()
+      .sort((a, b) => {
+        const st = String(a.branch_state || "").localeCompare(String(b.branch_state || ""), undefined, {
+          sensitivity: "base",
+        });
+        if (st !== 0) return st;
+        const sat = String(a.satellite_site || "").localeCompare(String(b.satellite_site || ""), undefined, {
+          sensitivity: "base",
+        });
+        if (sat !== 0) return sat;
+        return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" });
+      });
+
+    return defaultRow ? [defaultRow, ...states, ...satellites] : [...states, ...satellites];
+  }, [countryAdmins, countryCode, myHomeState, stateBranchAdmins, satellitePastors]);
+
+  const defaultAdminId = useMemo(() => {
+    const hqState = String(myHomeState || "").toUpperCase();
+    const hqLeader = hqState ? stateLeaderForCode(countryAdmins, countryCode, hqState) : null;
+    return hqLeader?.admin?.id ?? null;
+  }, [countryAdmins, countryCode, myHomeState]);
+
+  const adminsContextOptions = useMemo(() => {
+    const defaultIsCountry = managedAdmins.some(
+      (a) => Number(a.id) === Number(defaultAdminId) && a.role === "country_super_admin",
+    );
+    return [
+      { id: "all", label: "All admins", count: managedAdmins.length },
+      {
+        id: "state_super_admin",
+        label: "State branch",
+        count: stateBranchAdmins.length + (defaultIsCountry ? 1 : 0),
+      },
+      { id: "satellite_church_admin", label: "Satellite pastors", count: satellitePastors.length },
+    ];
+  }, [managedAdmins, stateBranchAdmins.length, satellitePastors.length, defaultAdminId]);
+
+  const contextFilteredAdmins = useMemo(() => {
+    if (adminsContext === "state_super_admin") {
+      return managedAdmins.filter(
+        (a) =>
+          a.role === "state_super_admin" ||
+          (Number(a.id) === Number(defaultAdminId) && a.role === "country_super_admin"),
+      );
+    }
+    if (adminsContext === "satellite_church_admin") {
+      return managedAdmins.filter((a) => a.role === "satellite_church_admin");
+    }
+    return managedAdmins;
+  }, [managedAdmins, adminsContext, defaultAdminId]);
 
   const loadPending = useCallback(() => {
     api
@@ -96,39 +167,38 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
     loadPending();
   }, [loadPending, adminsPayload]);
 
-  useEffect(() => {
-    setHomeStateDraft(myHomeState);
-  }, [myHomeState]);
-
   const vacantStates = useMemo(
     () => availableStatesForCountryAdmin(countryCode, countryAdmins, pendingRequests),
     [countryCode, countryAdmins, pendingRequests],
   );
 
-  const homeStateOptions = useMemo(
-    () => availableHomeStatesForCountryAdmin(countryCode, countryAdmins, pendingRequests, me?.id),
-    [countryCode, countryAdmins, pendingRequests, me?.id],
-  );
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return managedAdmins.filter((a) => {
+    return contextFilteredAdmins.filter((a) => {
       if (!showInactive && Number(a.is_active) !== 1) return false;
       if (!q) return true;
       const loc = adminLocationLabel(a, countryCode);
-      const hay = [a.full_name, a.username, a.email, loc, a.role === "country_super_admin" ? "country admin default" : ""]
+      const isDefault = defaultAdminId != null && Number(a.id) === Number(defaultAdminId);
+      const hay = [
+        a.full_name,
+        a.username,
+        a.email,
+        loc,
+        adminRoleLabel(a, { isDefaultStateRow: isDefault }),
+        isDefault ? "default admin" : "",
+      ]
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [managedAdmins, search, showInactive, countryCode]);
+  }, [contextFilteredAdmins, search, showInactive, countryCode, defaultAdminId]);
 
   const actionTarget = useMemo(
     () => managedAdmins.find((a) => Number(a.id) === Number(actionMenu.id)),
     [managedAdmins, actionMenu.id],
   );
 
-  const isSelfRow = (row) => countryAdminSelf && Number(row?.id) === Number(countryAdminSelf.id);
+  const isDefaultRow = (row) => defaultAdminId != null && Number(row?.id) === Number(defaultAdminId);
 
   function closeActionMenu() {
     setActionMenu({ id: null, anchor: null });
@@ -141,12 +211,6 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
       return;
     }
     setActionMenu({ id: row.id, anchor: e.currentTarget });
-  }
-
-  function goAssignVacant(stateCode) {
-    setSectionTab("admins");
-    setReassignOnly(false);
-    setStateModal({ initialState: stateCode });
   }
 
   async function saveStateAdmin(form, validationError) {
@@ -187,11 +251,7 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
 
   async function deleteAdmin(row) {
     closeActionMenu();
-    if (
-      !window.confirm(
-        `Delete ${row.full_name}? This cannot be undone.`,
-      )
-    ) {
+    if (!window.confirm(`Delete ${row.full_name}? This cannot be undone.`)) {
       return;
     }
     try {
@@ -204,33 +264,19 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
     }
   }
 
-  async function saveHomeState() {
-    setSavingHome(true);
-    try {
-      await api.updateAdmin(me.id, { branch_state: homeStateDraft || "", viewer: me });
-      await refreshAdmin?.();
-      toast(homeStateDraft ? "Headquarters state saved." : "Headquarters state cleared.", "success");
-      reload?.();
-      loadPending();
-    } catch (e) {
-      toast(e.message, "error");
-    } finally {
-      setSavingHome(false);
-    }
-  }
-
   function handleExport() {
     if (!filtered.length) {
       toast("No records to export.", "error");
       return;
     }
     exportCsv(filtered, {
-      filename: `state-branch-admins-${countryCode}-${new Date().toISOString().slice(0, 10)}.csv`,
+      filename: `branch-admins-${countryCode}-${new Date().toISOString().slice(0, 10)}.csv`,
       columns: [
-        { key: "full_name", label: "Name of admin" },
+        { key: "full_name", label: "Name" },
+        { key: "role", label: "Role", format: (v, row) => adminRoleLabel(row, { isDefaultStateRow: isDefaultRow(row) }) },
         {
           key: "branch_state",
-          label: "Location of admin",
+          label: "Location",
           format: (v, row) => adminLocationLabel(row, countryCode),
         },
         { key: "is_active", label: "Status", format: (v) => (Number(v) === 1 ? "Active" : "Inactive") },
@@ -241,24 +287,36 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
 
   const takenCount = occupiedStateCodes(countryAdmins, pendingRequests, countryCode).size;
   const statesTotal = branchStatesForCountry(countryCode).length;
+  const activeStateCount = stateBranchAdmins.filter((a) => Number(a.is_active) === 1).length;
+  const activeSatelliteCount = satellitePastors.filter((a) => Number(a.is_active) === 1).length;
 
   const menuItems = useMemo(() => {
-    if (!actionTarget) {
-      return [];
-    }
-    if (isSelfRow(actionTarget)) {
+    if (!actionTarget) return [];
+    if (isDefaultRow(actionTarget) && actionTarget.role === "country_super_admin") {
       return [
         {
-          id: "manage-hq-state",
-          label: "Manage HQ state",
+          id: "state-view",
+          label: "Open state branch view",
           onClick: () => {
             closeActionMenu();
-            setOpenHqSignal((n) => n + 1);
+            setViewMode("state");
+            writeUsersSectionTab("admins");
+            setSectionTab("admins");
+          },
+        },
+        {
+          id: "profile",
+          label: "Profile & account",
+          onClick: () => {
+            closeActionMenu();
+            setPage?.("profile");
           },
         },
       ];
     }
-    if (actionTarget.role !== "state_super_admin") return [];
+    if (actionTarget.role !== "state_super_admin") {
+      return [];
+    }
     return buildAdminRowMenuItems({
       row: actionTarget,
       includeReassign: false,
@@ -269,9 +327,19 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
       onToggleActive: () => toggleActive(actionTarget),
       onDelete: () => deleteAdmin(actionTarget),
     });
-  }, [actionTarget, actionTarget?.is_active, countryAdminSelf, me?.id]);
+  }, [actionTarget, actionTarget?.is_active, defaultAdminId, setViewMode, setPage, setSectionTab]);
 
-  const activeStateAdminCount = stateBranchAdmins.filter((a) => Number(a.is_active) === 1).length;
+  const pageMetaItems =
+    sectionTab === "workforce"
+      ? null
+      : [
+          `${activeStateCount} active state admin${activeStateCount !== 1 ? "s" : ""}`,
+          `${activeSatelliteCount} active satellite pastor${activeSatelliteCount !== 1 ? "s" : ""}`,
+          `${takenCount}/${statesTotal} states covered`,
+          vacantStates.length
+            ? `${vacantStates.length} vacant state${vacantStates.length !== 1 ? "s" : ""}`
+            : "All states covered",
+        ];
 
   return (
     <>
@@ -283,48 +351,44 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
                 Export CSV
               </button>
-              <button
-                type="button"
-                className="sa-btn sa-btn-primary sa-btn-sm"
-                onClick={() => {
-                  setReassignOnly(false);
-                  setStateModal({});
-                }}
-              >
-                + New State Branch Admin
-              </button>
+              {adminsContext !== "satellite_church_admin" ? (
+                <button
+                  type="button"
+                  className="sa-btn sa-btn-primary sa-btn-sm"
+                  onClick={() => {
+                    setReassignOnly(false);
+                    setStateModal({});
+                  }}
+                >
+                  + New State Branch Admin
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
         <div className="sa-users-page-head-tabs">
           <UsersSectionTabs active={sectionTab} onChange={setSectionTab} />
         </div>
-        <UsersPageMeta
-          items={[
-            `${activeStateAdminCount} active state admin${activeStateAdminCount !== 1 ? "s" : ""}`,
-            `${takenCount}/${statesTotal} states covered`,
-            vacantStates.length
-              ? `${vacantStates.length} vacant state${vacantStates.length !== 1 ? "s" : ""}`
-              : "All states covered",
-          ]}
-        />
+        {pageMetaItems ? <UsersPageMeta items={pageMetaItems} /> : null}
       </header>
 
       <UsersPendingQueue
         compact
         requests={pendingRequests}
-        onOpenQueue={() => setPage?.("oversight")}
+        onOpenQueue={() => setPage?.("requests")}
       />
 
       {sectionTab === "workforce" ? (
-        <CountryWorkforce
-          embedded
-          admins={adminsPayload}
-          reload={reload}
-          onAssignVacant={goAssignVacant}
-        />
+        <CountryWorkforce embedded admins={adminsPayload} />
       ) : (
         <div className="sa-card">
+          <UsersContextSwitch
+            value={adminsContext}
+            onChange={setAdminsContext}
+            options={adminsContextOptions}
+            ariaLabel="Branch admin type"
+          />
+
           <div className="sa-admins-filters" role="toolbar" aria-label="Filter admins">
             <div className="sa-search">
               <span className="sa-search-icon" aria-hidden>
@@ -335,7 +399,13 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
               </span>
               <input
                 type="search"
-                placeholder="Search name or location…"
+                placeholder={
+                  adminsContext === "satellite_church_admin"
+                    ? "Search pastor, satellite, state…"
+                    : adminsContext === "state_super_admin"
+                      ? "Search state admin or state…"
+                      : "Search name, state, satellite…"
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -361,7 +431,7 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
               <div className="sa-empty">
                 <div className="sa-empty-text">
                   {managedAdmins.length === 0
-                    ? "No administrators in this country yet."
+                    ? "No state or satellite administrators in this country yet."
                     : "No accounts match your filters."}
                 </div>
               </div>
@@ -370,41 +440,50 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
                 <thead>
                   <tr>
                     <th>Name of admin</th>
-                    <th>Location of admin</th>
+                    <th>Location</th>
                     <th>Status</th>
                     <th>Role</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((a) => (
-                    <tr key={a.id}>
-                      <td>
-                        <div className="sa-fw-600">{a.full_name}</div>
-                        <div className="sa-text-sm sa-text-muted">{a.username}</div>
-                        {isSelfRow(a) ? (
-                          <span className="sa-badge viewer" style={{ marginTop: 6 }}>
-                            Default admin
+                  {filtered.map((a) => {
+                    const isDefault = isDefaultRow(a);
+                    return (
+                      <tr key={a.id}>
+                        <td>
+                          <div className="sa-fw-600">{a.full_name}</div>
+                          <div className="sa-text-sm sa-text-muted">{a.username}</div>
+                          {isDefault ? (
+                            <span className="sa-badge viewer" style={{ marginTop: 6 }}>
+                              Default admin
+                            </span>
+                          ) : null}
+                          {Number(a.is_active) !== 1 ? (
+                            <span className="sa-badge inactive" style={{ marginTop: 6 }}>
+                              Inactive
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
+                        <td>
+                          <span className={`sa-badge ${Number(a.is_active) === 1 ? "active" : "inactive"}`}>
+                            {Number(a.is_active) === 1 ? "Active" : "Inactive"}
                           </span>
-                        ) : null}
-                        {Number(a.is_active) !== 1 ? (
-                          <span className="sa-badge inactive" style={{ marginTop: 6 }}>
-                            Inactive
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
-                      <td>
-                        <span className={`sa-badge ${Number(a.is_active) === 1 ? "active" : "inactive"}`}>
-                          {Number(a.is_active) === 1 ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="sa-text-sm">{adminRoleLabel(a.role)}</td>
-                      <td>
-                        <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="sa-text-sm">
+                          {adminRoleLabel(a, { isDefaultStateRow: isDefault })}
+                        </td>
+                        <td>
+                          {a.role === "state_super_admin" || isDefault ? (
+                            <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
+                          ) : (
+                            <span className="sa-text-muted sa-text-sm">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -433,17 +512,6 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
         }}
         onSave={saveStateAdmin}
         reassignOnly={reassignOnly}
-      />
-
-      <CountryAdminHqSettings
-        countryCode={countryCode}
-        homeStateDraft={homeStateDraft}
-        homeStateOptions={homeStateOptions}
-        myHomeState={myHomeState}
-        savingHome={savingHome}
-        forceOpenSignal={openHqSignal}
-        onChangeHomeState={setHomeStateDraft}
-        onSave={saveHomeState}
       />
     </>
   );

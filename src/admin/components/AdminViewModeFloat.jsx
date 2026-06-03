@@ -1,5 +1,5 @@
 import { useAdminAuth } from "../AdminContext.jsx";
-import { canSwitchAdminView } from "../adminViewMode.js";
+import { canSwitchAdminView, normalizePageForViewMode } from "../adminViewMode.js";
 
 /**
  * Sticky Country ↔ State view bar (Country Admin HQ dual role) — below the topbar.
@@ -14,7 +14,7 @@ export function AdminViewModeFloat({ setPage }) {
   function selectMode(mode) {
     if (mode === viewMode) return;
     setViewMode(mode);
-    setPage?.("overview");
+    setPage?.((p) => normalizePageForViewMode(p, admin, mode));
   }
 
   return (

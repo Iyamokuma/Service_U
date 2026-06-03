@@ -1,19 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "../api.js";
+import { useCallback, useMemo, useState } from "react";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { UsersContextSwitch } from "../components/UsersContextSwitch.jsx";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
-import { readCountryWorkforceContext, writeCountryWorkforceContext } from "../countryUsersContext.js";
-import { exportCsv } from "../exportCsv.js";
-
-function leaderLocationLabel(admin, countryCode) {
-  const st = branchStateLabel(countryCode, admin.branch_state);
-  const sat = String(admin.satellite_site || "").trim();
-  if (sat && st) return `${sat} · ${st}`;
-  if (sat) return sat;
-  return st || "—";
-}
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { readStateWorkforceContext, writeStateWorkforceContext } from "../countryUsersContext.js";
 
 function buildUnitNameMap(units) {
   const map = new Map();
@@ -23,63 +14,58 @@ function buildUnitNameMap(units) {
   return map;
 }
 
-export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
+export function SatelliteChurchLeaders({
+  admins: adminsPayload,
+  units: unitsPayload,
+  embedded = false,
+  actionMenu,
+  onOpenActions,
+  onCloseActionMenu,
+  menuItems,
+}) {
   const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
+  const stateCode = String(me?.branch_state || "").toUpperCase();
+  const satelliteSite = String(me?.satellite_site || "").trim();
   const countryLabel = branchCountryLabel(countryCode);
+  const stateLabel = branchStateLabel(countryCode, stateCode) || stateCode;
 
-  const [leaderContext, setLeaderContextRaw] = useState(() => readCountryWorkforceContext());
+  const [leaderContext, setLeaderContextRaw] = useState(() => readStateWorkforceContext());
   const setLeaderContext = useCallback((ctx) => {
-    writeCountryWorkforceContext(ctx);
+    writeStateWorkforceContext(ctx);
     setLeaderContextRaw(ctx);
   }, []);
 
-  const [unitNameById, setUnitNameById] = useState(() => new Map());
-  const [unitsLoading, setUnitsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
 
-  const loadUnits = useCallback(() => {
-    setUnitsLoading(true);
-    api
-      .units()
-      .then((r) => setUnitNameById(buildUnitNameMap(r.data)))
-      .catch(() => setUnitNameById(new Map()))
-      .finally(() => setUnitsLoading(false));
-  }, []);
-
-  useEffect(() => {
-    loadUnits();
-  }, [loadUnits]);
+  const unitNameById = useMemo(() => buildUnitNameMap(unitsPayload?.data), [unitsPayload?.data]);
 
   const leaderRows = useMemo(() => {
     return (adminsPayload?.data ?? [])
       .filter(
         (a) =>
           String(a.branch_country || "").toUpperCase() === countryCode &&
+          String(a.branch_state || "").toUpperCase() === stateCode &&
+          String(a.satellite_site || "").trim() === satelliteSite &&
           ["service_unit_leader", "sub_unit_leader"].includes(a.role),
       )
       .map((a) => {
         const unitId = Number(a.service_unit_id);
-        const unitName = unitNameById.get(unitId) || (unitId ? `Unit #${unitId}` : "—");
-        const subUnit = a.role === "sub_unit_leader" ? String(a.sub_unit_name || "").trim() || "—" : "—";
         return {
           ...a,
-          unitName,
-          subUnit,
-          location: leaderLocationLabel(a, countryCode),
+          unitName: unitNameById.get(unitId) || (unitId ? `Unit #${unitId}` : "—"),
+          subUnit: a.role === "sub_unit_leader" ? String(a.sub_unit_name || "").trim() || "—" : "—",
         };
       })
       .sort((a, b) => {
         const byUnit = a.unitName.localeCompare(b.unitName, undefined, { sensitivity: "base" });
         if (byUnit !== 0) return byUnit;
-        const bySub = a.subUnit.localeCompare(b.subUnit, undefined, { sensitivity: "base" });
-        if (bySub !== 0) return bySub;
         return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, {
           sensitivity: "base",
         });
       });
-  }, [adminsPayload, countryCode, unitNameById]);
+  }, [adminsPayload, countryCode, stateCode, satelliteSite, unitNameById]);
 
   const unitLeaderRows = useMemo(
     () => leaderRows.filter((r) => r.role === "service_unit_leader"),
@@ -91,13 +77,12 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
   );
 
   const contextRows = leaderContext === "sub_unit_leader" ? subLeaderRows : unitLeaderRows;
+  const isUnitView = leaderContext === "service_unit_leader";
 
   const stats = useMemo(
     () => ({
       unitLeaders: unitLeaderRows.length,
       subLeaders: subLeaderRows.length,
-      activeUnit: unitLeaderRows.filter((r) => isAdminActive(r)).length,
-      activeSub: subLeaderRows.filter((r) => isAdminActive(r)).length,
     }),
     [unitLeaderRows, subLeaderRows],
   );
@@ -107,97 +92,43 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
     return contextRows.filter((r) => {
       if (!showInactive && !isAdminActive(r)) return false;
       if (!q) return true;
-      const hay = [r.full_name, r.username, r.email, r.unitName, r.subUnit, r.location]
-        .join(" ")
-        .toLowerCase();
+      const hay = [r.full_name, r.username, r.email, r.unitName, r.subUnit].join(" ").toLowerCase();
       return hay.includes(q);
     });
   }, [contextRows, search, showInactive]);
 
   const contextOptions = useMemo(
     () => [
-      {
-        id: "service_unit_leader",
-        label: "Service unit leaders",
-        count: stats.unitLeaders,
-      },
-      {
-        id: "sub_unit_leader",
-        label: "Sub-unit leaders",
-        count: stats.subLeaders,
-      },
+      { id: "service_unit_leader", label: "Service unit leaders", count: stats.unitLeaders },
+      { id: "sub_unit_leader", label: "Sub-unit leaders", count: stats.subLeaders },
     ],
     [stats.unitLeaders, stats.subLeaders],
   );
-
-  const isUnitView = leaderContext === "service_unit_leader";
-
-  function handleExport() {
-    if (!filtered.length) return;
-    const slug = isUnitView ? "unit-leaders" : "sub-unit-leaders";
-    exportCsv(filtered, {
-      filename: `workforce-${slug}-${countryCode}-${new Date().toISOString().slice(0, 10)}.csv`,
-      columns: isUnitView
-        ? [
-            { key: "full_name", label: "Name" },
-            { key: "username", label: "Username" },
-            { key: "unitName", label: "Service unit" },
-            { key: "location", label: "Location" },
-            { key: "is_active", label: "Status", format: (v) => (Number(v) === 1 ? "Active" : "Inactive") },
-          ]
-        : [
-            { key: "full_name", label: "Name" },
-            { key: "username", label: "Username" },
-            { key: "unitName", label: "Service unit" },
-            { key: "subUnit", label: "Sub-unit" },
-            { key: "location", label: "Location" },
-            { key: "is_active", label: "Status", format: (v) => (Number(v) === 1 ? "Active" : "Inactive") },
-          ],
-    });
-  }
 
   return (
     <>
       {!embedded ? (
         <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
           <div>
-            <h1 className="sa-admins-title">Workforce</h1>
+            <h1 className="sa-admins-title">Admins</h1>
             <p className="sa-admins-subtitle">
-              Service unit and sub-unit leaders in {countryLabel || "your country"}.
+              Service unit and sub-unit leaders at {satelliteSite || "your church"}
+              {stateLabel ? ` · ${stateLabel}` : ""}
+              {countryLabel ? `, ${countryLabel}` : ""}.
             </p>
           </div>
-          <div className="sa-admins-hero-actions">
-            <button type="button" className="sa-btn sa-btn-outline" onClick={handleExport} disabled={!filtered.length}>
-              Export CSV
-            </button>
-          </div>
         </header>
-      ) : (
-        <div className="sa-admins-panel-toolbar" style={{ marginBottom: 12 }}>
-          <p className="sa-users-meta" style={{ margin: 0, flex: 1 }}>
-            {stats.unitLeaders} service unit · {stats.subLeaders} sub-unit ·{" "}
-            {stats.activeUnit + stats.activeSub} active
-          </p>
-          <button
-            type="button"
-            className="sa-btn sa-btn-outline sa-btn-sm"
-            onClick={handleExport}
-            disabled={!filtered.length}
-          >
-            Export CSV
-          </button>
-        </div>
-      )}
+      ) : null}
 
       <div className="sa-card">
         <UsersContextSwitch
           value={leaderContext}
           onChange={setLeaderContext}
           options={contextOptions}
-          ariaLabel="Workforce leader type"
+          ariaLabel="Leader type"
         />
 
-        <div className="sa-admins-filters" role="toolbar" aria-label="Filter workforce leaders">
+        <div className="sa-admins-filters" role="toolbar" aria-label="Filter leaders">
           <div className="sa-search">
             <span className="sa-search-icon" aria-hidden>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -208,9 +139,7 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
             <input
               type="search"
               placeholder={
-                isUnitView
-                  ? "Search unit leader, service unit, church…"
-                  : "Search sub-unit leader, unit, church…"
+                isUnitView ? "Search unit leader or unit…" : "Search sub-unit leader or unit…"
               }
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -235,15 +164,11 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
         </div>
 
         <div className="sa-table-wrap">
-          {unitsLoading ? (
-            <div className="sa-empty">
-              <div className="sa-empty-text">Loading leaders…</div>
-            </div>
-          ) : filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <div className="sa-empty">
               <div className="sa-empty-text">
                 {contextRows.length === 0
-                  ? `No ${isUnitView ? "service unit" : "sub-unit"} leaders in ${countryLabel || "this country"} yet.`
+                  ? `No ${isUnitView ? "service unit" : "sub-unit"} leaders at this church yet.`
                   : "No leaders match your filters."}
               </div>
             </div>
@@ -253,8 +178,8 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
                 <tr>
                   <th>Name</th>
                   <th>Service unit</th>
-                  <th>Location</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -265,11 +190,13 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
                       <div className="sa-text-sm sa-text-muted">{r.username}</div>
                     </td>
                     <td className="sa-text-sm">{r.unitName}</td>
-                    <td className="sa-text-sm">{r.location}</td>
                     <td>
                       <span className={`sa-badge ${isAdminActive(r) ? "active" : "inactive"}`}>
                         {isAdminActive(r) ? "Active" : "Inactive"}
                       </span>
+                    </td>
+                    <td>
+                      <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
                     </td>
                   </tr>
                 ))}
@@ -282,8 +209,8 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
                   <th>Name</th>
                   <th>Service unit</th>
                   <th>Sub-unit</th>
-                  <th>Location</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -295,11 +222,13 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
                     </td>
                     <td className="sa-text-sm">{r.unitName}</td>
                     <td className="sa-text-sm">{r.subUnit}</td>
-                    <td className="sa-text-sm">{r.location}</td>
                     <td>
                       <span className={`sa-badge ${isAdminActive(r) ? "active" : "inactive"}`}>
                         {isAdminActive(r) ? "Active" : "Inactive"}
                       </span>
+                    </td>
+                    <td>
+                      <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
                     </td>
                   </tr>
                 ))}
@@ -308,6 +237,13 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false }) {
           )}
         </div>
       </div>
+
+      <AdminRowActionsMenu
+        open={!!actionMenu?.id}
+        anchorEl={actionMenu?.anchor}
+        onClose={onCloseActionMenu}
+        items={menuItems}
+      />
     </>
   );
 }

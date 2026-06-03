@@ -20,6 +20,10 @@ function normText(v: unknown): string {
   return String(v ?? "").trim();
 }
 
+function normalizeAdminPassword(raw: unknown): string {
+  return String(raw ?? "").trim();
+}
+
 function requireEnv(name: string): string {
   const v = Deno.env.get(name);
   if (!v) throw new Error(`Missing required env: ${name}`);
@@ -49,7 +53,8 @@ Deno.serve(async (req) => {
         normText(a.username).toLowerCase() === username ||
         normText(a.email).toLowerCase() === username,
     );
-    if (!admin || String(admin.password ?? "") !== password) {
+    const storedPassword = normalizeAdminPassword(admin?.password);
+    if (!admin || !storedPassword || storedPassword !== password) {
       return json(401, { error: "Invalid credentials." });
     }
 

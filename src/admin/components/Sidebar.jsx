@@ -71,6 +71,7 @@ const NAV_COUNTRY_ADMIN = [
       { id: "overview", label: "Country analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
+      { id: "requests", label: "Requests", icon: <RequestIcon /> },
       { id: "locations", label: "Locations", icon: <MapPinIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
@@ -85,8 +86,8 @@ const NAV_STATE_ADMIN = [
     items: [
       { id: "overview", label: "State analytics", icon: <GridIcon /> },
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
-      { id: "members", label: "Unit members", icon: <UsersIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
+      { id: "requests", label: "My requests", icon: <RequestIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
@@ -113,7 +114,7 @@ const NAV_SATELLITE = [
     items: [
       { id: "role-dashboard", label: "Dashboard", icon: <HomeIcon /> },
       { id: "oversight", label: "Application Queue", icon: <ListIcon /> },
-      { id: "admins", label: "Admin Accounts", icon: <UsersIcon /> },
+      { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "requests", label: "My Requests", icon: <RequestIcon /> },
       { id: "announcements", label: "Announcements", icon: <ActivityIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },

@@ -118,10 +118,10 @@ function SatellitePastorDashboard({ setPage, admin }) {
               onClick={() => setPage?.("oversight")}
             />
             <DashCard
-              label="Admin Accounts"
+              label="Team leaders"
               value={adminCount ?? 0}
-              sub="Active team leaders"
-              onClick={() => setPage?.("admins")}
+              sub="Service & sub-unit leaders"
+              onClick={() => setPage?.("users")}
             />
           </div>
 
@@ -134,8 +134,8 @@ function SatellitePastorDashboard({ setPage, admin }) {
                 <button type="button" className="sa-btn sa-btn-primary" onClick={() => setPage?.("oversight")}>
                   Application Queue
                 </button>
-                <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("admins")}>
-                  Admin Accounts
+                <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("users")}>
+                  Users
                 </button>
                 <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("announcements")}>
                   Announcements

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { readUsersSectionTab, writeUsersSectionTab } from "../usersSectionTab.js";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -9,6 +10,9 @@ import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
 import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
 import { StateWorkforce } from "./StateWorkforce.jsx";
+import { UnitMembers } from "./UnitMembers.jsx";
+import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
+import { readStateWorkforceContext } from "../countryUsersContext.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
@@ -23,7 +27,7 @@ function satelliteLocationLabel(admin, stateLabel, countryLabel) {
   return stateLabel || countryLabel || "—";
 }
 
-export function StateUsers({ admins: adminsPayload, reload, setPage }) {
+export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   const toast = useToast();
   const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
@@ -31,7 +35,11 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
   const countryLabel = branchCountryLabel(countryCode);
   const stateLabel = branchStateLabel(countryCode, stateCode) || stateCode;
 
-  const [sectionTab, setSectionTab] = useState("admins");
+  const [sectionTab, setSectionTabRaw] = useState(() => readUsersSectionTab());
+  const setSectionTab = useCallback((tab) => {
+    writeUsersSectionTab(tab);
+    setSectionTabRaw(tab);
+  }, []);
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [satelliteModal, setSatelliteModal] = useState(null);
@@ -39,7 +47,8 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
   const [saving, setSaving] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [churches, setChurches] = useState([]);
-  const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
+  const [actionMenu, setActionMenu] = useState({ id: null, anchor: null, scope: "admins" });
+  const [leaderModal, setLeaderModal] = useState(null);
 
   const allAdmins = adminsPayload?.data ?? [];
 
@@ -55,6 +64,11 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
 
   const satellitePastors = useMemo(
     () => stateAdmins.filter((a) => a.role === "satellite_church_admin"),
+    [stateAdmins],
+  );
+
+  const workforceLeaders = useMemo(
+    () => stateAdmins.filter((a) => ["service_unit_leader", "sub_unit_leader"].includes(a.role)),
     [stateAdmins],
   );
 
@@ -94,28 +108,60 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
     });
   }, [satellitePastors, search, showInactive, stateLabel, countryLabel]);
 
-  const actionTarget = useMemo(
-    () => satellitePastors.find((a) => Number(a.id) === Number(actionMenu.id)),
-    [satellitePastors, actionMenu.id],
-  );
+  const actionTarget = useMemo(() => {
+    if (actionMenu.scope === "workforce") {
+      return workforceLeaders.find((a) => Number(a.id) === Number(actionMenu.id));
+    }
+    return satellitePastors.find((a) => Number(a.id) === Number(actionMenu.id));
+  }, [actionMenu.scope, actionMenu.id, workforceLeaders, satellitePastors]);
 
   function closeActionMenu() {
-    setActionMenu({ id: null, anchor: null });
+    setActionMenu({ id: null, anchor: null, scope: "admins" });
   }
 
-  function openActions(e, row) {
+  function openAdminActions(e, row) {
     e.stopPropagation();
-    if (actionMenu.id === row.id) {
+    if (actionMenu.id === row.id && actionMenu.scope === "admins") {
       closeActionMenu();
       return;
     }
-    setActionMenu({ id: row.id, anchor: e.currentTarget });
+    setActionMenu({ id: row.id, anchor: e.currentTarget, scope: "admins" });
   }
 
-  function goAssignVacant(satelliteName) {
-    setSectionTab("admins");
-    setReassignOnly(false);
-    setSatelliteModal({ initialSatellite: satelliteName });
+  function openWorkforceActions(e, row) {
+    e.stopPropagation();
+    if (actionMenu.id === row.id && actionMenu.scope === "workforce") {
+      closeActionMenu();
+      return;
+    }
+    setActionMenu({ id: row.id, anchor: e.currentTarget, scope: "workforce" });
+  }
+
+  async function saveWorkforceLeader(form, validationError) {
+    if (validationError) {
+      toast(validationError, "error");
+      return;
+    }
+    if (!form) return;
+    setSaving(true);
+    try {
+      const payload = { ...form, viewer: me };
+      if (form.id) await api.updateAdmin(form.id, payload);
+      else await api.createAdmin(payload);
+      toast(
+        form.id
+          ? "Workforce leader updated."
+          : `${form.role === "sub_unit_leader" ? "Sub-unit" : "Service unit"} leader created.`,
+        "success",
+      );
+      setLeaderModal(null);
+      reload?.();
+      loadPending();
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveSatellitePastor(form, validationError) {
@@ -189,6 +235,18 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
 
   const menuItems = useMemo(() => {
     if (!actionTarget) return [];
+    if (actionMenu.scope === "workforce") {
+      return buildAdminRowMenuItems({
+        row: actionTarget,
+        includeReassign: false,
+        onEdit: () => {
+          closeActionMenu();
+          setLeaderModal(actionTarget);
+        },
+        onToggleActive: () => toggleActive(actionTarget),
+        onDelete: () => deleteAdmin(actionTarget),
+      });
+    }
     return buildAdminRowMenuItems({
       row: actionTarget,
       includeReassign: true,
@@ -203,10 +261,13 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
       onToggleActive: () => toggleActive(actionTarget),
       onDelete: () => deleteAdmin(actionTarget),
     });
-  }, [actionTarget, actionTarget?.is_active]);
+  }, [actionTarget, actionTarget?.is_active, actionMenu.scope]);
 
   const activePastorCount = satellitePastors.filter((a) => Number(a.is_active) === 1).length;
   const satellitesTotal = satellitesInDataset?.length ?? 0;
+  const unitLeaderCount = workforceLeaders.filter((a) => a.role === "service_unit_leader").length;
+  const subLeaderCount = workforceLeaders.filter((a) => a.role === "sub_unit_leader").length;
+  const workforceContext = readStateWorkforceContext();
 
   return (
     <>
@@ -231,33 +292,68 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
                 </button>
               ) : null}
             </div>
+          ) : sectionTab === "workforce" ? (
+            <div className="sa-users-page-actions">
+              <button
+                type="button"
+                className="sa-btn sa-btn-primary sa-btn-sm"
+                onClick={() =>
+                  setLeaderModal({
+                    initialRole:
+                      workforceContext === "sub_unit_leader"
+                        ? "sub_unit_leader"
+                        : "service_unit_leader",
+                  })
+                }
+              >
+                {workforceContext === "sub_unit_leader"
+                  ? "+ New Sub-Unit Leader"
+                  : "+ New Service Unit Leader"}
+              </button>
+            </div>
           ) : null}
         </div>
         <div className="sa-users-page-head-tabs">
-          <UsersSectionTabs active={sectionTab} onChange={setSectionTab} />
+          <UsersSectionTabs active={sectionTab} onChange={setSectionTab} showMembersTab />
         </div>
-        <UsersPageMeta
-          items={[
-            `${activePastorCount} active pastor admin${activePastorCount !== 1 ? "s" : ""}`,
-            satellitesTotal ? `${satellitesTotal - vacantSatellites.length}/${satellitesTotal} satellites covered` : null,
-            vacantSatellites.length
-              ? `${vacantSatellites.length} vacant satellite${vacantSatellites.length !== 1 ? "s" : ""}`
-              : satellitesTotal
-                ? "All satellites covered"
-                : null,
-          ]}
-        />
+        {sectionTab === "admins" ? (
+          <UsersPageMeta
+            items={[
+              `${activePastorCount} active pastor admin${activePastorCount !== 1 ? "s" : ""}`,
+              satellitesTotal ? `${satellitesTotal - vacantSatellites.length}/${satellitesTotal} satellites covered` : null,
+              vacantSatellites.length
+                ? `${vacantSatellites.length} vacant satellite${vacantSatellites.length !== 1 ? "s" : ""}`
+                : satellitesTotal
+                  ? "All satellites covered"
+                  : null,
+            ]}
+          />
+        ) : sectionTab === "workforce" ? (
+          <UsersPageMeta
+            items={[
+              `${unitLeaderCount} service unit leader${unitLeaderCount !== 1 ? "s" : ""}`,
+              `${subLeaderCount} sub-unit leader${subLeaderCount !== 1 ? "s" : ""}`,
+            ]}
+          />
+        ) : sectionTab === "members" ? (
+          <UsersPageMeta items={["Approved unit members in your state"]} />
+        ) : null}
       </header>
 
-      <UsersPendingQueue compact requests={pendingRequests} onOpenQueue={() => setPage?.("oversight")} />
+      <UsersPendingQueue compact requests={pendingRequests} onOpenQueue={() => setPage?.("requests")} />
 
       {sectionTab === "workforce" ? (
         <StateWorkforce
           embedded
           admins={adminsPayload}
-          reload={reload}
-          onAssignVacant={goAssignVacant}
+          units={units}
+          actionMenu={actionMenu}
+          onOpenActions={openWorkforceActions}
+          onCloseActionMenu={closeActionMenu}
+          menuItems={menuItems}
         />
+      ) : sectionTab === "members" ? (
+        <UnitMembers units={units} embedded />
       ) : (
         <div className="sa-card">
           <div className="sa-admins-filters" role="toolbar" aria-label="Filter admins">
@@ -323,7 +419,7 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
                       </td>
                       <td className="sa-text-sm">{satelliteLocationLabel(a, stateLabel, countryLabel)}</td>
                       <td>
-                        <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
+                        <AdminRowActionsTrigger onOpen={(e) => openAdminActions(e, a)} label="Action" />
                       </td>
                     </tr>
                   ))}
@@ -334,12 +430,14 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
         </div>
       )}
 
-      <AdminRowActionsMenu
-        open={!!actionMenu.id}
-        anchorEl={actionMenu.anchor}
-        onClose={closeActionMenu}
-        items={menuItems}
-      />
+      {sectionTab === "admins" ? (
+        <AdminRowActionsMenu
+          open={!!actionMenu.id && actionMenu.scope === "admins"}
+          anchorEl={actionMenu.anchor}
+          onClose={closeActionMenu}
+          items={menuItems}
+        />
+      ) : null}
 
       <SatellitePastorAdminModal
         open={!!satelliteModal}
@@ -357,6 +455,19 @@ export function StateUsers({ admins: adminsPayload, reload, setPage }) {
           setReassignOnly(false);
         }}
         onSave={saveSatellitePastor}
+      />
+
+      <WorkforceLeaderModal
+        open={!!leaderModal}
+        countryCode={countryCode}
+        stateCode={stateCode}
+        churches={churches}
+        units={units?.data || []}
+        initialRole={leaderModal?.initialRole || leaderModal?.role || "service_unit_leader"}
+        editData={leaderModal?.id ? leaderModal : null}
+        saving={saving}
+        onClose={() => setLeaderModal(null)}
+        onSave={saveWorkforceLeader}
       />
     </>
   );

@@ -49,6 +49,7 @@ const COUNTRY_PAGES = [
   "overview",
   "oversight",
   "users",
+  "requests",
   "locations",
   "activity",
   "announcements",
@@ -58,8 +59,8 @@ const COUNTRY_PAGES = [
 export const STATE_LEVEL_PAGES = [
   "overview",
   "oversight",
-  "members",
   "users",
+  "requests",
   "activity",
   "announcements",
   "profile",
@@ -69,17 +70,40 @@ const STATE_PAGES = STATE_LEVEL_PAGES;
 
 /** Normalize page id for State Branch Admin nav (including Country Admin in state view). */
 export function normalizeStateAdminPage(page) {
-  if (page === "admins" || page === "requests" || page === "workforce") return "users";
+  if (page === "admins" || page === "workforce" || page === "members") return "users";
   if (STATE_LEVEL_PAGES.includes(page)) return page;
   return "overview";
 }
 
+const SATELLITE_ADMIN_PAGES = [
+  "role-dashboard",
+  "oversight",
+  "users",
+  "requests",
+  "announcements",
+  "profile",
+];
+
+/** Normalize page id for Satellite Pastor Admin nav. */
+export function normalizeSatelliteAdminPage(page) {
+  if (page === "admins" || page === "workforce" || page === "members") return "users";
+  if (SATELLITE_ADMIN_PAGES.includes(page)) return page;
+  return "role-dashboard";
+}
+
+/** Map sidebar page when switching Country ↔ State view (keep the closest equivalent). */
 export function normalizePageForViewMode(page, admin, viewMode) {
   if (!canSwitchAdminView(admin)) return page;
   const allowed = viewMode === "state" ? STATE_PAGES : COUNTRY_PAGES;
   if (page === "admins" || page === "workforce") return "users";
-  if (page === "requests" && viewMode === "state") return "users";
   if (allowed.includes(page)) return page;
+  if (viewMode === "state") {
+    if (page === "locations" || page === "units") return "users";
+    if (page === "queue") return "oversight";
+  } else {
+    if (page === "members" || page === "units") return "users";
+    if (page === "queue") return "oversight";
+  }
   return "overview";
 }
 

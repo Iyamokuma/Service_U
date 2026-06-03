@@ -8,7 +8,7 @@ import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStatesForCountry } from "../branchRegions.js";
 import { exportCsv } from "../exportCsv.js";
 
-export function UnitMembers({ units }) {
+export function UnitMembers({ units, embedded = false }) {
   const toast = useToast();
   const { admin, viewMode } = useAdminAuth();
   const actingAsState = isActingAsStateAdmin(admin, viewMode);
@@ -130,7 +130,7 @@ export function UnitMembers({ units }) {
 
   return (
     <>
-      {isSubUnitLeader && (
+      {!embedded && isSubUnitLeader && (
         <div style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Members list</h2>
           <p className="sa-text-muted sa-text-sm" style={{ margin: 0 }}>
