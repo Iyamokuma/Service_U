@@ -9,6 +9,17 @@ export function getAdminAppUrl(): string {
   return norm(denoEnv?.get?.("ADMIN_APP_URL") || "").replace(/\/+$/, "");
 }
 
+/** Resend "from" — supports RESEND_FROM_EMAIL or legacy RESEND_SENDER_NAME + RESEND_SENDER_EMAIL. */
+export function getResendFromAddress(): string {
+  const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
+  const direct = norm(denoEnv?.get?.("RESEND_FROM_EMAIL") || "");
+  if (direct) return direct;
+  const email = norm(denoEnv?.get?.("RESEND_SENDER_EMAIL") || "");
+  const name = norm(denoEnv?.get?.("RESEND_SENDER_NAME") || "");
+  if (email && name) return `${name} <${email}>`;
+  return email;
+}
+
 export function isPlatformAdminRole(role: unknown): boolean {
   const r = norm(role);
   return r === "super_admin" || r === "general_admin";
@@ -84,7 +95,7 @@ export async function sendAdminInviteEmail(
 ): Promise<boolean> {
   const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
   const key = denoEnv?.get?.("RESEND_API_KEY") || "";
-  const from = denoEnv?.get?.("RESEND_FROM_EMAIL") || "";
+  const from = getResendFromAddress();
   const email = norm(to).toLowerCase();
   if (!key || !from || !email || !inviteUrl) return false;
 
@@ -106,8 +117,13 @@ export async function sendAdminInviteEmail(
       },
       body: JSON.stringify({ from, to: [email], subject, html }),
     });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error("Resend invite email failed:", res.status, errBody);
+    }
     return res.ok;
-  } catch {
+  } catch (err) {
+    console.error("Resend invite email error:", err);
     return false;
   }
 }

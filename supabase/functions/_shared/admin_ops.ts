@@ -23,6 +23,7 @@ import {
   isPlatformAdminRole,
   randomInternalPassword,
   resolveAvailableUsername,
+  getResendFromAddress,
   sendAdminInviteEmail,
   shapeAdminForClient,
   usesInviteOnCreate,
@@ -317,7 +318,7 @@ async function notifyGlobalAdminsOfRequest(
 async function trySendAdminEmail(to: string, subject: string, html: string): Promise<void> {
   const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
   const key = denoEnv?.get?.("RESEND_API_KEY") || "";
-  const from = denoEnv?.get?.("RESEND_FROM_EMAIL") || "";
+  const from = getResendFromAddress();
   if (!key || !from || !to) return;
   try {
     await fetch("https://api.resend.com/emails", {

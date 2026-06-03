@@ -407,6 +407,16 @@ export function AdminUsers({ data, units, reload }) {
     finally { setSaving(false); }
   }
 
+  async function resendInvite(row) {
+    closeActionMenu();
+    try {
+      await api.resendAdminInvite(row.id);
+      toast(`Invitation email sent to ${row.email}.`, "success");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
   async function toggleActive(admin) {
     const activating = !isAdminActive(admin);
     try {
@@ -540,7 +550,13 @@ export function AdminUsers({ data, units, reload }) {
     const canEdit = isSelf || !(actionTarget.role === "super_admin" && !isRootSuper);
     const canModifyOthers = !isSelf && (isRootSuper || actionTarget.role !== "super_admin");
 
-    return buildAdminRowMenuItems({
+    const canResendInvite =
+      canModifyOthers &&
+      isGlobalAdmin &&
+      !["super_admin", "general_admin"].includes(actionTarget.role) &&
+      String(actionTarget.email || "").trim();
+
+    const items = buildAdminRowMenuItems({
       row: actionTarget,
       includeReassign: canModifyOthers && isGlobalAdmin && !isLeaderAdminRole(actionTarget.role),
       onEdit: canEdit ? () => openGlobalAdminEdit(actionTarget) : undefined,
@@ -561,6 +577,15 @@ export function AdminUsers({ data, units, reload }) {
           }
         : undefined,
     });
+
+    if (canResendInvite) {
+      items.splice(1, 0, {
+        id: "resend-invite",
+        label: "Resend invitation email",
+        onClick: () => resendInvite(actionTarget),
+      });
+    }
+    return items;
   }, [actionTarget, actionTarget?.is_active, isGlobalAdmin, isRootSuper, me?.id]);
 
   const createBtnLabel = isCountryAdmin
