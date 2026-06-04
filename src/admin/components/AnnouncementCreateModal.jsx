@@ -22,12 +22,6 @@ function LockedGeoField({ label, value, hint }) {
   );
 }
 
-const LEADER_MODES = [
-  { value: "all", label: "All leaders (service unit & sub-unit)" },
-  { value: "service_unit", label: "Service unit leaders only" },
-  { value: "sub_unit", label: "Sub-unit leaders (select unit + sub-unit)" },
-];
-
 const emptyForm = () => ({
   title: "",
   body: "",
@@ -157,6 +151,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return;
     }
     const base = emptyForm();
+    if (policy.membersOnly) {
+      base.destination_type = "members";
+    }
     if (!policy.isGlobal && admin) {
       const geo = initialAnnouncementGeoForm(admin, policy);
       base.members = { ...base.members, ...geo };
@@ -193,9 +190,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     ];
   }, [scopedUnitList, form.members.service_unit_id, policy.lockedSubUnit]);
 
+  const destLabels = policy.destinationLabels;
+
   const leaderModeOptions = useMemo(
-    () => LEADER_MODES.map((m) => ({ value: m.value, label: m.label })),
-    [],
+    () => destLabels.leaderModeOptions.map((m) => ({ value: m.value, label: m.label })),
+    [destLabels.leaderModeOptions],
   );
 
   const leaderUnitOptions = useMemo(
@@ -240,22 +239,48 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   function validate() {
     if (!form.title.trim() || !form.body.trim()) return "Title and message are required.";
     if (!form.medium_email && !form.medium_sms) return "Select at least one medium: Email or SMS.";
+    if (policy.membersOnly && form.destination_type !== "members") {
+      return "Sub-unit leaders may only send announcements to their unit members.";
+    }
+    if (policy.membersOnly && !policy.lockedSubUnit) {
+      return "Your sub-unit assignment is not configured. Update your profile or contact an administrator.";
+    }
     if (form.destination_type === "members" && !form.members.branch_country && !policy.lockedCountry) {
-      return "Select a country for member announcements.";
+      return `Select a country for ${destLabels.typePrefix.members.toLowerCase()} announcements.`;
     }
     if (form.destination_type === "leaders") {
-      if (!form.leaders.branch_country && !policy.lockedCountry) return "Select a country for leader announcements.";
+      if (!form.leaders.branch_country && !policy.lockedCountry) {
+        return `Select a country for ${destLabels.typePrefix.leaders.toLowerCase()} announcements.`;
+      }
       if (form.leaders.mode === "service_unit" && !form.leaders.service_unit_id && !policy.lockedServiceUnitId) {
-        return "Select a service unit for leader targeting.";
+        return destLabels.usesBranchAudienceLabels
+          ? "Select a service unit for service unit head targeting."
+          : "Select a service unit for leader targeting.";
       }
       if (form.leaders.mode === "sub_unit") {
         if (!form.leaders.service_unit_id && !policy.lockedServiceUnitId) return "Select a service unit.";
-        if (!form.leaders.sub_unit && !policy.lockedSubUnit) return "Select a sub-unit for sub-unit leader targeting.";
+        if (!form.leaders.sub_unit && !policy.lockedSubUnit) {
+          if (policy.isServiceUnitLeader) return "Select a sub-unit for sub-unit leader targeting.";
+          return destLabels.usesBranchAudienceLabels
+            ? "Select a sub-unit for sub-unit head targeting."
+            : "Select a sub-unit for sub-unit leader targeting.";
+        }
+      }
+      if (policy.isServiceUnitLeader && !policy.lockedServiceUnitId) {
+        return "Your service unit assignment is not configured. Contact an administrator.";
       }
     }
     if (form.destination_type === "admins") {
-      if (!form.admins.branch_country && !policy.lockedCountry) return "Select a country for admin announcements.";
-      if (!form.admins.roles || form.admins.roles.length === 0) return "Select at least one admin role.";
+      if (!form.admins.branch_country && !policy.lockedCountry) {
+        return `Select a country for ${destLabels.typePrefix.admins.toLowerCase()} announcements.`;
+      }
+      if (!form.admins.roles || form.admins.roles.length === 0) {
+        return policy.isStateBranchAudience
+          ? "Select at least one satellite pastor."
+          : policy.isCountryAdmin
+            ? "Select at least one pastor type (State Branch or Satellite)."
+            : "Select at least one admin role.";
+      }
     }
     return "";
   }
@@ -331,42 +356,95 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         />
       </div>
 
-      <div className="sa-field">
-        <label className="sa-label">Destination</label>
-        <div className="sa-radio-row" style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
-          {[
-            { id: "members", label: "For Members" },
-            { id: "leaders", label: "For Leaders" },
-            { id: "admins", label: "For Admins" },
-          ].map((opt) => (
-            <label key={opt.id} className="sa-field-toggle" style={{ cursor: "pointer" }}>
-              <input
-                type="radio"
-                name="ann-dest"
-                checked={form.destination_type === opt.id}
-                onChange={() => setDest(opt.id)}
-              />
-              <span className="sa-field-toggle-label">{opt.label}</span>
-            </label>
-          ))}
+      {!policy.membersOnly ? (
+        <div className="sa-field">
+          <label className="sa-label">Destination</label>
+          <div className="sa-radio-row" style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
+            {destLabels.destinationTabs.map((opt) => (
+              <label key={opt.id} className="sa-field-toggle" style={{ cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="ann-dest"
+                  checked={form.destination_type === opt.id}
+                  onChange={() => setDest(opt.id)}
+                />
+                <span className="sa-field-toggle-label">{opt.label}</span>
+              </label>
+            ))}
+          </div>
+          {form.destination_type === "admins" && destLabels.pastorsSubtitle ? (
+            <p className="sa-field-hint" style={{ marginTop: 8, marginBottom: 0 }}>
+              {destLabels.pastorsSubtitle}
+            </p>
+          ) : null}
         </div>
-      </div>
+      ) : (
+        <p className="sa-field-hint" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
+          {scopeHint}
+        </p>
+      )}
 
       {form.destination_type === "members" && (
-        <section className="sa-ann-scope" aria-label="Member audience">
-          <div className="sa-ann-scope-title">Audience scope</div>
-          <AudienceGeoScope
-            scope={form.members}
-            onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
-            churches={churches}
-            countryOptions={countryOptions}
-            requireCountry
-            vis={policy.visibility}
-            lockedCountryCode={policy.lockedCountry}
-            lockedStateCode={policy.lockedState}
-            lockedSatelliteSite={policy.lockedSatellite}
-          />
-          {policy.visibility.unit && (
+        <section
+          className="sa-ann-scope"
+          aria-label={destLabels.usesBranchAudienceLabels ? "Service unit member audience" : "Member audience"}
+        >
+          <div className="sa-ann-scope-title">
+            {policy.membersOnly
+              ? "Your sub-unit members"
+              : policy.isServiceUnitLeader
+                ? "Your service unit members"
+                : "Audience scope"}
+          </div>
+          {policy.membersOnly || policy.isServiceUnitLeader ? (
+            <div className="sa-ann-scope-grid" style={{ marginBottom: 14 }}>
+              {policy.lockedCountry ? (
+                <LockedGeoField
+                  label="Country"
+                  value={branchCountryLabel(policy.lockedCountry) || policy.lockedCountry}
+                />
+              ) : null}
+              {policy.lockedState ? (
+                <LockedGeoField
+                  label="State / region"
+                  value={branchStateLabel(policy.lockedCountry, policy.lockedState) || policy.lockedState}
+                />
+              ) : null}
+              {policy.lockedSatellite ? (
+                <LockedGeoField label="Satellite church" value={policy.lockedSatellite} />
+              ) : null}
+              {policy.lockedServiceUnitId ? (
+                <LockedGeoField
+                  label="Service unit"
+                  value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`}
+                />
+              ) : null}
+              {policy.lockedSubUnit ? (
+                <LockedGeoField label="Sub-unit" value={policy.lockedSubUnit} hint="All members in this sub-unit." />
+              ) : null}
+              {policy.isServiceUnitLeader && policy.lockedServiceUnitId && !policy.lockedSubUnit ? (
+                <LockedGeoField
+                  label="Service unit"
+                  value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`}
+                  hint="All approved members in this service unit."
+                />
+              ) : null}
+            </div>
+          ) : null}
+          {!policy.membersOnly && !policy.isServiceUnitLeader ? (
+            <AudienceGeoScope
+              scope={form.members}
+              onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
+              churches={churches}
+              countryOptions={countryOptions}
+              requireCountry
+              vis={policy.visibility}
+              lockedCountryCode={policy.lockedCountry}
+              lockedStateCode={policy.lockedState}
+              lockedSatelliteSite={policy.lockedSatellite}
+            />
+          ) : null}
+          {!policy.membersOnly && policy.visibility.unit && (
             <div className="sa-ann-scope-grid" style={{ marginTop: 14 }}>
               <div className="sa-field" style={{ marginBottom: 0 }}>
                 <label className="sa-label">Service unit</label>
@@ -413,16 +491,56 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               ) : null}
             </div>
           )}
-          <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            {scopeHint}
-          </p>
+          {!policy.membersOnly ? (
+            <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
+              {scopeHint}
+            </p>
+          ) : null}
         </section>
       )}
 
-      {form.destination_type === "leaders" && (
-        <section className="sa-ann-scope" aria-label="Leader audience">
-          <div className="sa-ann-scope-title">Audience scope</div>
-          <AudienceGeoScope
+      {!policy.membersOnly && form.destination_type === "leaders" && (
+        <section
+          className="sa-ann-scope"
+          aria-label={
+            policy.isServiceUnitLeader
+              ? "Sub unit leader audience"
+              : destLabels.usesBranchAudienceLabels
+                ? "Service unit head audience"
+                : "Leader audience"
+          }
+        >
+          <div className="sa-ann-scope-title">
+            {policy.isServiceUnitLeader ? "Sub Unit Leaders" : "Audience scope"}
+          </div>
+          {policy.isServiceUnitLeader ? (
+            <div className="sa-ann-scope-grid" style={{ marginBottom: 14 }}>
+              {policy.lockedCountry ? (
+                <LockedGeoField
+                  label="Country"
+                  value={branchCountryLabel(policy.lockedCountry) || policy.lockedCountry}
+                />
+              ) : null}
+              {policy.lockedState ? (
+                <LockedGeoField
+                  label="State / region"
+                  value={branchStateLabel(policy.lockedCountry, policy.lockedState) || policy.lockedState}
+                />
+              ) : null}
+              {policy.lockedSatellite ? (
+                <LockedGeoField label="Satellite church" value={policy.lockedSatellite} />
+              ) : null}
+              {policy.lockedServiceUnitId ? (
+                <LockedGeoField
+                  label="Service unit"
+                  value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`}
+                  hint="Sub-unit leaders must belong to this unit."
+                />
+              ) : null}
+            </div>
+          ) : null}
+          {!policy.isServiceUnitLeader ? (
+            <AudienceGeoScope
             scope={form.leaders}
             onScopeChange={(patch) => setForm((f) => ({ ...f, leaders: { ...f.leaders, ...patch } }))}
             churches={churches}
@@ -432,15 +550,16 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             lockedCountryCode={policy.lockedCountry}
             lockedStateCode={policy.lockedState}
             lockedSatelliteSite={policy.lockedSatellite}
-          />
+            />
+          ) : null}
           <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 14 }}>
             {scopeHint}
           </p>
-          {policy.visibility.unit && (
+          {(policy.visibility.unit || policy.isServiceUnitLeader) && (
             <>
-              <div className="sa-ann-scope-title">Leader type</div>
+              <div className="sa-ann-scope-title">{destLabels.leaderTypeTitle}</div>
               <div className="sa-field" style={{ marginBottom: 14 }}>
-                <label className="sa-label">Leaders</label>
+                <label className="sa-label">{destLabels.leaderTypeLabel}</label>
                 <SearchableDropdown
                   value={form.leaders.mode}
                   onChange={(mode) =>
@@ -455,36 +574,36 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
                   emptyMessage="No options"
                   ariaLabel="Leader audience type"
                 />
-                <div className="sa-field-hint">
-                  Service unit only: unit leaders. Sub-unit: pick a unit and sub-unit for sub-unit leaders.
-                </div>
+                <div className="sa-field-hint">{destLabels.leaderTypeHint}</div>
               </div>
-              {form.leaders.mode !== "all" && (
+              {(policy.isServiceUnitLeader ? form.leaders.mode === "sub_unit" : form.leaders.mode !== "all") && (
                 <div className="sa-ann-scope-grid">
-                  <div className="sa-field" style={{ marginBottom: 0 }}>
-                    <label className="sa-label">
-                      Service unit {form.leaders.mode !== "all" ? <span className="sa-required">*</span> : null}
-                    </label>
-                    {policy.lockedServiceUnitId ? (
-                      <LockedGeoField label="" value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`} />
-                    ) : (
-                      <SearchableDropdown
-                        value={form.leaders.service_unit_id ? String(form.leaders.service_unit_id) : ""}
-                        onChange={(id) =>
-                          setForm((f) => ({
-                            ...f,
-                            leaders: { ...f.leaders, service_unit_id: id, sub_unit: "" },
-                          }))
-                        }
-                        options={leaderUnitOptions}
-                        placeholder="Select unit"
-                        searchPlaceholder="Search service unit"
-                        emptyMessage="No units match"
-                        ariaLabel="Service unit"
-                      />
-                    )}
-                  </div>
-                  {policy.visibility.subunit && form.leaders.mode === "sub_unit" && (
+                  {!policy.isServiceUnitLeader ? (
+                    <div className="sa-field" style={{ marginBottom: 0 }}>
+                      <label className="sa-label">
+                        Service unit {form.leaders.mode !== "all" ? <span className="sa-required">*</span> : null}
+                      </label>
+                      {policy.lockedServiceUnitId ? (
+                        <LockedGeoField label="" value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`} />
+                      ) : (
+                        <SearchableDropdown
+                          value={form.leaders.service_unit_id ? String(form.leaders.service_unit_id) : ""}
+                          onChange={(id) =>
+                            setForm((f) => ({
+                              ...f,
+                              leaders: { ...f.leaders, service_unit_id: id, sub_unit: "" },
+                            }))
+                          }
+                          options={leaderUnitOptions}
+                          placeholder="Select unit"
+                          searchPlaceholder="Search service unit"
+                          emptyMessage="No units match"
+                          ariaLabel="Service unit"
+                        />
+                      )}
+                    </div>
+                  ) : null}
+                  {(policy.visibility.subunit || policy.isServiceUnitLeader) && form.leaders.mode === "sub_unit" && (
                     <div className="sa-field" style={{ marginBottom: 0 }}>
                       <label className="sa-label">
                         Sub-unit <span className="sa-required">*</span>
@@ -512,8 +631,17 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </section>
       )}
 
-      {form.destination_type === "admins" && (
-        <section className="sa-ann-scope" aria-label="Admin audience">
+      {!policy.membersOnly && form.destination_type === "admins" && (
+        <section
+          className="sa-ann-scope"
+          aria-label={
+            policy.isStateBranchAudience
+              ? "Satellite pastor audience"
+              : policy.isCountryAdmin
+                ? "Pastor audience"
+                : "Admin audience"
+          }
+        >
           <div className="sa-ann-scope-title">Audience scope</div>
           <AudienceGeoScope
             scope={form.admins}
@@ -529,11 +657,12 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 14 }}>
             {scopeHint}
           </p>
-          <div className="sa-ann-scope-title">Admin roles</div>
+          <div className="sa-ann-scope-title">{destLabels.adminRolesSectionTitle}</div>
           <p className="sa-field-hint" style={{ marginTop: 0, marginBottom: 12 }}>
-            {policy.isGlobal
-              ? "Tick all boxes to reach every admin tier, or limit to selected roles only."
-              : "Only admin tiers within your jurisdiction are available."}
+            {destLabels.adminRolesHint ||
+              (policy.isGlobal
+                ? "Tick all boxes to reach every admin tier, or limit to selected roles only."
+                : "Only admin tiers within your jurisdiction are available.")}
           </p>
           <div className="sa-ann-admin-role-row" role="group" aria-label="Admin roles">
             {policy.adminRoleOptions.map((r) => (

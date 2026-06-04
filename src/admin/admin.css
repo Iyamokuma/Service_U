@@ -638,6 +638,16 @@
 }
 .sa-table-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
 .sa-table tr.sa-row-clickable { cursor: pointer; }
+
+.sa-table tr.sa-queue-row-muted td {
+  opacity: 0.48;
+}
+.sa-table tr.sa-queue-row-focus td {
+  opacity: 1;
+}
+.sa-table tr.sa-queue-row-muted:hover td {
+  opacity: 0.72;
+}
 .sa-detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -1746,6 +1756,11 @@
   background: var(--sa-accent);
   color: #fff;
   box-shadow: 0 5px 14px rgba(37, 99, 235, 0.24);
+}
+
+.sa-users-section-tabs--wrap {
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 /* Intake status quick toggle */
@@ -3501,6 +3516,7 @@
 }
 .sa-users-section-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   border-radius: 12px;

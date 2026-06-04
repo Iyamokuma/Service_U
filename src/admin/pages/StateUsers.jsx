@@ -14,7 +14,7 @@ import { UnitMembers } from "./UnitMembers.jsx";
 import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { countryAdminHomeState, isCountrySuperAdmin } from "../roles.js";
-import { isActingAsStateAdmin } from "../adminViewMode.js";
+import { adminApiScopeParams, isActingAsStateAdmin } from "../adminViewMode.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { availableSatellitesForState } from "../stateSatelliteForm.js";
@@ -184,7 +184,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     if (!form) return;
     setSaving(true);
     try {
-      const payload = { ...form, viewer: me };
+      const payload = { ...form, viewer: me, ...adminApiScopeParams(me) };
       if (form.id) await api.updateAdmin(form.id, payload);
       else await api.createAdmin(payload);
       toast(
@@ -211,7 +211,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     if (!form) return;
     setSaving(true);
     try {
-      const payload = { ...form, viewer: me };
+      const payload = { ...form, viewer: me, ...adminApiScopeParams(me) };
       if (form.id) await api.updateAdmin(form.id, payload);
       else await api.createAdmin(payload);
       toast(form.id ? "Satellite Pastor Admin updated." : "Satellite Pastor Admin created.", "success");

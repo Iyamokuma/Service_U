@@ -135,7 +135,10 @@ function normalizeAdminScopeForRole(role: string, patch: Record<string, unknown>
   if (!ROLES_REQUIRING_STATE.has(r) && r !== "country_super_admin") {
     patch.branch_state = null;
   }
-  if (r !== "satellite_church_admin") {
+  if (
+    r !== "satellite_church_admin" &&
+    !["service_unit_leader", "sub_unit_leader"].includes(r)
+  ) {
     patch.satellite_site = null;
   }
   if (!["service_unit_leader", "sub_unit_leader"].includes(r)) {
@@ -574,6 +577,8 @@ export async function ensureCountryAdminHeadquarters(
 const COUNTRY_MANAGED_ADMIN_ROLES = [
   "state_super_admin",
   "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
 ];
 
 const STATE_MANAGED_ADMIN_ROLES = [
@@ -586,7 +591,9 @@ const SATELLITE_MANAGED_ADMIN_ROLES = ["service_unit_leader", "sub_unit_leader"]
 
 function assertCountryManagedRole(role: string): void {
   if (!COUNTRY_MANAGED_ADMIN_ROLES.includes(norm(role))) {
-    throw new Error("Country admins may only manage State Branch and Satellite Pastor Admin accounts in their country.");
+    throw new Error(
+      "Country admins may only manage State Branch, Satellite Pastor, and workforce leader accounts in their country.",
+    );
   }
 }
 
@@ -1343,13 +1350,47 @@ async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string
     return { data };
   }
   if (actorRole === "country_super_admin") {
-    row.branch_country = normUp(admin.branch_country);
-    if (row.role !== "state_super_admin") {
-      throw new Error("Country admins may only create State Branch Admin accounts directly.");
+    const cc = normUp(admin.branch_country);
+    if (!cc) throw new Error("Your country scope is not configured.");
+    row.branch_country = cc;
+    const stateView = norm(params.scope_mode) === "state" && countryAdminActsAsStateAdmin(admin);
+    const hqState = normUp(admin.branch_state);
+    const countryCreatable = ["state_super_admin", "satellite_church_admin", "service_unit_leader", "sub_unit_leader"];
+    if (!countryCreatable.includes(row.role)) {
+      throw new Error(
+        "Country admins may only create State Branch, Satellite Pastor, Service Unit Leader, or Sub-Unit Leader accounts within their country.",
+      );
     }
-    if (!row.branch_state) throw new Error("State / region is required for State Branch Admin.");
-    assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
-    await assertUniqueStateAdmin(supabase, row.branch_country, row.branch_state);
+    if (row.role === "state_super_admin") {
+      if (!row.branch_state) throw new Error("State / region is required for State Branch Admin.");
+      assertStateBelongsToCountry(cc, normUp(row.branch_state));
+      assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+      await assertUniqueStateAdmin(supabase, row.branch_country, row.branch_state);
+    } else if (row.role === "satellite_church_admin") {
+      if (stateView && hqState) row.branch_state = hqState;
+      if (!row.branch_state) throw new Error("State / region is required for Satellite Pastor Admin.");
+      assertStateBelongsToCountry(cc, normUp(row.branch_state));
+      if (stateView && hqState && normUp(row.branch_state) !== hqState) {
+        throw new Error("In state view, satellite pastors must be in your headquarters state.");
+      }
+      if (!row.satellite_site) throw new Error("Satellite church is required for Satellite Pastor Admin.");
+      assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+      await assertUniqueSatelliteAdmin(supabase, row.branch_country, row.branch_state, row.satellite_site);
+    } else {
+      if (stateView && hqState) row.branch_state = hqState;
+      if (!row.branch_state) throw new Error("State / region is required for workforce leader accounts.");
+      assertStateBelongsToCountry(cc, normUp(row.branch_state));
+      if (stateView && hqState && normUp(row.branch_state) !== hqState) {
+        throw new Error("In state view, workforce leaders must be in your headquarters state.");
+      }
+      if (!row.satellite_site) throw new Error("Satellite church is required for workforce leaders.");
+      if (!row.service_unit_id) throw new Error("Service unit is required.");
+      if (row.role === "sub_unit_leader") {
+        if (!row.sub_unit_name) throw new Error("Sub-unit is required for Sub-Unit Leader.");
+        await assertSubUnitInServiceUnit(supabase, Number(row.service_unit_id), row.sub_unit_name);
+      }
+      assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+    }
     await assertAdminUsernameAvailable(supabase, row.username);
     await assertAdminEmailAvailable(supabase, row.email);
     const data = await insertAdminFromBody(supabase, row, admin, ip);
@@ -2200,7 +2241,7 @@ function parseAnnouncementDestination(body: Record<string, unknown>) {
 
 const ANNOUNCEMENT_ADMIN_ROLES_BY_SENDER: Record<string, string[]> = {
   country_super_admin: ["state_super_admin", "satellite_church_admin"],
-  state_super_admin: ["state_super_admin", "satellite_church_admin", "service_unit_leader", "sub_unit_leader"],
+  state_super_admin: ["satellite_church_admin"],
   satellite_church_admin: ["satellite_church_admin", "service_unit_leader", "sub_unit_leader"],
   service_unit_leader: ["service_unit_leader", "sub_unit_leader"],
   sub_unit_leader: ["sub_unit_leader"],
@@ -2281,17 +2322,29 @@ function clampAnnouncementScope(
   }
 
   if (role === "service_unit_leader") {
+    const cc = normUp(admin.branch_country);
+    const st = normUp(admin.branch_state);
+    if (cc) cfg.branch_country = cc;
+    if (st) cfg.branch_state = st;
     if (admin.satellite_site) cfg.satellite_site = norm(admin.satellite_site);
     if (admin.service_unit_id) cfg.service_unit_id = Number(admin.service_unit_id);
-    clampAnnouncementAdminRoles(admin, cfg);
+    const mode = norm((cfg as { mode?: string }).mode);
+    if (mode === "service_unit" || mode === "") {
+      (cfg as { mode?: string }).mode = "all";
+    } else if (mode && mode !== "sub_unit") {
+      (cfg as { mode?: string }).mode = "all";
+    }
     return;
   }
 
   if (role === "sub_unit_leader") {
+    const cc = normUp(admin.branch_country);
+    const st = normUp(admin.branch_state);
+    if (cc) cfg.branch_country = cc;
+    if (st) cfg.branch_state = st;
     if (admin.satellite_site) cfg.satellite_site = norm(admin.satellite_site);
     if (admin.service_unit_id) cfg.service_unit_id = Number(admin.service_unit_id);
     if (admin.sub_unit_name) cfg.sub_unit = norm(admin.sub_unit_name);
-    clampAnnouncementAdminRoles(admin, cfg);
     return;
   }
 }
@@ -2362,6 +2415,12 @@ async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record
 
   const action = norm(body.workflow_action) || "send";
   const { destinationType, destinationConfig } = parseAnnouncementDestination(body);
+  if (norm(admin.role) === "sub_unit_leader" && destinationType !== "members") {
+    throw new Error("Sub-unit leaders may only send announcements to their unit members.");
+  }
+  if (norm(admin.role) === "service_unit_leader" && !["members", "leaders"].includes(destinationType)) {
+    throw new Error("Service unit leaders may only send announcements to service unit members or sub-unit leaders.");
+  }
   clampAnnouncementScope(admin, destinationConfig, params.scope_mode);
   const scopeFields = announcementScopeFromPayload(admin, destinationType, destinationConfig, body);
 

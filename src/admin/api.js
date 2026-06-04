@@ -52,11 +52,13 @@ async function adminFetch(op, params = {}, { timeoutMs = 30000 } = {}) {
 }
 
 function withScopeParams(params = {}) {
+  if (params.scope_mode === "state" || params.scope_mode === "country") {
+    return params;
+  }
   try {
     const raw = localStorage.getItem("admin_user");
     const admin = raw ? JSON.parse(raw) : null;
     if (canSwitchAdminView(admin) && readAdminViewMode(admin?.id) === "state") {
-      if (params.scope_mode === "country") return { ...params, scope_mode: "country" };
       return { ...params, scope_mode: "state" };
     }
   } catch {

@@ -8,7 +8,8 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { isServiceUnitLeader, isGlobalAdminRole } from "../roles.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
-import { leaderScopeLabel } from "../leaderScope.js";
+import { QueueSubUnitTabs } from "../components/QueueSubUnitTabs.jsx";
+import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
 const QUEUE_STATUS_TABS = ["all", "new", "inprogress", "accepted", "rejected", "archived", "overdue"];
@@ -127,9 +128,9 @@ export function Queue({ units, initialTab = "all" }) {
   const isServiceLeader = isServiceUnitLeader(admin?.role);
   const isSubUnitLeader = admin?.role === "sub_unit_leader";
   const isLeader = isServiceLeader || isSubUnitLeader;
+  const leaderDefaultTab = initialTab === "all" ? "new" : initialTab;
   const isGlobalAdmin = isGlobalAdminRole(admin?.role);
   const geo = useAdminGeoFilters();
-  const leaderScope = leaderScopeLabel(admin);
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, per_page: 25, total: 0, pages: 1 });
   const [loading, setLoading] = useState(true);
@@ -147,11 +148,13 @@ export function Queue({ units, initialTab = "all" }) {
     sort: "submitted_at",
     dir: "DESC",
   });
-  const [statusTab, setStatusTab] = useState(initialTab);
+  const [statusTab, setStatusTab] = useState(isLeader ? leaderDefaultTab : initialTab);
+  /** Service unit leader: "" = all sub-units, else sub-unit name. */
+  const [subUnitTab, setSubUnitTab] = useState("");
 
   useEffect(() => {
-    setStatusTab(initialTab);
-  }, [initialTab]);
+    setStatusTab(isLeader ? leaderDefaultTab : initialTab);
+  }, [initialTab, isLeader, leaderDefaultTab]);
   const [leaderSubUnitLabels, setLeaderSubUnitLabels] = useState([]);
   const debounce = useRef(null);
 
@@ -159,7 +162,9 @@ export function Queue({ units, initialTab = "all" }) {
     (page = 1) => {
       const subUnitForQueue = isSubUnitLeader
         ? admin?.sub_unit_name || admin?.sub_unit || ""
-        : filters.sub_unit || "";
+        : isServiceLeader
+          ? subUnitTab
+          : filters.sub_unit || "";
       const scoped = {
         ...filters,
         page,
@@ -195,7 +200,7 @@ export function Queue({ units, initialTab = "all" }) {
       }
       return scoped;
     },
-    [filters, admin, isServiceLeader, isSubUnitLeader, statusTab, isLeader, isGlobalAdmin, geo.apiParams]
+    [filters, admin, isServiceLeader, isSubUnitLeader, subUnitTab, statusTab, isLeader, isGlobalAdmin, geo.apiParams]
   );
 
   useEffect(() => {
@@ -207,7 +212,7 @@ export function Queue({ units, initialTab = "all" }) {
 
   useEffect(() => {
     setExpanded(null);
-  }, [filters.sub_unit, statusTab]);
+  }, [filters.sub_unit, subUnitTab, statusTab]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -224,7 +229,7 @@ export function Queue({ units, initialTab = "all" }) {
     debounce.current = setTimeout(() => {
       load(mergedQueueParams(1));
     }, 300);
-  }, [filters, statusTab, load, mergedQueueParams, geo.apiParams]);
+  }, [filters, subUnitTab, statusTab, load, mergedQueueParams, geo.apiParams]);
 
   const setFilter = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const gotoPage = (p) => load(mergedQueueParams(p));
@@ -258,10 +263,22 @@ export function Queue({ units, initialTab = "all" }) {
       await api.updateStatus(id, body);
       toast("Application moved to accepted.", "success");
       setAcceptVerifyModal(null);
+      removeRowFromLeaderNewQueue(id);
       await refreshAfterQueueAction(pag.page);
     } catch (e) {
       toast(e.message, "error");
     }
+  }
+
+  function removeRowFromLeaderNewQueue(id) {
+    if (!isLeader || statusTab !== "new") return;
+    setRows((prev) => prev.filter((r) => r.id !== id));
+    setExpanded((ex) => (ex === id ? null : ex));
+    setPag((p) => ({
+      ...p,
+      total: Math.max(0, (p.total ?? 0) - 1),
+      pages: Math.max(1, Math.ceil(Math.max(0, (p.total ?? 0) - 1) / (p.per_page || 25))),
+    }));
   }
 
   // Quick leader action for all statuses other than in_progress→accepted.
@@ -269,6 +286,7 @@ export function Queue({ units, initialTab = "all" }) {
     try {
       await api.updateStatus(id, { status, notes: "", viewer: admin });
       toast(`Status set to ${status.replace(/_/g, " ")}.`, "success");
+      if (status !== "new") removeRowFromLeaderNewQueue(id);
       await refreshAfterQueueAction(pag.page);
     } catch (e) {
       toast(e.message, "error");
@@ -312,6 +330,14 @@ export function Queue({ units, initialTab = "all" }) {
     return [...new Set([...fromCatalog, ...leaderSubUnitLabels])].sort((a, b) => a.localeCompare(b));
   }, [isServiceLeader, units?.data, admin?.service_unit_id, leaderSubUnitLabels]);
 
+  const showSubUnitTabs = isServiceLeader && leaderSubUnitOptions.length > 0;
+
+  const serviceUnitName = useMemo(() => {
+    if (!isServiceLeader) return "";
+    const u = (units?.data || []).find((x) => Number(x.id) === Number(admin?.service_unit_id));
+    return String(u?.name || "").trim();
+  }, [isServiceLeader, units?.data, admin?.service_unit_id]);
+
   const globalSubUnitOptions = useMemo(() => {
     if (isLeader) return [];
     const unit = unitOpts.find((u) => String(u.id) === String(filters.unit_id));
@@ -320,25 +346,54 @@ export function Queue({ units, initialTab = "all" }) {
 
   const showIntakeFilters = true;
   const onOverdueTab = statusTab === "overdue";
+  const leaderNewQueueTab = isLeader && statusTab === "new";
   const tableRows = rows;
   const tableColSpan = (isLeader ? 6 : 9) + (onOverdueTab ? 1 : 0);
 
+  const queueMetaItems = useMemo(() => {
+    if (!isServiceLeader) return [];
+    const items = [];
+    if (serviceUnitName) items.push(`Service unit: ${serviceUnitName}`);
+    if (showSubUnitTabs) {
+      items.push(subUnitTab ? `Sub-unit: ${subUnitTab}` : "All sub-units");
+    }
+    items.push(
+      onOverdueTab
+        ? `${pag.total} overdue`
+        : `${pag.total} application${pag.total !== 1 ? "s" : ""} · ${queueStatusTabLabel(statusTab)}`,
+    );
+    return items;
+  }, [isServiceLeader, serviceUnitName, showSubUnitTabs, subUnitTab, onOverdueTab, pag.total, statusTab]);
+
   return (
     <>
-      <div className="sa-card">
-        {isServiceLeader && (
-          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingBottom: 12 }}>
-            <p className="sa-text-sm" style={{ margin: 0 }}>
-              <strong>Service unit intake</strong>
-              {leaderScope ? ` · ${leaderScope}` : ""}
-            </p>
-            <p className="sa-text-muted sa-text-xs" style={{ margin: "6px 0 0" }}>
-              Combined queue across all sub-units. Move applications to In Progress, Accepted, or Rejected.
-              Sub-unit names are managed by Super / General Admin only.
-            </p>
+      {isServiceLeader ? (
+        <header className="sa-users-page-head">
+          <div className="sa-users-page-head-top">
+            <h1 className="sa-admins-title">Application Queue</h1>
           </div>
-        )}
-        <div className="sa-card-body sa-unit-tab-row">
+          {showSubUnitTabs ? (
+            <div className="sa-users-page-head-tabs">
+              <QueueSubUnitTabs
+                subUnits={leaderSubUnitOptions}
+                activeSubUnit={subUnitTab}
+                onChange={setSubUnitTab}
+              />
+            </div>
+          ) : null}
+          <UsersPageMeta items={queueMetaItems} />
+          <p className="sa-text-muted sa-text-xs" style={{ margin: "8px 0 0", lineHeight: 1.5 }}>
+            {statusTab === "new"
+              ? "New applications for your church only. After you change status, they leave this list; remaining items appear subdued until you work the next one."
+              : showSubUnitTabs
+                ? "Select a sub-unit, then use the status tabs below to work applications."
+                : "Move applications to In Progress, Accepted, or Rejected."}{" "}
+            Sub-unit names are managed by Super / General Admin only.
+          </p>
+        </header>
+      ) : null}
+      <div className="sa-card">
+        <div className="sa-card-body sa-unit-tab-row" role="tablist" aria-label="Application status">
           {QUEUE_STATUS_TABS.map((tab) => (
             <button
               key={tab}
@@ -377,21 +432,6 @@ export function Queue({ units, initialTab = "all" }) {
               >
                 <option value="">All Units</option>
                 {unitOpts.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            )}
-            {isServiceLeader && (
-              <select
-                className="sa-select"
-                value={filters.sub_unit}
-                onChange={setFilter("sub_unit")}
-                aria-label="Filter by sub-unit"
-              >
-                <option value="">All sub-units</option>
-                {leaderSubUnitOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
               </select>
             )}
             {!isLeader && filters.unit_id && (
@@ -445,6 +485,7 @@ export function Queue({ units, initialTab = "all" }) {
               type="button"
               className="sa-btn sa-btn-outline sa-btn-sm"
               onClick={() => {
+                if (isServiceLeader) setSubUnitTab("");
                 setFilters({
                   search: "",
                   unit_id: "",
@@ -499,9 +540,16 @@ export function Queue({ units, initialTab = "all" }) {
                 </tr>
               </thead>
               <tbody>
-                {tableRows.map((r) => (
+                {tableRows.map((r, rowIdx) => (
                   <Fragment key={r.id}>
-                    <tr className={onOverdueTab ? "sa-row-overdue" : undefined} style={!isLeader ? { cursor: "pointer" } : undefined}>
+                    <tr
+                      className={[
+                        onOverdueTab ? "sa-row-overdue" : "",
+                        leaderNewQueueTab && rowIdx > 0 ? "sa-queue-row-muted" : "",
+                        leaderNewQueueTab && rowIdx === 0 ? "sa-queue-row-focus" : "",
+                      ].filter(Boolean).join(" ") || undefined}
+                      style={!isLeader ? { cursor: "pointer" } : undefined}
+                    >
                       <td className="sa-text-muted">{r.id}</td>
                       {!isLeader && (
                         <td>

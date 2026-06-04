@@ -87,13 +87,14 @@ Deno.serve(async (req) => {
       return json(400, { error: "Missing required fields (name, phone)." });
     }
     const churchId = body.church_id != null && body.church_id !== "" ? Number(body.church_id) : null;
-    if (Number.isFinite(churchId) && churchId! > 0) {
-      const fromChurch = await branchCodesFromChurchId(supabase, churchId!);
-      if (!fromChurch) return json(400, { error: "Invalid church / branch selection." });
-      row.branch_country = fromChurch.branch_country;
-      row.branch_state = fromChurch.branch_state;
-      row.satellite_site = fromChurch.satellite_site;
+    if (!Number.isFinite(churchId) || churchId! <= 0) {
+      return json(400, { error: "Church / branch selection is required." });
     }
+    const fromChurch = await branchCodesFromChurchId(supabase, churchId!);
+    if (!fromChurch) return json(400, { error: "Invalid church / branch selection." });
+    row.branch_country = fromChurch.branch_country;
+    row.branch_state = fromChurch.branch_state;
+    row.satellite_site = fromChurch.satellite_site;
 
     if (!row.branch_country || !row.branch_state) {
       return json(400, { error: "Branch country and state are required." });

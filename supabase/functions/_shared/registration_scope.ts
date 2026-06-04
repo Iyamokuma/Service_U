@@ -41,28 +41,26 @@ export function applyRegistrationScopeQuery(q: any, admin: AdminRow, scopeMode?:
     let q2 = q;
     const c = up(admin.branch_country);
     const st = up(admin.branch_state);
+    const sat = norm(admin.satellite_site);
     if (c) q2 = q2.eq("branch_country", c);
     if (st) q2 = q2.eq("branch_state", st);
-    const sat = norm(admin.satellite_site);
     if (sat) q2 = q2.eq("satellite_site", sat);
     return q2;
   }
-  if (role === "service_unit_leader") {
+  if (role === "service_unit_leader" || role === "sub_unit_leader") {
+    let q2 = q;
     const uid = Number(admin.service_unit_id);
-    let q2 = Number.isFinite(uid) ? q.eq("unit_id", uid) : q;
+    if (Number.isFinite(uid)) q2 = q2.eq("unit_id", uid);
+    if (role === "sub_unit_leader") {
+      const sub = norm(admin.sub_unit_name);
+      if (sub) q2 = q2.eq("sub_unit", sub);
+    }
     const c = up(admin.branch_country);
     const st = up(admin.branch_state);
-    if (c && st) q2 = q2.eq("branch_country", c).eq("branch_state", st);
-    return q2;
-  }
-  if (role === "sub_unit_leader") {
-    const uid = Number(admin.service_unit_id);
-    const sub = norm(admin.sub_unit_name);
-    let q2 = Number.isFinite(uid) ? q.eq("unit_id", uid) : q;
-    if (sub) q2 = q2.eq("sub_unit", sub);
-    const c = up(admin.branch_country);
-    const st = up(admin.branch_state);
-    if (c && st) q2 = q2.eq("branch_country", c).eq("branch_state", st);
+    const sat = norm(admin.satellite_site);
+    if (c) q2 = q2.eq("branch_country", c);
+    if (st) q2 = q2.eq("branch_state", st);
+    if (sat) q2 = q2.eq("satellite_site", sat);
     return q2;
   }
   return q;
@@ -80,29 +78,23 @@ export function canAccessRegistration(admin: AdminRow, row: Record<string, unkno
     return up(admin.branch_country) === up(row.branch_country) && up(admin.branch_state) === up(row.branch_state);
   }
   if (role === "satellite_church_admin") {
-    if (up(admin.branch_country) !== up(row.branch_country)) return false;
-    if (up(admin.branch_state) !== up(row.branch_state)) return false;
+    const c = up(admin.branch_country);
+    const st = up(admin.branch_state);
     const sat = norm(admin.satellite_site);
-    if (!sat) return true;
-    return norm(row.satellite_site) === sat;
+    if (!c || !st || !sat) return false;
+    return up(row.branch_country) === c && up(row.branch_state) === st && norm(row.satellite_site) === sat;
   }
-  if (role === "service_unit_leader") {
+  if (role === "service_unit_leader" || role === "sub_unit_leader") {
     if (Number(row.unit_id) !== Number(admin.service_unit_id)) return false;
+    if (role === "sub_unit_leader") {
+      if (norm(row.sub_unit).toLowerCase() !== norm(admin.sub_unit_name).toLowerCase()) return false;
+    }
     const c = up(admin.branch_country);
     const st = up(admin.branch_state);
-    if (c && st) {
-      return up(row.branch_country) === c && up(row.branch_state) === st;
-    }
-    return true;
-  }
-  if (role === "sub_unit_leader") {
-    if (Number(row.unit_id) !== Number(admin.service_unit_id)) return false;
-    if (norm(row.sub_unit).toLowerCase() !== norm(admin.sub_unit_name).toLowerCase()) return false;
-    const c = up(admin.branch_country);
-    const st = up(admin.branch_state);
-    if (c && st) {
-      return up(row.branch_country) === c && up(row.branch_state) === st;
-    }
+    const sat = norm(admin.satellite_site);
+    if (c && up(row.branch_country) !== c) return false;
+    if (st && up(row.branch_state) !== st) return false;
+    if (sat && norm(row.satellite_site) !== sat) return false;
     return true;
   }
   return false;

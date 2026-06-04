@@ -60,10 +60,20 @@ export function isSupervisoryBranchRole(role) {
 }
 
 /** Roles a country admin may create directly (no request flow). */
-export const COUNTRY_DIRECT_CREATE_ROLES = ["state_super_admin"];
+export const COUNTRY_DIRECT_CREATE_ROLES = [
+  "state_super_admin",
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
 
 /** Admin roles a country super admin may manage on the Users tab (within their country). */
-export const COUNTRY_MANAGED_ADMIN_ROLES = ["state_super_admin", "satellite_church_admin"];
+export const COUNTRY_MANAGED_ADMIN_ROLES = [
+  "state_super_admin",
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
 
 /** Headquarters state on Country Admin (required; set at creation or auto-assigned on login). */
 export function countryAdminHomeState(admin) {

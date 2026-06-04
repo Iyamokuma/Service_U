@@ -45,6 +45,12 @@ export function apiScopeMode(admin, viewMode) {
   return undefined;
 }
 
+/** Merge scope_mode into admin API payloads when Country Admin switches country ↔ state view. */
+export function adminApiScopeParams(admin) {
+  if (!canSwitchAdminView(admin)) return {};
+  return { scope_mode: readAdminViewMode(admin.id) === "state" ? "state" : "country" };
+}
+
 const COUNTRY_PAGES = [
   "overview",
   "oversight",

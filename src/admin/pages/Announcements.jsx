@@ -5,6 +5,7 @@ import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { canPostAnnouncements, isGlobalAdminRole } from "../roles.js";
+import { getAnnouncementScopePolicy } from "../announcementScopePolicy.js";
 import { AnnouncementCreateModal } from "../components/AnnouncementCreateModal.jsx";
 import { AnnouncementStatusTabs } from "../components/AnnouncementStatusTabs.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
@@ -73,9 +74,20 @@ function formatMedium(r) {
   return "—";
 }
 
-function formatDestination(r, unitNames) {
+function formatDestination(r, unitNames, destLabels, adminRoleOptions) {
   const type = r.destination_type || "admins";
   const cfg = parseAnnouncementConfig(r);
+  const prefixes = destLabels?.typePrefix || {
+    members: "Members",
+    leaders: "Leaders",
+    admins: "Admins",
+  };
+  const leaderModeDisplay = destLabels?.leaderModeDisplay || {
+    all: "All leaders",
+    service_unit: "Service unit leaders",
+    sub_unit: "Sub-unit leaders",
+  };
+  const roleLabelByValue = Object.fromEntries((adminRoleOptions || []).map((o) => [o.value, o.label]));
 
   if (type === "members") {
     const m = cfg;
@@ -86,7 +98,7 @@ function formatDestination(r, unitNames) {
       m.service_unit_id ? unitNames[Number(m.service_unit_id)] || `Unit #${m.service_unit_id}` : "",
       m.sub_unit || "",
     ].filter(Boolean);
-    return `Members · ${parts.join(" · ") || "All"}`;
+    return `${prefixes.members} · ${parts.join(" · ") || "All"}`;
   }
 
   if (type === "leaders") {
@@ -98,13 +110,13 @@ function formatDestination(r, unitNames) {
     ].filter(Boolean);
     const mode =
       l.mode === "sub_unit"
-        ? "Sub-unit leaders"
+        ? leaderModeDisplay.sub_unit
         : l.mode === "service_unit"
-          ? "Service unit leaders"
-          : "All leaders";
+          ? leaderModeDisplay.service_unit
+          : leaderModeDisplay.all;
     const unit = l.service_unit_id ? unitNames[Number(l.service_unit_id)] : "";
     const sub = l.sub_unit || "";
-    return ["Leaders", ...geo, mode, unit, sub].filter(Boolean).join(" · ");
+    return [prefixes.leaders, ...geo, mode, unit, sub].filter(Boolean).join(" · ");
   }
 
   if (type === "admins") {
@@ -114,15 +126,17 @@ function formatDestination(r, unitNames) {
       cfg.satellite_site || "",
     ].filter(Boolean);
     const raw = Array.isArray(cfg.roles) ? cfg.roles.filter(Boolean).map(String) : [];
-    let rolePart = "All admins";
+    let rolePart = destLabels?.allRolesLabel || "All admins";
     if (raw.length > 0) {
       const selected = new Set(raw.map((role) => role.trim()));
       const allSelected = ADMIN_DEST_ROLE_KEYS.every((key) => selected.has(key));
       if (!(allSelected && selected.size <= ADMIN_DEST_ROLE_KEYS.length)) {
-        rolePart = raw.map((key) => ADMIN_DEST_LABELS[key] || key.replace(/_/g, " ")).join(", ");
+        rolePart = raw
+          .map((key) => roleLabelByValue[key] || ADMIN_DEST_LABELS[key] || key.replace(/_/g, " "))
+          .join(", ");
       }
     }
-    return ["Admins", ...geo, rolePart].filter(Boolean).join(" · ");
+    return [prefixes.admins, ...geo, rolePart].filter(Boolean).join(" · ");
   }
 
   const uid = r.scope_unit_id != null ? Number(r.scope_unit_id) : 0;
@@ -177,6 +191,8 @@ export function Announcements() {
   const [unitList, setUnitList] = useState([]);
   const [loadError, setLoadError] = useState("");
   const canCreate = canPostAnnouncements(admin?.role);
+  const annPolicy = useMemo(() => getAnnouncementScopePolicy(admin, viewMode), [admin, viewMode]);
+  const destLabels = annPolicy.destinationLabels;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -360,7 +376,7 @@ export function Announcements() {
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Announcements</h2>
           <p className="sa-text-muted sa-text-sm" style={{ margin: "6px 0 0", maxWidth: 520, lineHeight: 1.55 }}>
-            Broadcast to members, leaders, or admins by email and/or SMS.
+            {destLabels.broadcastSubtitle}
           </p>
         </div>
         {canCreate ? (
@@ -417,7 +433,9 @@ export function Announcements() {
                   return (
                     <tr key={r.id}>
                       <td className="sa-fw-600">{r.title}</td>
-                      <td className="sa-text-sm sa-text-muted">{formatDestination(r, unitNames)}</td>
+                      <td className="sa-text-sm sa-text-muted">
+                        {formatDestination(r, unitNames, destLabels, annPolicy.adminRoleOptions)}
+                      </td>
                       <td style={{ maxWidth: 280 }}>{r.body}</td>
                       <td>{formatMedium(r)}</td>
                       <td className="sa-text-sm">

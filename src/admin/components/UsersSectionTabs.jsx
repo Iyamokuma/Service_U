@@ -1,5 +1,6 @@
-/** Admins | Workforce | Unit members sub-tabs on the Users page. */
+import { SectionSegmentTabs } from "./SectionSegmentTabs.jsx";
 
+/** Admins | Workforce | Unit members sub-tabs on the Users page. */
 export function UsersSectionTabs({
   active,
   onChange,
@@ -9,39 +10,12 @@ export function UsersSectionTabs({
   showMembersTab = false,
   membersLabel = "Unit members",
 }) {
+  const tabs = [];
+  if (showAdminsTab) tabs.push({ id: "admins", label: adminsLabel });
+  tabs.push({ id: "workforce", label: workforceLabel });
+  if (showMembersTab) tabs.push({ id: "members", label: membersLabel });
+
   return (
-    <div className="sa-users-section-tabs" role="tablist" aria-label="Users sections">
-      {showAdminsTab ? (
-        <button
-          type="button"
-          role="tab"
-          aria-selected={active === "admins"}
-          className={`sa-users-section-tab${active === "admins" ? " is-active" : ""}`}
-          onClick={() => onChange("admins")}
-        >
-          {adminsLabel}
-        </button>
-      ) : null}
-      <button
-        type="button"
-        role="tab"
-        aria-selected={active === "workforce"}
-        className={`sa-users-section-tab${active === "workforce" ? " is-active" : ""}`}
-        onClick={() => onChange("workforce")}
-      >
-        {workforceLabel}
-      </button>
-      {showMembersTab ? (
-        <button
-          type="button"
-          role="tab"
-          aria-selected={active === "members"}
-          className={`sa-users-section-tab${active === "members" ? " is-active" : ""}`}
-          onClick={() => onChange("members")}
-        >
-          {membersLabel}
-        </button>
-      ) : null}
-    </div>
+    <SectionSegmentTabs tabs={tabs} active={active} onChange={onChange} ariaLabel="Users sections" />
   );
 }
