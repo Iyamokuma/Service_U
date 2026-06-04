@@ -56,6 +56,7 @@ function withScopeParams(params = {}) {
     const raw = localStorage.getItem("admin_user");
     const admin = raw ? JSON.parse(raw) : null;
     if (canSwitchAdminView(admin) && readAdminViewMode(admin?.id) === "state") {
+      if (params.scope_mode === "country") return { ...params, scope_mode: "country" };
       return { ...params, scope_mode: "state" };
     }
   } catch {
@@ -107,12 +108,36 @@ async function adminLoginFetch(emailOrUsername, password) {
   return body;
 }
 
-function mapAdminsList(data) {
-  return (data || []).map((a) => ({
+export function mapAdminRow(a) {
+  if (!a || typeof a !== "object") return a;
+  return {
     ...a,
     branch_country_label: branchCountryLabel(a.branch_country),
     branch_state_label: branchStateLabel(a.branch_country, a.branch_state),
-  }));
+  };
+}
+
+function mapAdminsList(data) {
+  return (data || []).map(mapAdminRow);
+}
+
+/** Merge created/updated admin rows into a prior `api.admins()` payload without waiting for refetch. */
+export function mergeAdminListPayload(prev, rowOrRows) {
+  const rows = Array.isArray(rowOrRows) ? rowOrRows : rowOrRows ? [rowOrRows] : [];
+  if (!rows.length) return prev ?? { data: [] };
+  const existing = [...(prev?.data ?? [])];
+  for (const raw of rows) {
+    const mapped = mapAdminRow(raw);
+    if (!mapped?.id) continue;
+    const idx = existing.findIndex((a) => Number(a.id) === Number(mapped.id));
+    if (idx >= 0) {
+      existing[idx] = { ...existing[idx], ...mapped };
+    } else {
+      existing.push(mapped);
+    }
+  }
+  existing.sort((a, b) => Number(a.id) - Number(b.id));
+  return { data: existing };
 }
 
 export const api = {

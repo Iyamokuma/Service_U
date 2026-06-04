@@ -156,7 +156,7 @@ function isLeaderAdminRole(role) {
   return r === "service_unit_leader" || r === "sub_unit_leader";
 }
 
-export function AdminUsers({ data, units, reload }) {
+export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdminFromList }) {
   const toast = useToast();
   const { admin: me, viewMode } = useAdminAuth();
   const actingAsState = isActingAsStateAdmin(me, viewMode);
@@ -351,6 +351,11 @@ export function AdminUsers({ data, units, reload }) {
 
   const allAdmins = data?.data ?? [];
 
+  async function refreshAdminsList(row) {
+    if (row?.id) upsertAdminInList?.(row);
+    if (reload) await reload();
+  }
+
   async function save(form) {
     const takenCountries = occupiedCountryCodes(allAdmins, pendingAdminRequests, form.id);
     const takenStates = occupiedStateCodes(
@@ -382,13 +387,17 @@ export function AdminUsers({ data, units, reload }) {
         });
         toast("Request submitted for upline approval. The account will be active once approved.", "success");
         loadPendingAdminRequests();
+        if (reload) await reload();
       } else {
         const payload = { ...form, viewer: me };
+        let savedRow = null;
         if (form.id) {
-          await api.updateAdmin(form.id, payload);
+          const res = await api.updateAdmin(form.id, payload);
+          savedRow = res?.data ? { ...form, ...res.data, id: form.id } : { ...form, id: form.id };
           toast("Admin updated.", "success");
         } else {
           const res = await api.createAdmin(payload);
+          savedRow = res?.data ?? null;
           const sent = res?.data?.invite_email_sent;
           if (inviteCreate) {
             toast(
@@ -401,9 +410,12 @@ export function AdminUsers({ data, units, reload }) {
             toast("Admin created.", "success");
           }
         }
+        setModal(null);
+        setStateBranchModal(null);
+        setSatelliteModal(null);
+        setReassignModal(null);
+        await refreshAdminsList(savedRow);
       }
-      setModal(null);
-      reload();
     } catch (e) { toast(e.message, "error"); }
     finally { setSaving(false); }
   }
@@ -421,9 +433,12 @@ export function AdminUsers({ data, units, reload }) {
   async function toggleActive(admin) {
     const activating = !isAdminActive(admin);
     try {
-      await api.updateAdmin(admin.id, { is_active: nextAdminActiveValue(admin), viewer: me });
+      const nextActive = nextAdminActiveValue(admin);
+      const res = await api.updateAdmin(admin.id, { is_active: nextActive, viewer: me });
+      await refreshAdminsList(
+        res?.data ? { ...admin, ...res.data, is_active: nextActive } : { ...admin, is_active: nextActive },
+      );
       toast(activating ? "Admin activated." : "Admin deactivated.", "success");
-      reload();
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -471,8 +486,9 @@ export function AdminUsers({ data, units, reload }) {
     if (!ok) return;
     try {
       await api.deleteAdmin(admin.id, { viewer: me });
+      removeAdminFromList?.(admin.id);
+      if (reload) await reload();
       toast("Admin deleted.", "success");
-      reload();
     } catch (e) {
       toast(e.message, "error");
     }
@@ -531,13 +547,13 @@ export function AdminUsers({ data, units, reload }) {
     if (!form?.id) return;
     setSaving(true);
     try {
-      await api.updateAdmin(form.id, { ...form, viewer: me });
+      const res = await api.updateAdmin(form.id, { ...form, viewer: me });
       toast(
         `Reassigned to ${roleDisplayLabel(form.role)}. Login unchanged; previous location data remains in the system.`,
         "success",
       );
       setReassignModal(null);
-      reload();
+      await refreshAdminsList(res?.data ? { ...form, ...res.data, id: form.id } : form);
     } catch (e) {
       toast(e.message, "error");
     } finally {

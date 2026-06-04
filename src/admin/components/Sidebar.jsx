@@ -40,10 +40,9 @@ const NAV_LEADER = [
     section: "Dashboard",
     items: [
       { id: "overview", label: "Dashboard", icon: <GridIcon /> },
-      { id: "queue", label: "Intake Queue", icon: <ListIcon /> },
-      { id: "members", label: "Members List", icon: <UsersIcon /> },
+      { id: "queue", label: "Application Queue", icon: <ListIcon /> },
+      { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
-      { id: "admins", label: "Sub-Unit Admins", icon: <UsersIcon /> },
       { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
@@ -55,8 +54,8 @@ const NAV_SUB_UNIT = [
     section: "Dashboard",
     items: [
       { id: "overview", label: "Dashboard", icon: <GridIcon /> },
-      { id: "queue", label: "Intake Queue", icon: <ListIcon /> },
-      { id: "members", label: "Members List", icon: <UsersIcon /> },
+      { id: "queue", label: "Application Queue", icon: <ListIcon /> },
+      { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],

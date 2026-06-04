@@ -5,20 +5,23 @@ export function UsersSectionTabs({
   onChange,
   workforceLabel = "Workforce",
   adminsLabel = "Admins",
+  showAdminsTab = true,
   showMembersTab = false,
   membersLabel = "Unit members",
 }) {
   return (
     <div className="sa-users-section-tabs" role="tablist" aria-label="Users sections">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={active === "admins"}
-        className={`sa-users-section-tab${active === "admins" ? " is-active" : ""}`}
-        onClick={() => onChange("admins")}
-      >
-        {adminsLabel}
-      </button>
+      {showAdminsTab ? (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={active === "admins"}
+          className={`sa-users-section-tab${active === "admins" ? " is-active" : ""}`}
+          onClick={() => onChange("admins")}
+        >
+          {adminsLabel}
+        </button>
+      ) : null}
       <button
         type="button"
         role="tab"

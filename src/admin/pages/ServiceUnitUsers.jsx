@@ -4,7 +4,6 @@ import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../components/adminRowMenuItems.js";
-import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
 import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
 import { WorkforceLeadersPanel } from "../components/WorkforceLeadersPanel.jsx";
@@ -13,27 +12,27 @@ import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 
-function initialSatelliteTab() {
+function initialServiceUnitTab() {
   const tab = readUsersSectionTab();
   if (tab === "admins") return "workforce";
   return tab === "members" ? tab : "workforce";
 }
 
-export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }) {
+export function ServiceUnitUsers({ admins: adminsPayload, units, reload }) {
   const toast = useToast();
   const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
   const stateCode = String(me?.branch_state || "").toUpperCase();
   const satelliteSite = String(me?.satellite_site || "").trim();
-  const stateLabel = branchStateLabel(countryCode, stateCode) || stateCode;
+  const unitId = Number(me?.service_unit_id);
+  const unitName = (units?.data || []).find((u) => Number(u.id) === unitId)?.name || me?.service_unit_name || "";
 
-  const [sectionTab, setSectionTabRaw] = useState(initialSatelliteTab);
+  const [sectionTab, setSectionTabRaw] = useState(initialServiceUnitTab);
   const setSectionTab = useCallback((tab) => {
     writeUsersSectionTab(tab);
     setSectionTabRaw(tab);
   }, []);
   const [saving, setSaving] = useState(false);
-  const [pendingRequests, setPendingRequests] = useState([]);
   const [churches, setChurches] = useState([]);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
   const [leaderModal, setLeaderModal] = useState(null);
@@ -42,22 +41,13 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
 
   const rowFilter = useCallback(
     (a) =>
+      a.role === "sub_unit_leader" &&
+      Number(a.service_unit_id) === unitId &&
       String(a.branch_country || "").toUpperCase() === countryCode &&
       String(a.branch_state || "").toUpperCase() === stateCode &&
-      String(a.satellite_site || "").trim() === satelliteSite,
-    [countryCode, stateCode, satelliteSite],
+      (!satelliteSite || String(a.satellite_site || "").trim() === satelliteSite),
+    [unitId, countryCode, stateCode, satelliteSite],
   );
-
-  const loadPending = useCallback(() => {
-    api
-      .requests({ per_page: 200, page: 1 })
-      .then((res) => setPendingRequests(res.data || []))
-      .catch(() => setPendingRequests([]));
-  }, []);
-
-  useEffect(() => {
-    loadPending();
-  }, [loadPending, adminsPayload]);
 
   useEffect(() => {
     fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
@@ -81,7 +71,7 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
     setActionMenu({ id: row.id, anchor: e.currentTarget });
   }
 
-  async function saveWorkforceLeader(form, validationError) {
+  async function saveSubLeader(form, validationError) {
     if (validationError) {
       toast(validationError, "error");
       return;
@@ -89,18 +79,12 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
     if (!form) return;
     setSaving(true);
     try {
-      const payload = { ...form, viewer: me };
+      const payload = { ...form, viewer: me, role: "sub_unit_leader", service_unit_id: unitId };
       if (form.id) await api.updateAdmin(form.id, payload);
       else await api.createAdmin(payload);
-      toast(
-        form.id
-          ? "Leader updated."
-          : `${form.role === "sub_unit_leader" ? "Sub-unit" : "Service unit"} leader created.`,
-        "success",
-      );
+      toast(form.id ? "Sub-unit leader updated." : "Sub-unit leader created.", "success");
       setLeaderModal(null);
       reload?.();
-      loadPending();
     } catch (e) {
       toast(e.message, "error");
     } finally {
@@ -115,7 +99,6 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
       await api.updateAdmin(row.id, { is_active: nextAdminActiveValue(row), viewer: me });
       toast(activating ? "Account activated." : "Account deactivated.", "success");
       reload?.();
-      loadPending();
     } catch (e) {
       toast(e.message, "error");
     }
@@ -126,9 +109,8 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
     if (!window.confirm(`Delete ${row.full_name}? This cannot be undone.`)) return;
     try {
       await api.deleteAdmin(row.id, { viewer: me });
-      toast("Admin account deleted.", "success");
+      toast("Leader deleted.", "success");
       reload?.();
-      loadPending();
     } catch (e) {
       toast(e.message, "error");
     }
@@ -154,17 +136,10 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
         <div className="sa-users-page-head-top">
           <h1 className="sa-admins-title">Users</h1>
           {sectionTab === "workforce" ? (
-            <div className="sa-users-page-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div className="sa-users-page-actions">
               <button
                 type="button"
                 className="sa-btn sa-btn-primary sa-btn-sm"
-                onClick={() => setLeaderModal({ initialRole: "service_unit_leader" })}
-              >
-                + New Service Unit Leader
-              </button>
-              <button
-                type="button"
-                className="sa-btn sa-btn-outline sa-btn-sm"
                 onClick={() => setLeaderModal({ initialRole: "sub_unit_leader" })}
               >
                 + New Sub-Unit Leader
@@ -183,21 +158,19 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
         {sectionTab === "workforce" ? (
           <UsersPageMeta
             items={[
-              `Workforce: ${workforceStats.total} total (${workforceStats.unitLeaders} service unit · ${workforceStats.subLeaders} sub-unit)`,
-              satelliteSite ? `Church: ${satelliteSite}` : null,
+              `Workforce: ${workforceStats.total} sub-unit leader${workforceStats.total !== 1 ? "s" : ""}`,
+              unitName ? `Service unit: ${unitName}` : null,
             ]}
           />
-        ) : sectionTab === "members" ? (
+        ) : (
           <UsersPageMeta
             items={[
-              `Unit members: ${memberTotal} approved at ${satelliteSite || "your satellite church"}`,
-              stateLabel ? `In ${stateLabel}` : null,
+              `Unit members: ${memberTotal} approved in ${unitName || "your service unit"}`,
+              branchCountryLabel(countryCode) ? `${branchCountryLabel(countryCode)}` : null,
             ]}
           />
-        ) : null}
+        )}
       </header>
-
-      <UsersPendingQueue compact requests={pendingRequests} onOpenQueue={() => setPage?.("requests")} />
 
       {sectionTab === "workforce" ? (
         <WorkforceLeadersPanel
@@ -205,7 +178,9 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
           units={units}
           countryCode={countryCode}
           rowFilter={rowFilter}
-          emptyScopeLabel={satelliteSite || "your satellite church"}
+          roles={["sub_unit_leader"]}
+          showRoleFilter={false}
+          emptyScopeLabel={unitName || "your service unit"}
           actionMenu={actionMenu}
           onOpenActions={openLeaderActions}
           onCloseActionMenu={closeActionMenu}
@@ -213,14 +188,7 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
           onStats={setWorkforceStats}
         />
       ) : (
-        <UnitMembers
-          units={units}
-          embedded
-          satelliteGeo
-          satelliteSite={satelliteSite}
-          stateCode={stateCode}
-          onMemberStats={({ total }) => setMemberTotal(total)}
-        />
+        <UnitMembers units={units} embedded unitLeaderGeo serviceUnitId={unitId} onMemberStats={({ total }) => setMemberTotal(total)} />
       )}
 
       <WorkforceLeaderModal
@@ -228,13 +196,13 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
         countryCode={countryCode}
         stateCode={stateCode}
         churches={churches}
-        units={units?.data || []}
+        units={(units?.data || []).filter((u) => Number(u.id) === unitId)}
         lockedSatelliteSite={satelliteSite}
-        initialRole={leaderModal?.initialRole || leaderModal?.role || "service_unit_leader"}
+        initialRole="sub_unit_leader"
         editData={leaderModal?.id ? leaderModal : null}
         saving={saving}
         onClose={() => setLeaderModal(null)}
-        onSave={saveWorkforceLeader}
+        onSave={saveSubLeader}
       />
     </>
   );

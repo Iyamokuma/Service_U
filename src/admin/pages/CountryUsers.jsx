@@ -8,20 +8,19 @@ import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../
 import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
 import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
-import { UsersContextSwitch } from "../components/UsersContextSwitch.jsx";
 import { CountryWorkforce } from "./CountryWorkforce.jsx";
+import { UnitMembers } from "./UnitMembers.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
-import { countryAdminHomeState } from "../roles.js";
+import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { satelliteSitesForCountry } from "../satelliteSites.js";
 import {
   availableStatesForCountryAdmin,
   occupiedStateCodes,
-  stateLeaderForCode,
 } from "../stateAdminForm.js";
-import { readCountryAdminsContext, writeCountryAdminsContext } from "../countryUsersContext.js";
 import { readUsersSectionTab, writeUsersSectionTab } from "../usersSectionTab.js";
 import { exportCsv } from "../exportCsv.js";
 
-const BRANCH_ADMIN_ROLES = new Set(["state_super_admin", "satellite_church_admin", "country_super_admin"]);
+const ADMINS_PAGE_SIZE = 25;
 
 function adminLocationLabel(admin, countryCode) {
   const cc = branchCountryLabel(admin.branch_country || countryCode);
@@ -34,24 +33,23 @@ function adminLocationLabel(admin, countryCode) {
   return st || cc || "—";
 }
 
-function adminRoleLabel(admin, { isDefaultStateRow } = {}) {
-  if (isDefaultStateRow && admin.role === "country_super_admin") {
-    return "State Branch Admin (HQ)";
-  }
+function adminRoleLabel(admin) {
   if (admin.role === "state_super_admin") return "State Branch Admin";
   if (admin.role === "satellite_church_admin") return "Satellite Pastor Admin";
   return String(admin.role || "—");
 }
 
-function isBranchAdminRow(admin) {
-  return BRANCH_ADMIN_ROLES.has(admin.role);
+function compareAdminsAlphabetical(a, b) {
+  return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, {
+    sensitivity: "base",
+  });
 }
 
-export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
+export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) {
   const toast = useToast();
-  const { admin: me, setViewMode } = useAdminAuth();
+  const { admin: me } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
-  const myHomeState = countryAdminHomeState(me);
+  const countryLabel = branchCountryLabel(countryCode) || countryCode;
 
   const [sectionTab, setSectionTabRaw] = useState(() => {
     const tab = readUsersSectionTab();
@@ -62,19 +60,23 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
     setSectionTabRaw(tab);
   }, []);
 
-  const [adminsContext, setAdminsContextRaw] = useState(() => readCountryAdminsContext());
-  const setAdminsContext = useCallback((ctx) => {
-    writeCountryAdminsContext(ctx);
-    setAdminsContextRaw(ctx);
-  }, []);
-
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [filterState, setFilterState] = useState("");
+  const [filterSatellite, setFilterSatellite] = useState("");
+  const [adminsPage, setAdminsPage] = useState(1);
   const [stateModal, setStateModal] = useState(null);
-  const [reassignOnly, setReassignOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
+  const [churches, setChurches] = useState([]);
+  const [workforceStats, setWorkforceStats] = useState({
+    total: 0,
+    unitLeaders: 0,
+    subLeaders: 0,
+  });
+  const [memberTotal, setMemberTotal] = useState(0);
 
   const allAdmins = adminsPayload?.data ?? [];
 
@@ -93,68 +95,36 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
     [countryAdmins],
   );
 
-  /** HQ default first, then state branch admins, then satellite pastors (country scope). */
-  const managedAdmins = useMemo(() => {
-    const hqState = String(myHomeState || "").toUpperCase();
-    const hqLeader = hqState ? stateLeaderForCode(countryAdmins, countryCode, hqState) : null;
-    const defaultRow = hqLeader?.admin && isBranchAdminRow(hqLeader.admin) ? hqLeader.admin : null;
-    const defaultId = defaultRow ? Number(defaultRow.id) : null;
+  /** State branch pastors + satellite pastors in this country (alphabetical list source). */
+  const pastorAdmins = useMemo(() => {
+    return countryAdmins
+      .filter((a) => a.role === "state_super_admin" || a.role === "satellite_church_admin")
+      .sort(compareAdminsAlphabetical);
+  }, [countryAdmins]);
 
-    const states = stateBranchAdmins
-      .filter((a) => defaultId == null || Number(a.id) !== defaultId)
-      .sort((a, b) => String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" }));
+  const pastorAdminTotal = stateBranchAdmins.length + satellitePastors.length;
 
-    const satellites = satellitePastors
-      .slice()
-      .sort((a, b) => {
-        const st = String(a.branch_state || "").localeCompare(String(b.branch_state || ""), undefined, {
-          sensitivity: "base",
-        });
-        if (st !== 0) return st;
-        const sat = String(a.satellite_site || "").localeCompare(String(b.satellite_site || ""), undefined, {
-          sensitivity: "base",
-        });
-        if (sat !== 0) return sat;
-        return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, { sensitivity: "base" });
-      });
+  const stateOptions = useMemo(() => branchStatesForCountry(countryCode), [countryCode]);
 
-    return defaultRow ? [defaultRow, ...states, ...satellites] : [...states, ...satellites];
-  }, [countryAdmins, countryCode, myHomeState, stateBranchAdmins, satellitePastors]);
+  const satelliteOptions = useMemo(
+    () => satelliteSitesForCountry(churches, countryCode, filterState),
+    [churches, countryCode, filterState],
+  );
 
-  const defaultAdminId = useMemo(() => {
-    const hqState = String(myHomeState || "").toUpperCase();
-    const hqLeader = hqState ? stateLeaderForCode(countryAdmins, countryCode, hqState) : null;
-    return hqLeader?.admin?.id ?? null;
-  }, [countryAdmins, countryCode, myHomeState]);
+  useEffect(() => {
+    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+  }, []);
 
-  const adminsContextOptions = useMemo(() => {
-    const defaultIsCountry = managedAdmins.some(
-      (a) => Number(a.id) === Number(defaultAdminId) && a.role === "country_super_admin",
-    );
-    return [
-      { id: "all", label: "All admins", count: managedAdmins.length },
-      {
-        id: "state_super_admin",
-        label: "State branch",
-        count: stateBranchAdmins.length + (defaultIsCountry ? 1 : 0),
-      },
-      { id: "satellite_church_admin", label: "Satellite pastors", count: satellitePastors.length },
-    ];
-  }, [managedAdmins, stateBranchAdmins.length, satellitePastors.length, defaultAdminId]);
+  useEffect(() => {
+    setAdminsPage(1);
+  }, [search, showInactive, roleFilter, filterState, filterSatellite]);
 
-  const contextFilteredAdmins = useMemo(() => {
-    if (adminsContext === "state_super_admin") {
-      return managedAdmins.filter(
-        (a) =>
-          a.role === "state_super_admin" ||
-          (Number(a.id) === Number(defaultAdminId) && a.role === "country_super_admin"),
-      );
+  useEffect(() => {
+    if (!filterSatellite) return;
+    if (!satelliteOptions.includes(filterSatellite)) {
+      setFilterSatellite("");
     }
-    if (adminsContext === "satellite_church_admin") {
-      return managedAdmins.filter((a) => a.role === "satellite_church_admin");
-    }
-    return managedAdmins;
-  }, [managedAdmins, adminsContext, defaultAdminId]);
+  }, [filterSatellite, satelliteOptions]);
 
   const loadPending = useCallback(() => {
     api
@@ -174,31 +144,36 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return contextFilteredAdmins.filter((a) => {
+    return pastorAdmins.filter((a) => {
       if (!showInactive && Number(a.is_active) !== 1) return false;
+      if (roleFilter === "state_super_admin" && a.role !== "state_super_admin") return false;
+      if (roleFilter === "satellite_church_admin" && a.role !== "satellite_church_admin") return false;
+      if (filterState && String(a.branch_state || "").toUpperCase() !== filterState) return false;
+      if (filterSatellite && String(a.satellite_site || "").trim() !== filterSatellite) return false;
       if (!q) return true;
       const loc = adminLocationLabel(a, countryCode);
-      const isDefault = defaultAdminId != null && Number(a.id) === Number(defaultAdminId);
-      const hay = [
-        a.full_name,
-        a.username,
-        a.email,
-        loc,
-        adminRoleLabel(a, { isDefaultStateRow: isDefault }),
-        isDefault ? "default admin" : "",
-      ]
-        .join(" ")
-        .toLowerCase();
+      const hay = [a.full_name, a.username, a.email, loc, adminRoleLabel(a)].join(" ").toLowerCase();
       return hay.includes(q);
     });
-  }, [contextFilteredAdmins, search, showInactive, countryCode, defaultAdminId]);
+  }, [pastorAdmins, search, showInactive, roleFilter, filterState, filterSatellite, countryCode]);
+
+  const adminsPagination = useMemo(() => {
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / ADMINS_PAGE_SIZE));
+    const page = Math.min(adminsPage, pages);
+    const start = (page - 1) * ADMINS_PAGE_SIZE;
+    return {
+      page,
+      pages,
+      total,
+      rows: filtered.slice(start, start + ADMINS_PAGE_SIZE),
+    };
+  }, [filtered, adminsPage]);
 
   const actionTarget = useMemo(
-    () => managedAdmins.find((a) => Number(a.id) === Number(actionMenu.id)),
-    [managedAdmins, actionMenu.id],
+    () => pastorAdmins.find((a) => Number(a.id) === Number(actionMenu.id)),
+    [pastorAdmins, actionMenu.id],
   );
-
-  const isDefaultRow = (row) => defaultAdminId != null && Number(row?.id) === Number(defaultAdminId);
 
   function closeActionMenu() {
     setActionMenu({ id: null, anchor: null });
@@ -226,7 +201,6 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
       else await api.createAdmin(payload);
       toast(form.id ? "State Branch Admin updated." : "State Branch Admin created.", "success");
       setStateModal(null);
-      setReassignOnly(false);
       reload?.();
       loadPending();
     } catch (e) {
@@ -273,7 +247,7 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
       filename: `branch-admins-${countryCode}-${new Date().toISOString().slice(0, 10)}.csv`,
       columns: [
         { key: "full_name", label: "Name" },
-        { key: "role", label: "Role", format: (v, row) => adminRoleLabel(row, { isDefaultStateRow: isDefaultRow(row) }) },
+        { key: "role", label: "Role", format: (v, row) => adminRoleLabel(row) },
         {
           key: "branch_state",
           label: "Location",
@@ -286,60 +260,28 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
   }
 
   const takenCount = occupiedStateCodes(countryAdmins, pendingRequests, countryCode).size;
-  const statesTotal = branchStatesForCountry(countryCode).length;
-  const activeStateCount = stateBranchAdmins.filter((a) => Number(a.is_active) === 1).length;
-  const activeSatelliteCount = satellitePastors.filter((a) => Number(a.is_active) === 1).length;
+  const statesTotal = stateOptions.length;
 
   const menuItems = useMemo(() => {
-    if (!actionTarget) return [];
-    if (isDefaultRow(actionTarget) && actionTarget.role === "country_super_admin") {
-      return [
-        {
-          id: "state-view",
-          label: "Open state branch view",
-          onClick: () => {
-            closeActionMenu();
-            setViewMode("state");
-            writeUsersSectionTab("admins");
-            setSectionTab("admins");
-          },
-        },
-        {
-          id: "profile",
-          label: "Profile & account",
-          onClick: () => {
-            closeActionMenu();
-            setPage?.("profile");
-          },
-        },
-      ];
-    }
-    if (actionTarget.role !== "state_super_admin") {
-      return [];
-    }
+    if (!actionTarget || actionTarget.role !== "state_super_admin") return [];
     return buildAdminRowMenuItems({
       row: actionTarget,
       includeReassign: false,
       onEdit: () => {
-        setReassignOnly(false);
         setStateModal(actionTarget);
       },
       onToggleActive: () => toggleActive(actionTarget),
       onDelete: () => deleteAdmin(actionTarget),
     });
-  }, [actionTarget, actionTarget?.is_active, defaultAdminId, setViewMode, setPage, setSectionTab]);
+  }, [actionTarget, actionTarget?.is_active]);
 
-  const pageMetaItems =
-    sectionTab === "workforce"
-      ? null
-      : [
-          `${activeStateCount} active state admin${activeStateCount !== 1 ? "s" : ""}`,
-          `${activeSatelliteCount} active satellite pastor${activeSatelliteCount !== 1 ? "s" : ""}`,
-          `${takenCount}/${statesTotal} states covered`,
-          vacantStates.length
-            ? `${vacantStates.length} vacant state${vacantStates.length !== 1 ? "s" : ""}`
-            : "All states covered",
-        ];
+  const adminsMetaItems = [
+    `Admins: ${pastorAdminTotal} total (${stateBranchAdmins.length} state branch · ${satellitePastors.length} satellite pastor${satellitePastors.length !== 1 ? "s" : ""})`,
+    `${takenCount}/${statesTotal} states with a state branch admin`,
+    vacantStates.length
+      ? `${vacantStates.length} vacant state${vacantStates.length !== 1 ? "s" : ""}`
+      : "All states covered",
+  ];
 
   return (
     <>
@@ -348,28 +290,43 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
           <h1 className="sa-admins-title">Users</h1>
           {sectionTab === "admins" ? (
             <div className="sa-users-page-actions">
-              <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
+              <button
+                type="button"
+                className="sa-btn sa-btn-outline sa-btn-sm"
+                onClick={handleExport}
+                disabled={!filtered.length}
+              >
                 Export CSV
               </button>
-              {adminsContext !== "satellite_church_admin" ? (
-                <button
-                  type="button"
-                  className="sa-btn sa-btn-primary sa-btn-sm"
-                  onClick={() => {
-                    setReassignOnly(false);
-                    setStateModal({});
-                  }}
-                >
-                  + New State Branch Admin
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="sa-btn sa-btn-primary sa-btn-sm"
+                onClick={() => setStateModal({})}
+              >
+                + New State Branch Admin
+              </button>
             </div>
           ) : null}
         </div>
         <div className="sa-users-page-head-tabs">
-          <UsersSectionTabs active={sectionTab} onChange={setSectionTab} />
+          <UsersSectionTabs active={sectionTab} onChange={setSectionTab} showMembersTab />
         </div>
-        {pageMetaItems ? <UsersPageMeta items={pageMetaItems} /> : null}
+        {sectionTab === "admins" ? (
+          <UsersPageMeta items={adminsMetaItems} />
+        ) : sectionTab === "workforce" ? (
+          <UsersPageMeta
+            items={[
+              `Workforce: ${workforceStats.total} total (${workforceStats.unitLeaders} service unit leader${workforceStats.unitLeaders !== 1 ? "s" : ""} · ${workforceStats.subLeaders} sub-unit leader${workforceStats.subLeaders !== 1 ? "s" : ""})`,
+              "Across all states in your country",
+            ]}
+          />
+        ) : sectionTab === "members" ? (
+          <UsersPageMeta
+            items={[
+              `Unit members: ${memberTotal} approved across all satellite churches in ${countryLabel || "your country"}`,
+            ]}
+          />
+        ) : null}
       </header>
 
       <UsersPendingQueue
@@ -379,17 +336,60 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
       />
 
       {sectionTab === "workforce" ? (
-        <CountryWorkforce embedded admins={adminsPayload} />
+        <CountryWorkforce embedded admins={adminsPayload} onStats={setWorkforceStats} />
+      ) : sectionTab === "members" ? (
+        <UnitMembers
+          units={units}
+          embedded
+          countryGeo
+          onMemberStats={({ total }) => setMemberTotal(total)}
+        />
       ) : (
         <div className="sa-card">
-          <UsersContextSwitch
-            value={adminsContext}
-            onChange={setAdminsContext}
-            options={adminsContextOptions}
-            ariaLabel="Branch admin type"
-          />
-
           <div className="sa-admins-filters" role="toolbar" aria-label="Filter admins">
+            <select className="sa-select" value={countryCode} disabled aria-label="Country">
+              <option value={countryCode}>{countryLabel}</option>
+            </select>
+            <select
+              className="sa-select"
+              value={filterState}
+              onChange={(e) => {
+                setFilterState(e.target.value);
+                setFilterSatellite("");
+              }}
+              aria-label="State / region"
+            >
+              <option value="">All states / regions</option>
+              {stateOptions.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="sa-select"
+              value={filterSatellite}
+              onChange={(e) => setFilterSatellite(e.target.value)}
+              disabled={satelliteOptions.length === 0}
+              aria-label="Satellite church"
+            >
+              <option value="">All satellite churches</option>
+              {satelliteOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="sa-select"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              aria-label="Role"
+            >
+              <option value="all">All</option>
+              <option value="state_super_admin">State branch</option>
+              <option value="satellite_church_admin">Satellite pastor</option>
+            </select>
             <div className="sa-search">
               <span className="sa-search-icon" aria-hidden>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -399,13 +399,7 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
               </span>
               <input
                 type="search"
-                placeholder={
-                  adminsContext === "satellite_church_admin"
-                    ? "Search pastor, satellite, state…"
-                    : adminsContext === "state_super_admin"
-                      ? "Search state admin or state…"
-                      : "Search name, state, satellite…"
-                }
+                placeholder="Search name, email, location…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -422,16 +416,22 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
                 <span className="sa-switch-ui" aria-hidden />
               </span>
             </label>
-            <span className="sa-admins-filter-count">
-              {filtered.length} admin{filtered.length !== 1 ? "s" : ""}
-            </span>
           </div>
+
+          <p className="sa-text-sm sa-text-muted" style={{ margin: "0 0 12px", padding: "0 4px" }}>
+            Sorted A–Z · showing {adminsPagination.total} of {pastorAdminTotal} admin
+            {pastorAdminTotal !== 1 ? "s" : ""}
+            {adminsPagination.pages > 1
+              ? ` · page ${adminsPagination.page} of ${adminsPagination.pages}`
+              : ""}
+          </p>
+
           <div className="sa-table-wrap">
-            {filtered.length === 0 ? (
+            {adminsPagination.rows.length === 0 ? (
               <div className="sa-empty">
                 <div className="sa-empty-text">
-                  {managedAdmins.length === 0
-                    ? "No state or satellite administrators in this country yet."
+                  {pastorAdmins.length === 0
+                    ? "No state branch or satellite pastor admins in this country yet."
                     : "No accounts match your filters."}
                 </div>
               </div>
@@ -441,53 +441,64 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
                   <tr>
                     <th>Name of admin</th>
                     <th>Location</th>
-                    <th>Status</th>
                     <th>Role</th>
+                    <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((a) => {
-                    const isDefault = isDefaultRow(a);
-                    return (
-                      <tr key={a.id}>
-                        <td>
-                          <div className="sa-fw-600">{a.full_name}</div>
-                          <div className="sa-text-sm sa-text-muted">{a.username}</div>
-                          {isDefault ? (
-                            <span className="sa-badge viewer" style={{ marginTop: 6 }}>
-                              Default admin
-                            </span>
-                          ) : null}
-                          {Number(a.is_active) !== 1 ? (
-                            <span className="sa-badge inactive" style={{ marginTop: 6 }}>
-                              Inactive
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
-                        <td>
-                          <span className={`sa-badge ${Number(a.is_active) === 1 ? "active" : "inactive"}`}>
-                            {Number(a.is_active) === 1 ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td className="sa-text-sm">
-                          {adminRoleLabel(a, { isDefaultStateRow: isDefault })}
-                        </td>
-                        <td>
-                          {a.role === "state_super_admin" || isDefault ? (
-                            <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
-                          ) : (
-                            <span className="sa-text-muted sa-text-sm">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {adminsPagination.rows.map((a) => (
+                    <tr key={a.id}>
+                      <td>
+                        <div className="sa-fw-600">{a.full_name}</div>
+                        <div className="sa-text-sm sa-text-muted">{a.email}</div>
+                      </td>
+                      <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
+                      <td className="sa-text-sm">{adminRoleLabel(a)}</td>
+                      <td>
+                        <span className={`sa-badge ${Number(a.is_active) === 1 ? "active" : "inactive"}`}>
+                          {Number(a.is_active) === 1 ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td>
+                        {a.role === "state_super_admin" ? (
+                          <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
+                        ) : (
+                          <span className="sa-text-muted sa-text-sm">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
           </div>
+
+          {adminsPagination.pages > 1 ? (
+            <div className="sa-pagination">
+              <span>
+                Page {adminsPagination.page} of {adminsPagination.pages} ({adminsPagination.total} admins)
+              </span>
+              <div className="sa-pag-btns">
+                <button
+                  type="button"
+                  className="sa-pag-btn"
+                  disabled={adminsPagination.page <= 1}
+                  onClick={() => setAdminsPage((p) => Math.max(1, p - 1))}
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="sa-pag-btn"
+                  disabled={adminsPagination.page >= adminsPagination.pages}
+                  onClick={() => setAdminsPage((p) => Math.min(adminsPagination.pages, p + 1))}
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -506,12 +517,9 @@ export function CountryUsers({ admins: adminsPayload, reload, setPage }) {
         initialStateCode={stateModal?.initialState || stateModal?.branch_state || ""}
         editData={stateModal?.id ? stateModal : null}
         saving={saving}
-        onClose={() => {
-          setStateModal(null);
-          setReassignOnly(false);
-        }}
+        onClose={() => setStateModal(null)}
         onSave={saveStateAdmin}
-        reassignOnly={reassignOnly}
+        reassignOnly={false}
       />
     </>
   );

@@ -5,7 +5,7 @@ import { useToast } from "../components/Toast.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
 import { branchCountryLabel, branchStatesForCountry, branchStateLabel } from "../branchRegions.js";
-import { isCountrySuperAdmin, isSupervisoryBranchRole } from "../roles.js";
+import { isCountrySuperAdmin, isStateSuperAdmin, isSupervisoryBranchRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { leaderScopeLabel } from "../leaderScope.js";
 import { RegistrationDetails, fmtDate, fullName } from "./Queue.jsx";
@@ -20,8 +20,12 @@ export function BranchOversight({ units }) {
   const toast = useToast();
   const { admin, viewMode } = useAdminAuth();
   const actingAsState = isActingAsStateAdmin(admin, viewMode);
-  const isCountry = isCountrySuperAdmin(admin?.role) && !actingAsState;
-  const canAction = isCountry;
+  const isCountryActor = isCountrySuperAdmin(admin?.role);
+  const isCountryView = isCountryActor && !actingAsState;
+  const canAction = isCountryView;
+  const countrySupervisoryQueue = isCountryActor && actingAsState;
+  const isStateSupervisory = isStateSuperAdmin(admin?.role);
+  const isSatelliteSupervisory = admin?.role === "satellite_church_admin";
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
@@ -41,9 +45,9 @@ export function BranchOversight({ units }) {
   });
 
   const stateOptions = useMemo(() => {
-    if (!isCountry || !admin?.branch_country) return [];
+    if (!isCountryActor || !admin?.branch_country) return [];
     return branchStatesForCountry(admin.branch_country);
-  }, [isCountry, admin?.branch_country]);
+  }, [isCountryActor, admin?.branch_country]);
 
   const subUnitOptions = useMemo(() => {
     const u = (units?.data || []).find((x) => Number(x.id) === Number(filters.unit_id));
@@ -65,6 +69,7 @@ export function BranchOversight({ units }) {
           page,
           per_page: 25,
           viewer: admin,
+          ...(countrySupervisoryQueue ? { scope_mode: "country" } : {}),
         });
         setRows(res.data || []);
         setPag(res.pagination || { page: 1, pages: 1, total: 0 });
@@ -74,7 +79,7 @@ export function BranchOversight({ units }) {
         setLoading(false);
       }
     },
-    [admin, filters, toast]
+    [admin, filters, toast, countrySupervisoryQueue]
   );
 
   useEffect(() => {
@@ -124,12 +129,32 @@ export function BranchOversight({ units }) {
   return (
     <>
       <p className="sa-text-muted sa-text-sm" style={{ marginBottom: 16, maxWidth: 720 }}>
-        {isCountry ? (
+        {countrySupervisoryQueue ? (
+          <>
+            <strong>Country supervisory queue{scopeLabel ? ` · ${scopeLabel}` : ""}</strong>
+            {" — "}
+            View all applications in {branchCountryLabel(admin.branch_country) || "your country"}. Status updates are
+            available in Country Admin view only; use this tab to monitor progress.
+          </>
+        ) : isCountryView ? (
           <>
             <strong>Country scope{scopeLabel ? ` · ${scopeLabel}` : ""}</strong>
             {" — "}
             Filter and update applications across {branchCountryLabel(admin.branch_country) || "your country"}.
             Service units and sub-units are managed by Super / General Admin only.
+          </>
+        ) : isStateSupervisory ? (
+          <>
+            <strong>State supervisory queue{scopeLabel ? ` · ${scopeLabel}` : ""}</strong>
+            {" — "}
+            View all applications in your state. Status updates are handled by service unit leaders at each
+            satellite church.
+          </>
+        ) : isSatelliteSupervisory ? (
+          <>
+            <strong>Satellite supervisory queue{scopeLabel ? ` · ${scopeLabel}` : ""}</strong>
+            {" — "}
+            View all applications at your church. Status updates are handled by service unit leaders.
           </>
         ) : (
           <>
@@ -181,7 +206,7 @@ export function BranchOversight({ units }) {
             </span>
             <input placeholder="Search name, email, phone…" value={filters.search} onChange={setFilter("search")} />
           </div>
-          {isCountry && (
+          {isCountryActor && (
             <select className="sa-select" value={filters.filter_branch_state} onChange={setFilter("filter_branch_state")} aria-label="Filter by state">
               <option value="">All states / satellites</option>
               {stateOptions.map((s) => (

@@ -9,7 +9,7 @@ export const VIEW_MODE_STORAGE_KEY = "sm_admin_view_mode";
  * State Branch Admins for other states never get this control.
  */
 export function canSwitchAdminView(admin) {
-  return isCountrySuperAdmin(admin?.role) && !!String(admin?.branch_country || "").trim();
+  return isCountrySuperAdmin(admin?.role) && !!countryAdminHomeState(admin);
 }
 
 export function viewModeStorageKey(adminId) {
@@ -75,6 +75,23 @@ export function normalizeStateAdminPage(page) {
   return "overview";
 }
 
+export const SERVICE_UNIT_LEADER_PAGES = [
+  "overview",
+  "queue",
+  "users",
+  "announcements",
+  "activity",
+  "profile",
+];
+
+export const SUB_UNIT_LEADER_PAGES = [
+  "overview",
+  "queue",
+  "users",
+  "announcements",
+  "profile",
+];
+
 const SATELLITE_ADMIN_PAGES = [
   "role-dashboard",
   "oversight",
@@ -89,6 +106,18 @@ export function normalizeSatelliteAdminPage(page) {
   if (page === "admins" || page === "workforce" || page === "members") return "users";
   if (SATELLITE_ADMIN_PAGES.includes(page)) return page;
   return "role-dashboard";
+}
+
+export function normalizeServiceUnitLeaderPage(page) {
+  if (page === "admins" || page === "workforce" || page === "members") return "users";
+  if (SERVICE_UNIT_LEADER_PAGES.includes(page)) return page;
+  return "overview";
+}
+
+export function normalizeSubUnitLeaderPage(page) {
+  if (page === "members" || page === "admins" || page === "workforce") return "users";
+  if (SUB_UNIT_LEADER_PAGES.includes(page)) return page;
+  return "overview";
 }
 
 /** Map sidebar page when switching Country ↔ State view (keep the closest equivalent). */

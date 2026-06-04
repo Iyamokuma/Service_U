@@ -1667,6 +1667,7 @@ async function handleMembers(supabase: SupabaseClient, params: Record<string, un
     const r = norm(params.search).replace(/%/g, "").slice(0, 120);
     if (r) q = q.or(`first_name.ilike.%${r}%,surname.ilike.%${r}%,email.ilike.%${r}%,phone1.ilike.%${r}%`);
   }
+  q = q.order("surname", { ascending: true }).order("first_name", { ascending: true });
   const { data, error, count } = await q.range(from, to);
   if (error) throw new Error(error.message);
   const total = typeof count === "number" ? count : (data || []).length;

@@ -1,20 +1,31 @@
 import { useAdminAuth } from "../AdminContext.jsx";
+import { useToast } from "./Toast.jsx";
 import { canSwitchAdminView, normalizePageForViewMode } from "../adminViewMode.js";
+import { countryAdminHomeState } from "../roles.js";
+import { branchStateLabel } from "../branchRegions.js";
 
 /**
  * Sticky Country ↔ State view bar (Country Admin HQ dual role) — below the topbar.
  */
-export function AdminViewModeFloat({ setPage }) {
+export function AdminViewModeFloat({ page, setPage }) {
+  const toast = useToast();
   const { admin, viewMode, setViewMode } = useAdminAuth();
 
   if (!canSwitchAdminView(admin)) return null;
 
   const isState = viewMode === "state";
+  const hqState = countryAdminHomeState(admin);
 
   function selectMode(mode) {
     if (mode === viewMode) return;
+    if (mode === "state" && !hqState) {
+      toast("Set your headquarters state in Profile / Settings before using State Branch view.", "error");
+      setPage?.("profile");
+      return;
+    }
+    const nextPage = normalizePageForViewMode(page, admin, mode);
     setViewMode(mode);
-    setPage?.((p) => normalizePageForViewMode(p, admin, mode));
+    setPage?.(nextPage);
   }
 
   return (
@@ -38,6 +49,11 @@ export function AdminViewModeFloat({ setPage }) {
             State Branch Admin
           </button>
         </div>
+        {hqState ? (
+          <span className="sa-text-muted sa-text-sm" style={{ marginLeft: 12 }}>
+            HQ: {branchStateLabel(admin.branch_country, hqState) || hqState}
+          </span>
+        ) : null}
       </div>
     </div>
   );

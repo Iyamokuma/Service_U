@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAdminAuth } from "../AdminContext.jsx";
-import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
-import { isAdminActive } from "../components/adminRowMenuItems.js";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { countryAdminHomeState, isCountrySuperAdmin } from "../roles.js";
-import { isActingAsStateAdmin } from "../adminViewMode.js";
-
-const WORKFORCE_PAGE_SIZE = 25;
+import { AdminRowActionsMenu, AdminRowActionsTrigger } from "./AdminRowActionsMenu.jsx";
+import { isAdminActive } from "./adminRowMenuItems.js";
+import { branchStateLabel } from "../branchRegions.js";
+import {
+  WORKFORCE_PAGE_SIZE,
+  buildUnitNameMap,
+  compareLeadersAlphabetical,
+  leaderRoleLabel,
+} from "../workforceLeaders.js";
 
 function leaderLocationLabel(admin, countryCode) {
   const st = branchStateLabel(countryCode, admin.branch_state);
@@ -16,62 +17,38 @@ function leaderLocationLabel(admin, countryCode) {
   return st || "—";
 }
 
-function leaderRoleLabel(role) {
-  if (role === "service_unit_leader") return "Service unit leader";
-  if (role === "sub_unit_leader") return "Sub-unit leader";
-  return String(role || "—");
-}
-
-function compareLeadersAlphabetical(a, b) {
-  return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, {
-    sensitivity: "base",
-  });
-}
-
-function buildUnitNameMap(units) {
-  const map = new Map();
-  for (const u of units || []) {
-    map.set(Number(u.id), String(u.name || ""));
-  }
-  return map;
-}
-
-export function StateWorkforce({
+/**
+ * Paginated workforce table: role filter, search, A–Z sort.
+ * @param {object} props
+ * @param {function} props.rowFilter - (admin) => boolean
+ * @param {string[]} [props.roles] - default both leader roles
+ * @param {boolean} [props.showRoleFilter] - role dropdown (default true)
+ */
+export function WorkforceLeadersPanel({
   admins: adminsPayload,
   units: unitsPayload,
-  embedded = false,
+  countryCode,
+  rowFilter,
+  roles = ["service_unit_leader", "sub_unit_leader"],
+  showRoleFilter = true,
+  emptyScopeLabel = "this scope",
   actionMenu,
   onOpenActions,
   onCloseActionMenu,
   menuItems,
   onStats,
 }) {
-  const { admin: me, viewMode } = useAdminAuth();
-  const countryCode = String(me?.branch_country || "").toUpperCase();
-  const actingAsState = isActingAsStateAdmin(me, viewMode);
-  const stateCode = String(
-    isCountrySuperAdmin(me?.role) && actingAsState
-      ? countryAdminHomeState(me) || me?.branch_state
-      : me?.branch_state || "",
-  ).toUpperCase();
-  const stateLabel = branchStateLabel(countryCode, stateCode) || stateCode;
-  const countryLabel = branchCountryLabel(countryCode);
-
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
   const [workforcePage, setWorkforcePage] = useState(1);
 
   const unitNameById = useMemo(() => buildUnitNameMap(unitsPayload?.data), [unitsPayload?.data]);
+  const roleSet = useMemo(() => new Set(roles), [roles]);
 
   const leaderRows = useMemo(() => {
     return (adminsPayload?.data ?? [])
-      .filter(
-        (a) =>
-          String(a.branch_country || "").toUpperCase() === countryCode &&
-          String(a.branch_state || "").toUpperCase() === stateCode &&
-          ["service_unit_leader", "sub_unit_leader"].includes(a.role),
-      )
+      .filter((a) => roleSet.has(a.role) && rowFilter(a))
       .map((a) => {
         const unitId = Number(a.service_unit_id);
         const unitName = unitNameById.get(unitId) || (unitId ? `Unit #${unitId}` : "—");
@@ -85,7 +62,7 @@ export function StateWorkforce({
         };
       })
       .sort(compareLeadersAlphabetical);
-  }, [adminsPayload, countryCode, stateCode, unitNameById]);
+  }, [adminsPayload, rowFilter, roleSet, unitNameById, countryCode]);
 
   const unitLeaderRows = useMemo(
     () => leaderRows.filter((r) => r.role === "service_unit_leader"),
@@ -95,7 +72,7 @@ export function StateWorkforce({
     () => leaderRows.filter((r) => r.role === "sub_unit_leader"),
     [leaderRows],
   );
-  const workforceTotal = unitLeaderRows.length + subLeaderRows.length;
+  const workforceTotal = leaderRows.length;
 
   useEffect(() => {
     onStats?.({
@@ -113,15 +90,17 @@ export function StateWorkforce({
     const q = search.trim().toLowerCase();
     return leaderRows.filter((r) => {
       if (!showInactive && !isAdminActive(r)) return false;
-      if (roleFilter === "service_unit_leader" && r.role !== "service_unit_leader") return false;
-      if (roleFilter === "sub_unit_leader" && r.role !== "sub_unit_leader") return false;
+      if (showRoleFilter && roleFilter === "service_unit_leader" && r.role !== "service_unit_leader") {
+        return false;
+      }
+      if (showRoleFilter && roleFilter === "sub_unit_leader" && r.role !== "sub_unit_leader") return false;
       if (!q) return true;
       const hay = [r.full_name, r.username, r.email, r.unitName, r.subUnit, r.location, r.roleLabel]
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [leaderRows, search, showInactive, roleFilter]);
+  }, [leaderRows, search, showInactive, roleFilter, showRoleFilter]);
 
   const pagination = useMemo(() => {
     const total = filtered.length;
@@ -136,43 +115,26 @@ export function StateWorkforce({
     };
   }, [filtered, workforcePage]);
 
-  if (!stateCode) {
-    return (
-      <div className="sa-card">
-        <div className="sa-empty">
-          <div className="sa-empty-text">
-            Set your headquarters state (Profile / Settings) before managing state workforce.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
-      {!embedded ? (
-        <header className="sa-admins-hero" style={{ marginBottom: 20 }}>
-          <div>
-            <h1 className="sa-admins-title">Workforce</h1>
-            <p className="sa-admins-subtitle">
-              Leaders in {stateLabel}, {countryLabel}.
-            </p>
-          </div>
-        </header>
-      ) : null}
-
       <div className="sa-card">
         <div className="sa-admins-filters" role="toolbar" aria-label="Filter workforce">
-          <select
-            className="sa-select"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            aria-label="Role"
-          >
-            <option value="all">All</option>
-            <option value="service_unit_leader">Service unit leader</option>
-            <option value="sub_unit_leader">Sub-unit leader</option>
-          </select>
+          {showRoleFilter ? (
+            <select
+              className="sa-select"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              aria-label="Role"
+            >
+              <option value="all">All</option>
+              {roles.includes("service_unit_leader") ? (
+                <option value="service_unit_leader">Service unit leader</option>
+              ) : null}
+              {roles.includes("sub_unit_leader") ? (
+                <option value="sub_unit_leader">Sub-unit leader</option>
+              ) : null}
+            </select>
+          ) : null}
           <div className="sa-search">
             <span className="sa-search-icon" aria-hidden>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -182,7 +144,7 @@ export function StateWorkforce({
             </span>
             <input
               type="search"
-              placeholder="Search name, unit, church…"
+              placeholder="Search name, unit, location…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -211,7 +173,7 @@ export function StateWorkforce({
             <div className="sa-empty">
               <div className="sa-empty-text">
                 {leaderRows.length === 0
-                  ? `No service unit or sub-unit leaders in ${stateLabel} yet.`
+                  ? `No workforce leaders in ${emptyScopeLabel} yet.`
                   : "No leaders match your filters."}
               </div>
             </div>
@@ -220,12 +182,12 @@ export function StateWorkforce({
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Role</th>
+                  {showRoleFilter ? <th>Role</th> : null}
                   <th>Service unit</th>
                   <th>Sub-unit</th>
                   <th>Location</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  {onOpenActions ? <th>Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -235,7 +197,7 @@ export function StateWorkforce({
                       <div className="sa-fw-600">{r.full_name}</div>
                       <div className="sa-text-sm sa-text-muted">{r.email || r.username}</div>
                     </td>
-                    <td className="sa-text-sm">{r.roleLabel}</td>
+                    {showRoleFilter ? <td className="sa-text-sm">{r.roleLabel}</td> : null}
                     <td className="sa-text-sm">{r.unitName}</td>
                     <td className="sa-text-sm">{r.subUnit}</td>
                     <td className="sa-text-sm">{r.location}</td>
@@ -244,9 +206,11 @@ export function StateWorkforce({
                         {isAdminActive(r) ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td>
-                      <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
-                    </td>
+                    {onOpenActions ? (
+                      <td>
+                        <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -281,12 +245,14 @@ export function StateWorkforce({
         ) : null}
       </div>
 
-      <AdminRowActionsMenu
-        open={!!actionMenu?.id}
-        anchorEl={actionMenu?.anchor}
-        onClose={onCloseActionMenu}
-        items={menuItems}
-      />
+      {onCloseActionMenu ? (
+        <AdminRowActionsMenu
+          open={!!actionMenu?.id}
+          anchorEl={actionMenu?.anchor}
+          onClose={onCloseActionMenu}
+          items={menuItems}
+        />
+      ) : null}
     </>
   );
 }

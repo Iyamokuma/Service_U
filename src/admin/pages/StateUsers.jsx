@@ -12,12 +12,21 @@ import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
 import { StateWorkforce } from "./StateWorkforce.jsx";
 import { UnitMembers } from "./UnitMembers.jsx";
 import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
-import { readStateWorkforceContext } from "../countryUsersContext.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { countryAdminHomeState, isCountrySuperAdmin } from "../roles.js";
+import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { availableSatellitesForState } from "../stateSatelliteForm.js";
 import { exportCsv } from "../exportCsv.js";
+
+const ADMINS_PAGE_SIZE = 25;
+
+function compareAdminsAlphabetical(a, b) {
+  return String(a.full_name || "").localeCompare(String(b.full_name || ""), undefined, {
+    sensitivity: "base",
+  });
+}
 
 function satelliteLocationLabel(admin, stateLabel, countryLabel) {
   const sat = String(admin.satellite_site || "").trim();
@@ -29,9 +38,14 @@ function satelliteLocationLabel(admin, stateLabel, countryLabel) {
 
 export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   const toast = useToast();
-  const { admin: me } = useAdminAuth();
+  const { admin: me, viewMode } = useAdminAuth();
+  const actingAsState = isActingAsStateAdmin(me, viewMode);
   const countryCode = String(me?.branch_country || "").toUpperCase();
-  const stateCode = String(me?.branch_state || "").toUpperCase();
+  const stateCode = String(
+    isCountrySuperAdmin(me?.role) && actingAsState
+      ? countryAdminHomeState(me) || me?.branch_state
+      : me?.branch_state || "",
+  ).toUpperCase();
   const countryLabel = branchCountryLabel(countryCode);
   const stateLabel = branchStateLabel(countryCode, stateCode) || stateCode;
 
@@ -41,7 +55,11 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     setSectionTabRaw(tab);
   }, []);
   const [search, setSearch] = useState("");
+  const [filterSatellite, setFilterSatellite] = useState("");
+  const [adminsPage, setAdminsPage] = useState(1);
   const [showInactive, setShowInactive] = useState(false);
+  const [workforceStats, setWorkforceStats] = useState({ total: 0, unitLeaders: 0, subLeaders: 0 });
+  const [memberTotal, setMemberTotal] = useState(0);
   const [satelliteModal, setSatelliteModal] = useState(null);
   const [reassignOnly, setReassignOnly] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,7 +81,10 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   );
 
   const satellitePastors = useMemo(
-    () => stateAdmins.filter((a) => a.role === "satellite_church_admin"),
+    () =>
+      stateAdmins
+        .filter((a) => a.role === "satellite_church_admin")
+        .sort(compareAdminsAlphabetical),
     [stateAdmins],
   );
 
@@ -97,16 +118,34 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     [churches, countryCode, stateCode, stateAdmins, pendingRequests],
   );
 
+  useEffect(() => {
+    setAdminsPage(1);
+  }, [search, showInactive, filterSatellite]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return satellitePastors.filter((a) => {
       if (!showInactive && Number(a.is_active) !== 1) return false;
+      if (filterSatellite && String(a.satellite_site || "").trim() !== filterSatellite) return false;
       if (!q) return true;
       const loc = satelliteLocationLabel(a, stateLabel, countryLabel);
-      const hay = [a.full_name, a.username, a.email, loc].join(" ").toLowerCase();
+      const hay = [a.full_name, a.username, a.email, a.satellite_site, loc].join(" ").toLowerCase();
       return hay.includes(q);
     });
-  }, [satellitePastors, search, showInactive, stateLabel, countryLabel]);
+  }, [satellitePastors, search, showInactive, filterSatellite, stateLabel, countryLabel]);
+
+  const adminsPagination = useMemo(() => {
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / ADMINS_PAGE_SIZE));
+    const page = Math.min(adminsPage, pages);
+    const start = (page - 1) * ADMINS_PAGE_SIZE;
+    return {
+      page,
+      pages,
+      total,
+      rows: filtered.slice(start, start + ADMINS_PAGE_SIZE),
+    };
+  }, [filtered, adminsPage]);
 
   const actionTarget = useMemo(() => {
     if (actionMenu.scope === "workforce") {
@@ -263,11 +302,31 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     });
   }, [actionTarget, actionTarget?.is_active, actionMenu.scope]);
 
-  const activePastorCount = satellitePastors.filter((a) => Number(a.is_active) === 1).length;
   const satellitesTotal = satellitesInDataset?.length ?? 0;
-  const unitLeaderCount = workforceLeaders.filter((a) => a.role === "service_unit_leader").length;
-  const subLeaderCount = workforceLeaders.filter((a) => a.role === "sub_unit_leader").length;
-  const workforceContext = readStateWorkforceContext();
+  const pastorTotal = satellitePastors.length;
+
+  if (!stateCode) {
+    return (
+      <div className="sa-card" style={{ marginTop: 8 }}>
+        <div className="sa-empty" style={{ padding: "32px 24px" }}>
+          <div className="sa-empty-text" style={{ maxWidth: 480, margin: "0 auto", lineHeight: 1.5 }}>
+            <strong>Headquarters state required</strong>
+            <p style={{ margin: "12px 0 0" }}>
+              Set your headquarters state in Profile / Settings before using the State Branch Admin view.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="sa-btn sa-btn-primary sa-btn-sm"
+            style={{ marginTop: 16 }}
+            onClick={() => setPage?.("profile")}
+          >
+            Open Profile / Settings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -279,36 +338,32 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
               <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={handleExport} disabled={!filtered.length}>
                 Export CSV
               </button>
-              {vacantSatellites.length > 0 ? (
-                <button
-                  type="button"
-                  className="sa-btn sa-btn-primary sa-btn-sm"
-                  onClick={() => {
-                    setReassignOnly(false);
-                    setSatelliteModal({});
-                  }}
-                >
-                  + New Satellite Pastor Admin
-                </button>
-              ) : null}
-            </div>
-          ) : sectionTab === "workforce" ? (
-            <div className="sa-users-page-actions">
               <button
                 type="button"
                 className="sa-btn sa-btn-primary sa-btn-sm"
-                onClick={() =>
-                  setLeaderModal({
-                    initialRole:
-                      workforceContext === "sub_unit_leader"
-                        ? "sub_unit_leader"
-                        : "service_unit_leader",
-                  })
-                }
+                onClick={() => {
+                  setReassignOnly(false);
+                  setSatelliteModal({});
+                }}
               >
-                {workforceContext === "sub_unit_leader"
-                  ? "+ New Sub-Unit Leader"
-                  : "+ New Service Unit Leader"}
+                + New Satellite Pastor Admin
+              </button>
+            </div>
+          ) : sectionTab === "workforce" ? (
+            <div className="sa-users-page-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="sa-btn sa-btn-primary sa-btn-sm"
+                onClick={() => setLeaderModal({ initialRole: "service_unit_leader" })}
+              >
+                + New Service Unit Leader
+              </button>
+              <button
+                type="button"
+                className="sa-btn sa-btn-outline sa-btn-sm"
+                onClick={() => setLeaderModal({ initialRole: "sub_unit_leader" })}
+              >
+                + New Sub-Unit Leader
               </button>
             </div>
           ) : null}
@@ -319,24 +374,25 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
         {sectionTab === "admins" ? (
           <UsersPageMeta
             items={[
-              `${activePastorCount} active pastor admin${activePastorCount !== 1 ? "s" : ""}`,
-              satellitesTotal ? `${satellitesTotal - vacantSatellites.length}/${satellitesTotal} satellites covered` : null,
-              vacantSatellites.length
-                ? `${vacantSatellites.length} vacant satellite${vacantSatellites.length !== 1 ? "s" : ""}`
-                : satellitesTotal
-                  ? "All satellites covered"
-                  : null,
+              `Admins: ${pastorTotal} satellite pastor${pastorTotal !== 1 ? "s" : ""} in ${stateLabel || "your state"}`,
+              satellitesTotal
+                ? `${satellitesTotal - vacantSatellites.length}/${satellitesTotal} satellites covered`
+                : null,
             ]}
           />
         ) : sectionTab === "workforce" ? (
           <UsersPageMeta
             items={[
-              `${unitLeaderCount} service unit leader${unitLeaderCount !== 1 ? "s" : ""}`,
-              `${subLeaderCount} sub-unit leader${subLeaderCount !== 1 ? "s" : ""}`,
+              `Workforce: ${workforceStats.total} total (${workforceStats.unitLeaders} service unit · ${workforceStats.subLeaders} sub-unit)`,
+              `All leaders in ${stateLabel || "your state"}`,
             ]}
           />
         ) : sectionTab === "members" ? (
-          <UsersPageMeta items={["Approved unit members in your state"]} />
+          <UsersPageMeta
+            items={[
+              `Unit members: ${memberTotal} approved across satellite churches in ${stateLabel || "your state"}`,
+            ]}
+          />
         ) : null}
       </header>
 
@@ -351,12 +407,32 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
           onOpenActions={openWorkforceActions}
           onCloseActionMenu={closeActionMenu}
           menuItems={menuItems}
+          onStats={setWorkforceStats}
         />
       ) : sectionTab === "members" ? (
-        <UnitMembers units={units} embedded />
+        <UnitMembers
+          units={units}
+          embedded
+          stateGeo
+          stateCode={stateCode}
+          onMemberStats={({ total }) => setMemberTotal(total)}
+        />
       ) : (
         <div className="sa-card">
           <div className="sa-admins-filters" role="toolbar" aria-label="Filter admins">
+            <select
+              className="sa-select"
+              value={filterSatellite}
+              onChange={(e) => setFilterSatellite(e.target.value)}
+              aria-label="Satellite church"
+            >
+              <option value="">All satellite churches</option>
+              {satellitesInDataset.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
             <div className="sa-search">
               <span className="sa-search-icon" aria-hidden>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -366,7 +442,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
               </span>
               <input
                 type="search"
-                placeholder="Search name or location…"
+                placeholder="Search name, email, satellite…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -383,17 +459,24 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
                 <span className="sa-switch-ui" aria-hidden />
               </span>
             </label>
-            <span className="sa-admins-filter-count">
-              {filtered.length} admin{filtered.length !== 1 ? "s" : ""}
-            </span>
           </div>
+
+          <p className="sa-text-sm sa-text-muted" style={{ margin: "0 0 12px", padding: "0 4px" }}>
+            Sorted A–Z · showing {adminsPagination.total} of {pastorTotal} pastor{pastorTotal !== 1 ? "s" : ""}
+            {adminsPagination.pages > 1
+              ? ` · page ${adminsPagination.page} of ${adminsPagination.pages}`
+              : ""}
+          </p>
+
           <div className="sa-table-wrap">
-            {filtered.length === 0 ? (
+            {adminsPagination.rows.length === 0 ? (
               <div className="sa-empty">
                 <div className="sa-empty-text">
-                  {satellitePastors.length === 0
-                    ? "No Satellite Pastor Admins yet."
-                    : "No accounts match your filters."}
+                  {!stateCode
+                    ? "Set your headquarters state before managing satellite pastors."
+                    : satellitePastors.length === 0
+                      ? "No Satellite Pastor Admins in this state yet."
+                      : "No accounts match your filters."}
                 </div>
               </div>
             ) : (
@@ -401,23 +484,26 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
                 <thead>
                   <tr>
                     <th>Name of admin</th>
-                    <th>Location of admin</th>
-                    <th>Action</th>
+                    <th>Satellite church</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((a) => (
+                  {adminsPagination.rows.map((a) => (
                     <tr key={a.id}>
                       <td>
                         <div className="sa-fw-600">{a.full_name}</div>
-                        <div className="sa-text-sm sa-text-muted">{a.username}</div>
-                        {Number(a.is_active) !== 1 ? (
-                          <span className="sa-badge inactive" style={{ marginTop: 6 }}>
-                            Inactive
-                          </span>
-                        ) : null}
+                        <div className="sa-text-sm sa-text-muted">{a.email}</div>
                       </td>
-                      <td className="sa-text-sm">{satelliteLocationLabel(a, stateLabel, countryLabel)}</td>
+                      <td className="sa-text-sm">
+                        {String(a.satellite_site || "").trim() || "—"}
+                      </td>
+                      <td>
+                        <span className={`sa-badge ${Number(a.is_active) === 1 ? "active" : "inactive"}`}>
+                          {Number(a.is_active) === 1 ? "Active" : "Inactive"}
+                        </span>
+                      </td>
                       <td>
                         <AdminRowActionsTrigger onOpen={(e) => openAdminActions(e, a)} label="Action" />
                       </td>
@@ -427,6 +513,32 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
               </table>
             )}
           </div>
+
+          {adminsPagination.pages > 1 ? (
+            <div className="sa-pagination">
+              <span>
+                Page {adminsPagination.page} of {adminsPagination.pages} ({adminsPagination.total} admins)
+              </span>
+              <div className="sa-pag-btns">
+                <button
+                  type="button"
+                  className="sa-pag-btn"
+                  disabled={adminsPagination.page <= 1}
+                  onClick={() => setAdminsPage((p) => Math.max(1, p - 1))}
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="sa-pag-btn"
+                  disabled={adminsPagination.page >= adminsPagination.pages}
+                  onClick={() => setAdminsPage((p) => Math.min(adminsPagination.pages, p + 1))}
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
