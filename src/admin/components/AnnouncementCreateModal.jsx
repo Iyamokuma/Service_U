@@ -154,6 +154,10 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     if (policy.membersOnly) {
       base.destination_type = "members";
     }
+    if (policy.isSatellitePastor) {
+      base.destination_type = "members";
+      base.leaders.mode = policy.destinationLabels?.defaultLeaderMode || "service_unit";
+    }
     if (!policy.isGlobal && admin) {
       const geo = initialAnnouncementGeoForm(admin, policy);
       base.members = { ...base.members, ...geo };
@@ -249,6 +253,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return `Select a country for ${destLabels.typePrefix.members.toLowerCase()} announcements.`;
     }
     if (form.destination_type === "leaders") {
+      if (policy.isSatellitePastor && !["service_unit", "sub_unit"].includes(form.leaders.mode)) {
+        return "Select Service unit leaders or Sub unit leaders.";
+      }
       if (!form.leaders.branch_country && !policy.lockedCountry) {
         return `Select a country for ${destLabels.typePrefix.leaders.toLowerCase()} announcements.`;
       }
@@ -300,7 +307,18 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     if (!enabled) setForm((f) => ({ ...f, scheduled_at: "" }));
   }
 
-  const setDest = (type) => setForm((f) => ({ ...f, destination_type: type }));
+  const setDest = (type) =>
+    setForm((f) => {
+      const next = { ...f, destination_type: type };
+      if (
+        policy.isSatellitePastor &&
+        type === "leaders" &&
+        !["service_unit", "sub_unit"].includes(f.leaders.mode)
+      ) {
+        next.leaders = { ...f.leaders, mode: destLabels.defaultLeaderMode || "service_unit" };
+      }
+      return next;
+    });
   const scopeHint = policy.scopeHint;
 
   if (!open) return null;
@@ -651,7 +669,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </section>
       )}
 
-      {!policy.membersOnly && form.destination_type === "admins" && (
+      {!policy.membersOnly && !policy.isSatellitePastor && form.destination_type === "admins" && (
         <section
           className="sa-ann-scope"
           aria-label={

@@ -2317,7 +2317,13 @@ function clampAnnouncementScope(
       throw new Error("Satellite admins may only send announcements within their assigned satellite.");
     }
     cfg.satellite_site = site;
-    clampAnnouncementAdminRoles(admin, cfg);
+    const mode = norm((cfg as { mode?: string }).mode);
+    if (mode && !["service_unit", "sub_unit"].includes(mode)) {
+      throw new Error("Service unit head announcements must target service unit leaders or sub-unit leaders.");
+    }
+    if (mode === "all" || !mode) {
+      (cfg as { mode?: string }).mode = "service_unit";
+    }
     return;
   }
 
@@ -2420,6 +2426,11 @@ async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record
   }
   if (norm(admin.role) === "service_unit_leader" && !["members", "leaders"].includes(destinationType)) {
     throw new Error("Service unit leaders may only send announcements to service unit members or sub-unit leaders.");
+  }
+  if (norm(admin.role) === "satellite_church_admin" && !["members", "leaders"].includes(destinationType)) {
+    throw new Error(
+      "Satellite Pastor Admins may only send announcements to service unit members or service unit heads.",
+    );
   }
   clampAnnouncementScope(admin, destinationConfig, params.scope_mode);
   const scopeFields = announcementScopeFromPayload(admin, destinationType, destinationConfig, body);

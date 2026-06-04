@@ -39,33 +39,28 @@ const DESTINATION_TABS_COUNTRY = [
   { id: "admins", label: "Pastors" },
 ];
 
+/** Satellite Pastor — members + service unit heads only (no admins destination). */
 const DESTINATION_TABS_SATELLITE = [
   { id: "members", label: "Service Unit Members" },
-  {
-    id: "leaders",
-    label: "Service Unit Heads (Service unit leaders and Sub unit leader)",
-  },
-  { id: "admins", label: "For Admins" },
+  { id: "leaders", label: "Service Unit Heads" },
 ];
 
 const LEADER_MODES_SATELLITE = [
-  { value: "all", label: "All — service unit leaders & sub-unit leaders" },
   { value: "service_unit", label: "Service unit leaders" },
-  { value: "sub_unit", label: "Sub-unit leaders" },
+  { value: "sub_unit", label: "Sub unit leaders" },
 ];
 
 const SATELLITE_LEADER_DISPLAY = {
-  all: "All service unit heads",
   service_unit: "Service unit leaders",
-  sub_unit: "Sub-unit leaders",
+  sub_unit: "Sub unit leaders",
 };
 
 const SATELLITE_LEADER_UI = {
   leaderScopeSectionTitle: "Service unit heads",
   leaderTypeTitle: "Service unit head role",
   leaderTypeLabel: "Service unit heads",
-  leaderTypeHint:
-    "Choose all service unit heads, or select service unit leaders or sub-unit leaders only.",
+  leaderTypeHint: "Select Service unit leaders or Sub unit leaders.",
+  defaultLeaderMode: "service_unit",
 };
 
 const DESTINATION_TABS_STATE_BRANCH = [
@@ -250,7 +245,7 @@ export function getAnnouncementDestinationLabels(policy) {
       },
       pastorsSubtitle: "",
       broadcastSubtitle:
-        "Broadcast to service unit members, service unit heads, or admins by email and/or SMS.",
+        "Broadcast to service unit members or service unit heads by email and/or SMS.",
       leaderModeOptions: LEADER_MODES_SATELLITE,
       leaderModeDisplay: SATELLITE_LEADER_DISPLAY,
       allRolesLabel: "All admins",
