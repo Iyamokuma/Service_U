@@ -505,13 +505,21 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           aria-label={
             policy.isServiceUnitLeader
               ? "Sub unit leader audience"
-              : destLabels.usesBranchAudienceLabels
+              : policy.isSatellitePastor
                 ? "Service unit head audience"
-                : "Leader audience"
+                : destLabels.usesBranchAudienceLabels
+                  ? "Service unit head audience"
+                  : "Leader audience"
           }
         >
           <div className="sa-ann-scope-title">
-            {policy.isServiceUnitLeader ? "Sub Unit Leaders" : "Audience scope"}
+            {policy.isServiceUnitLeader
+              ? "Sub Unit Leaders"
+              : policy.isSatellitePastor
+                ? destLabels.leaderScopeSectionTitle || "Service unit heads"
+                : destLabels.usesBranchAudienceLabels
+                  ? destLabels.leaderScopeSectionTitle || "Service unit heads"
+                  : "Audience scope"}
           </div>
           {policy.isServiceUnitLeader ? (
             <div className="sa-ann-scope-grid" style={{ marginBottom: 14 }}>
@@ -569,10 +577,22 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
                     }))
                   }
                   options={leaderModeOptions}
-                  placeholder="Select audience"
+                  placeholder={
+                    policy.isSatellitePastor
+                      ? "Select service unit head role"
+                      : policy.isServiceUnitLeader
+                        ? "Select sub-unit leaders"
+                        : "Select audience"
+                  }
                   searchPlaceholder="Search option"
                   emptyMessage="No options"
-                  ariaLabel="Leader audience type"
+                  ariaLabel={
+                    policy.isSatellitePastor
+                      ? "Service unit head role"
+                      : policy.isServiceUnitLeader
+                        ? "Sub Unit Leaders"
+                        : "Leader audience type"
+                  }
                 />
                 <div className="sa-field-hint">{destLabels.leaderTypeHint}</div>
               </div>

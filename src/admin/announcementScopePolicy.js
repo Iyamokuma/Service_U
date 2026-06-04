@@ -41,9 +41,32 @@ const DESTINATION_TABS_COUNTRY = [
 
 const DESTINATION_TABS_SATELLITE = [
   { id: "members", label: "Service Unit Members" },
-  { id: "leaders", label: "Service Unit Heads" },
+  {
+    id: "leaders",
+    label: "Service Unit Heads (Service unit leaders and Sub unit leader)",
+  },
   { id: "admins", label: "For Admins" },
 ];
+
+const LEADER_MODES_SATELLITE = [
+  { value: "all", label: "All — service unit leaders & sub-unit leaders" },
+  { value: "service_unit", label: "Service unit leaders" },
+  { value: "sub_unit", label: "Sub-unit leaders" },
+];
+
+const SATELLITE_LEADER_DISPLAY = {
+  all: "All service unit heads",
+  service_unit: "Service unit leaders",
+  sub_unit: "Sub-unit leaders",
+};
+
+const SATELLITE_LEADER_UI = {
+  leaderScopeSectionTitle: "Service unit heads",
+  leaderTypeTitle: "Service unit head role",
+  leaderTypeLabel: "Service unit heads",
+  leaderTypeHint:
+    "Choose all service unit heads, or select service unit leaders or sub-unit leaders only.",
+};
 
 const DESTINATION_TABS_STATE_BRANCH = [
   { id: "members", label: "Service Unit Members" },
@@ -102,20 +125,29 @@ const DEFAULT_ADMIN_ROLES_BY_SENDER = {
 
 const DESTINATION_TABS_SUB_UNIT_MEMBERS_ONLY = [{ id: "members", label: "Service Unit Members" }];
 
+/** Service Unit Leader — create announcement destination radios. */
 const DESTINATION_TABS_SERVICE_UNIT = [
   { id: "members", label: "Service Unit Members" },
   { id: "leaders", label: "Sub Unit Leaders" },
 ];
 
 const LEADER_MODES_SERVICE_UNIT = [
-  { value: "all", label: "All sub-unit leaders in your service unit" },
-  { value: "sub_unit", label: "One sub-unit (select sub-unit)" },
+  { value: "all", label: "All sub-unit leaders" },
+  { value: "sub_unit", label: "Sub-unit leaders (select sub-unit)" },
 ];
 
 const LEADER_DISPLAY_SERVICE_UNIT = {
   all: "All sub-unit leaders",
   sub_unit: "Sub-unit leaders",
   service_unit: "Service unit leaders",
+};
+
+const SERVICE_UNIT_LEADER_UI = {
+  leaderScopeSectionTitle: "Sub Unit Leaders",
+  leaderTypeTitle: "Sub-unit leaders",
+  leaderTypeLabel: "Sub Unit Leaders",
+  leaderTypeHint:
+    "Reach every sub-unit leader in your service unit, or choose one sub-unit to narrow the audience.",
 };
 
 /** Role-specific announcement destination labels. */
@@ -204,10 +236,7 @@ export function getAnnouncementDestinationLabels(policy) {
       allRolesLabel: "All sub-unit leaders",
       adminRolesSectionTitle: "Sub Unit Leaders",
       adminRolesHint: "",
-      leaderTypeTitle: "Sub-unit targeting",
-      leaderTypeLabel: "Sub-unit leaders",
-      leaderTypeHint:
-        "Reach every sub-unit leader in your service unit, or choose one sub-unit to narrow the audience.",
+      ...SERVICE_UNIT_LEADER_UI,
       usesBranchAudienceLabels: true,
     };
   }
@@ -222,12 +251,12 @@ export function getAnnouncementDestinationLabels(policy) {
       pastorsSubtitle: "",
       broadcastSubtitle:
         "Broadcast to service unit members, service unit heads, or admins by email and/or SMS.",
-      leaderModeOptions: BRANCH_AUDIENCE_LEADER_MODES,
-      leaderModeDisplay: BRANCH_AUDIENCE_LEADER_DISPLAY,
+      leaderModeOptions: LEADER_MODES_SATELLITE,
+      leaderModeDisplay: SATELLITE_LEADER_DISPLAY,
       allRolesLabel: "All admins",
       adminRolesSectionTitle: "Admin roles",
       adminRolesHint: "Only admin tiers within your satellite church are available.",
-      ...BRANCH_AUDIENCE_LEADER_UI,
+      ...SATELLITE_LEADER_UI,
       usesBranchAudienceLabels: true,
     };
   }
