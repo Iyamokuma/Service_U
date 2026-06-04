@@ -19,6 +19,7 @@ import {
 import {
   isRootSuperAdmin,
   isGlobalAdminRole,
+  canManageSuperAdminAccount,
   isServiceUnitLeader,
   isCountrySuperAdmin,
   isStateSuperAdmin,
@@ -564,8 +565,9 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   const globalActionMenuItems = useMemo(() => {
     if (!actionTarget || !isGlobalAdmin) return [];
     const isSelf = Number(actionTarget.id) === Number(me?.id);
-    const canEdit = isSelf || !(actionTarget.role === "super_admin" && !isRootSuper);
-    const canModifyOthers = !isSelf && (isRootSuper || actionTarget.role !== "super_admin");
+    const canManageSuper = canManageSuperAdminAccount(me?.role);
+    const canEdit = isSelf || actionTarget.role !== "super_admin" || canManageSuper;
+    const canModifyOthers = !isSelf && (actionTarget.role !== "super_admin" || canManageSuper);
 
     const canResendInvite =
       ADMIN_EMAIL_INVITES_ENABLED &&
@@ -1066,14 +1068,14 @@ function AdminAccountsTable({
                 <td className="sa-text-muted sa-text-sm">{fmtDate(a.last_login)}</td>
                 <td>
                   {useActionMenu ? (
-                    canShowGlobalAdminActionMenu(a, me, isRootSuper) ? (
+                    canShowGlobalAdminActionMenu(a, me) ? (
                       <AdminRowActionsTrigger onOpen={(e) => openActions?.(e, a)} label="Action" />
                     ) : (
                       <span className="sa-text-muted sa-text-sm">—</span>
                     )
                   ) : (
                     <div className="sa-table-actions">
-                      {!(a.role === "super_admin" && !isRootSuper) &&
+                      {!(a.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) &&
                         (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
                         (!isStateAdmin || canStateAdminManageRole(a.role)) && (
                           <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
@@ -1081,14 +1083,16 @@ function AdminAccountsTable({
                           </button>
                         )}
                       {a.id !== +me.id &&
-                        !(a.role === "super_admin" && !isRootSuper) &&
+                        !(a.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) &&
                         (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
                         (!isStateAdmin || canStateAdminManageRole(a.role)) && (
                           <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
                             {a.is_active ? "Deactivate" : "Activate"}
                           </button>
                         )}
-                      {((isGlobalAdmin && a.id !== +me.id && (isRootSuper || a.role !== "super_admin")) ||
+                      {((isGlobalAdmin &&
+                          a.id !== +me.id &&
+                          (canManageSuperAdminAccount(me?.role) || a.role !== "super_admin")) ||
                           (isSatellitePastor && a.id !== +me.id) ||
                           (isServiceLeader && a.id !== +me.id && a.role === "sub_unit_leader") ||
                           (isCountryAdmin && a.id !== +me.id && canCountryAdminManageRole(a.role)) ||

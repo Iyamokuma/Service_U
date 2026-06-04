@@ -28,6 +28,11 @@ export function isGlobalAdminRole(role) {
   return role === "super_admin" || role === "general_admin";
 }
 
+/** Super Admin accounts: editable by platform owner or General Admin (not by other roles). */
+export function canManageSuperAdminAccount(role) {
+  return isRootSuperAdmin(role) || role === "general_admin";
+}
+
 /** Registration intake / queue access similar to general admin; no platform settings. */
 export function isDataEntryAdmin(role) {
   return role === "data_entry_admin";
@@ -58,7 +63,7 @@ export function isSupervisoryBranchRole(role) {
 export const COUNTRY_DIRECT_CREATE_ROLES = ["state_super_admin"];
 
 /** Admin roles a country super admin may manage on the Users tab (within their country). */
-export const COUNTRY_MANAGED_ADMIN_ROLES = ["state_super_admin"];
+export const COUNTRY_MANAGED_ADMIN_ROLES = ["state_super_admin", "satellite_church_admin"];
 
 /** Headquarters state on Country Admin (required; set at creation or auto-assigned on login). */
 export function countryAdminHomeState(admin) {

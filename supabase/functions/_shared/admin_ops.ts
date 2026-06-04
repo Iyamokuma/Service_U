@@ -573,6 +573,7 @@ export async function ensureCountryAdminHeadquarters(
 
 const COUNTRY_MANAGED_ADMIN_ROLES = [
   "state_super_admin",
+  "satellite_church_admin",
 ];
 
 const STATE_MANAGED_ADMIN_ROLES = [
@@ -585,7 +586,7 @@ const SATELLITE_MANAGED_ADMIN_ROLES = ["service_unit_leader", "sub_unit_leader"]
 
 function assertCountryManagedRole(role: string): void {
   if (!COUNTRY_MANAGED_ADMIN_ROLES.includes(norm(role))) {
-    throw new Error("Country admins may only create and manage State Branch Admin accounts.");
+    throw new Error("Country admins may only manage State Branch and Satellite Pastor Admin accounts in their country.");
   }
 }
 

@@ -3,7 +3,9 @@ import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { StateBranchAdminModal } from "../components/StateBranchAdminModal.jsx";
+import { SatellitePastorAdminModal } from "../components/SatellitePastorAdminModal.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
+import { canCountryAdminManageRole } from "../roles.js";
 import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../components/adminRowMenuItems.js";
 import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
@@ -67,6 +69,8 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   const [filterSatellite, setFilterSatellite] = useState("");
   const [adminsPage, setAdminsPage] = useState(1);
   const [stateModal, setStateModal] = useState(null);
+  const [satelliteModal, setSatelliteModal] = useState(null);
+  const [reassignOnly, setReassignOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
@@ -201,6 +205,30 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
       else await api.createAdmin(payload);
       toast(form.id ? "State Branch Admin updated." : "State Branch Admin created.", "success");
       setStateModal(null);
+      setReassignOnly(false);
+      reload?.();
+      loadPending();
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveSatellitePastor(form, validationError) {
+    if (validationError) {
+      toast(validationError, "error");
+      return;
+    }
+    if (!form) return;
+    setSaving(true);
+    try {
+      const payload = { ...form, viewer: me };
+      if (form.id) await api.updateAdmin(form.id, payload);
+      else await api.createAdmin(payload);
+      toast(form.id ? "Satellite Pastor Admin updated." : "Satellite Pastor Admin created.", "success");
+      setSatelliteModal(null);
+      setReassignOnly(false);
       reload?.();
       loadPending();
     } catch (e) {
@@ -263,12 +291,41 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   const statesTotal = stateOptions.length;
 
   const menuItems = useMemo(() => {
-    if (!actionTarget || actionTarget.role !== "state_super_admin") return [];
+    if (!actionTarget || !canCountryAdminManageRole(actionTarget.role)) return [];
+    if (actionTarget.role === "state_super_admin") {
+      return buildAdminRowMenuItems({
+        row: actionTarget,
+        includeReassign: true,
+        onEdit: () => {
+          closeActionMenu();
+          setReassignOnly(false);
+          setSatelliteModal(null);
+          setStateModal(actionTarget);
+        },
+        onReassign: () => {
+          closeActionMenu();
+          setReassignOnly(true);
+          setSatelliteModal(null);
+          setStateModal(actionTarget);
+        },
+        onToggleActive: () => toggleActive(actionTarget),
+        onDelete: () => deleteAdmin(actionTarget),
+      });
+    }
     return buildAdminRowMenuItems({
       row: actionTarget,
-      includeReassign: false,
+      includeReassign: true,
       onEdit: () => {
-        setStateModal(actionTarget);
+        closeActionMenu();
+        setReassignOnly(false);
+        setStateModal(null);
+        setSatelliteModal(actionTarget);
+      },
+      onReassign: () => {
+        closeActionMenu();
+        setReassignOnly(true);
+        setStateModal(null);
+        setSatelliteModal(actionTarget);
       },
       onToggleActive: () => toggleActive(actionTarget),
       onDelete: () => deleteAdmin(actionTarget),
@@ -301,7 +358,11 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
               <button
                 type="button"
                 className="sa-btn sa-btn-primary sa-btn-sm"
-                onClick={() => setStateModal({})}
+                onClick={() => {
+                  setReassignOnly(false);
+                  setSatelliteModal(null);
+                  setStateModal({});
+                }}
               >
                 + New State Branch Admin
               </button>
@@ -461,7 +522,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
                         </span>
                       </td>
                       <td>
-                        {a.role === "state_super_admin" ? (
+                        {canCountryAdminManageRole(a.role) ? (
                           <AdminRowActionsTrigger onOpen={(e) => openActions(e, a)} label="Action" />
                         ) : (
                           <span className="sa-text-muted sa-text-sm">—</span>
@@ -517,9 +578,30 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
         initialStateCode={stateModal?.initialState || stateModal?.branch_state || ""}
         editData={stateModal?.id ? stateModal : null}
         saving={saving}
-        onClose={() => setStateModal(null)}
+        onClose={() => {
+          setStateModal(null);
+          setReassignOnly(false);
+        }}
         onSave={saveStateAdmin}
-        reassignOnly={false}
+        reassignOnly={reassignOnly && !!stateModal?.id}
+      />
+
+      <SatellitePastorAdminModal
+        open={!!satelliteModal}
+        countryCode={countryCode}
+        stateCode={satelliteModal?.branch_state || ""}
+        churches={churches}
+        existingAdmins={countryAdmins}
+        pendingRequests={pendingRequests}
+        initialSatellite={satelliteModal?.initialSatellite || satelliteModal?.satellite_site || ""}
+        editData={satelliteModal?.id ? satelliteModal : null}
+        saving={saving}
+        reassignOnly={reassignOnly && !!satelliteModal?.id}
+        onClose={() => {
+          setSatelliteModal(null);
+          setReassignOnly(false);
+        }}
+        onSave={saveSatellitePastor}
       />
     </>
   );

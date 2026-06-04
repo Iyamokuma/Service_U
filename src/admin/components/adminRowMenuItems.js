@@ -1,3 +1,5 @@
+import { canManageSuperAdminAccount } from "../roles.js";
+
 export function isAdminActive(row) {
   if (!row) return false;
   return Number(row.is_active) === 1 || row.is_active === true;
@@ -8,8 +10,8 @@ export function nextAdminActiveValue(row) {
 }
 
 /**
- * Country-admin action menu: Edit → Deactivate → Delete.
- * Super admin: same order with Reassign after Edit when includeReassign is true.
+ * Branch admin menus: Edit → (optional Reassign) → Deactivate → Delete.
+ * Global admin (Super / General): same order with Reassign when includeReassign is true.
  */
 export function buildAdminRowMenuItems({
   row,
@@ -59,10 +61,10 @@ export function buildAdminRowMenuItems({
   return items;
 }
 
-export function canShowGlobalAdminActionMenu(row, me, isRootSuper) {
+export function canShowGlobalAdminActionMenu(row, me) {
   if (!row) return false;
   const isSelf = Number(row.id) === Number(me?.id);
   if (isSelf) return true;
-  if (row.role === "super_admin" && !isRootSuper) return false;
+  if (row.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) return false;
   return true;
 }
