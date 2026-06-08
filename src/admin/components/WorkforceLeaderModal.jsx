@@ -3,6 +3,7 @@ import { Modal } from "./Modal.jsx";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
+import { usesAdminInviteCreate } from "../adminAccountForm.js";
 import { validateWorkforceLeaderForm } from "../stateLeaderForm.js";
 
 export function WorkforceLeaderModal({
@@ -21,6 +22,7 @@ export function WorkforceLeaderModal({
   const cc = String(countryCode || "").toUpperCase();
   const st = String(stateCode || "").toUpperCase();
   const isEdit = !!editData?.id;
+  const inviteCreate = usesAdminInviteCreate(isEdit);
   const role = isEdit ? editData.role : initialRole;
   const isSubUnit = role === "sub_unit_leader";
 
@@ -90,7 +92,7 @@ export function WorkforceLeaderModal({
   function submit() {
     const msg = validateWorkforceLeaderForm(
       { ...form, role },
-      { isEdit, role, units: unitOptions },
+      { isEdit, role, units: unitOptions, inviteCreate },
     );
     if (msg) {
       onSave(null, msg);
@@ -213,26 +215,35 @@ export function WorkforceLeaderModal({
           </label>
           <input className="sa-input" value={form.full_name} onChange={set("full_name")} />
         </div>
-        <div className="sa-field">
-          <label className="sa-label">
-            Username {!isEdit && <span className="sa-required">*</span>}
-          </label>
-          <input className="sa-input" value={form.username} onChange={set("username")} disabled={isEdit} />
-        </div>
+        {!inviteCreate ? (
+          <div className="sa-field">
+            <label className="sa-label">
+              Username {!isEdit && <span className="sa-required">*</span>}
+            </label>
+            <input className="sa-input" value={form.username} onChange={set("username")} disabled={isEdit} />
+          </div>
+        ) : null}
       </div>
       <div className="sa-field">
         <label className="sa-label">
           Email <span className="sa-required">*</span>
         </label>
         <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
+        {inviteCreate ? (
+          <div className="sa-field-hint">
+            An invitation email with an activation link will be sent to this address.
+          </div>
+        ) : null}
       </div>
-      <div className="sa-field">
-        <label className="sa-label">
-          {isEdit ? "New password (optional)" : "Password"}{" "}
-          {!isEdit && <span className="sa-required">*</span>}
-        </label>
-        <input className="sa-input" type="password" value={form.password} onChange={set("password")} />
-      </div>
+      {!inviteCreate ? (
+        <div className="sa-field">
+          <label className="sa-label">
+            {isEdit ? "New password (optional)" : "Password"}{" "}
+            {!isEdit && <span className="sa-required">*</span>}
+          </label>
+          <input className="sa-input" type="password" value={form.password} onChange={set("password")} />
+        </div>
+      ) : null}
       {isEdit ? (
         <div className="sa-field">
           <label className="sa-label">Status</label>

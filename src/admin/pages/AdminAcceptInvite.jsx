@@ -77,8 +77,14 @@ export function AdminAcceptInvite() {
         {profile && !loading ? (
           <>
             <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-              Welcome, <strong>{profile.full_name}</strong>. Use <strong>{profile.email}</strong> to sign in after
-              you set your password.
+              Welcome, <strong>{profile.full_name}</strong>.
+              {profile.role ? (
+                <>
+                  {" "}
+                  You are joining as <strong>{String(profile.role).replace(/_/g, " ")}</strong>.
+                </>
+              ) : null}{" "}
+              Use <strong>{profile.email}</strong> to sign in after you set your password.
             </p>
             <div className="sa-login-group">
               <label className="sa-login-label">New password</label>

@@ -88,13 +88,16 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
   return "";
 }
 
-/** Flip to true when Resend invite emails are configured (must match ADMIN_EMAIL_INVITES on Supabase). */
-export const ADMIN_EMAIL_INVITES_ENABLED = false;
+/** All new admins are created via email invite (must match server Resend + ADMIN_APP_URL config). */
+export const ADMIN_EMAIL_INVITES_ENABLED = true;
 
-/** Super / General Admin creates accounts via email invite when enabled. */
-export function usesPlatformInviteCreate(actorRole, isEdit = false) {
-  if (isEdit || !ADMIN_EMAIL_INVITES_ENABLED) return false;
-  return actorRole === "super_admin" || actorRole === "general_admin";
+/** New accounts always use invite flow; edits keep existing login. */
+export function usesAdminInviteCreate(isEdit = false) {
+  return !isEdit;
+}
+
+export function usesPlatformInviteCreate(_actorRole, isEdit = false) {
+  return usesAdminInviteCreate(isEdit);
 }
 
 /** Validates role/scope change on reassign (login fields unchanged). */

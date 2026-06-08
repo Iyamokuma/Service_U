@@ -1,10 +1,10 @@
 /** Validation for State Branch Admin workforce leader accounts. */
 
-export function validateWorkforceLeaderForm(form, { isEdit, role, units } = {}) {
+export function validateWorkforceLeaderForm(form, { isEdit, role, units, inviteCreate } = {}) {
   if (!String(form.full_name || "").trim()) return "Full name is required.";
-  if (!isEdit && !String(form.username || "").trim()) return "Username is required.";
+  if (!isEdit && !inviteCreate && !String(form.username || "").trim()) return "Username is required.";
   if (!String(form.email || "").trim()) return "Email is required.";
-  if (!isEdit && (!form.password || String(form.password).length < 8)) {
+  if (!isEdit && !inviteCreate && (!form.password || String(form.password).length < 8)) {
     return "Password is required (minimum 8 characters).";
   }
   if (!String(form.satellite_site || "").trim()) return "Satellite church is required.";

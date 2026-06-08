@@ -8,6 +8,7 @@ import {
   suggestedSatellitePastorUsername,
   validateSatellitePastorAdminForm,
 } from "../stateSatelliteForm.js";
+import { usesAdminInviteCreate } from "../adminAccountForm.js";
 
 function shouldAutoFillUsername(username) {
   const u = String(username || "").trim().toLowerCase();
@@ -29,6 +30,7 @@ export function SatellitePastorAdminModal({
   reassignOnly = false,
 }) {
   const isEdit = !!editData?.id;
+  const inviteCreate = usesAdminInviteCreate(isEdit);
   const cc = String(countryCode || "").toUpperCase();
   const st = String(stateCode || "").toUpperCase();
 
@@ -87,7 +89,7 @@ export function SatellitePastorAdminModal({
     const takenSites = occupiedSatelliteSites(existingAdmins, pendingRequests, cc, st, isEdit ? editData?.id : null);
     const msg = validateSatellitePastorAdminForm(
       { ...form, branch_country: cc, branch_state: st, role: "satellite_church_admin" },
-      { countryCode: cc, stateCode: st, takenSites, isEdit, churches },
+      { countryCode: cc, stateCode: st, takenSites, isEdit, churches, inviteCreate },
     );
     if (msg) {
       onSave(null, msg);
@@ -192,38 +194,47 @@ export function SatellitePastorAdminModal({
               </label>
               <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
             </div>
-            <div className="sa-field">
-              <label className="sa-label">
-                Username {!isEdit && <span className="sa-required">*</span>}
-              </label>
-              <input
-                className="sa-input"
-                value={form.username}
-                onChange={set("username")}
-                placeholder="ng.la.ikeja.pastor"
-                disabled={isEdit}
-              />
-            </div>
+            {!inviteCreate ? (
+              <div className="sa-field">
+                <label className="sa-label">
+                  Username {!isEdit && <span className="sa-required">*</span>}
+                </label>
+                <input
+                  className="sa-input"
+                  value={form.username}
+                  onChange={set("username")}
+                  placeholder="ng.la.ikeja.pastor"
+                  disabled={isEdit}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="sa-field">
             <label className="sa-label">
               Email <span className="sa-required">*</span>
             </label>
             <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
+            {inviteCreate ? (
+              <div className="sa-field-hint">
+                An invitation email with an activation link will be sent to this address.
+              </div>
+            ) : null}
           </div>
-          <div className="sa-field">
-            <label className="sa-label">
-              {isEdit ? "New password (optional)" : "Password"}{" "}
-              {!isEdit && <span className="sa-required">*</span>}
-            </label>
-            <input
-              className="sa-input"
-              type="password"
-              value={form.password}
-              onChange={set("password")}
-              placeholder="Min 8 characters"
-            />
-          </div>
+          {!inviteCreate ? (
+            <div className="sa-field">
+              <label className="sa-label">
+                {isEdit ? "New password (optional)" : "Password"}{" "}
+                {!isEdit && <span className="sa-required">*</span>}
+              </label>
+              <input
+                className="sa-input"
+                type="password"
+                value={form.password}
+                onChange={set("password")}
+                placeholder="Min 8 characters"
+              />
+            </div>
+          ) : null}
           {isEdit ? (
             <div className="sa-field">
               <label className="sa-label">Status</label>

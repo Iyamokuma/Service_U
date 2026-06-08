@@ -78,12 +78,12 @@ export function suggestedSatellitePastorUsername(countryCode, stateCode, satelli
 
 export function validateSatellitePastorAdminForm(
   form,
-  { countryCode, stateCode, takenSites, isEdit, churches } = {},
+  { countryCode, stateCode, takenSites, isEdit, churches, inviteCreate } = {},
 ) {
   if (!String(form.full_name || "").trim()) return "Full name is required.";
-  if (!isEdit && !String(form.username || "").trim()) return "Username is required.";
+  if (!isEdit && !inviteCreate && !String(form.username || "").trim()) return "Username is required.";
   if (!String(form.email || "").trim()) return "Email is required.";
-  if (!isEdit && (!form.password || String(form.password).length < 8)) {
+  if (!isEdit && !inviteCreate && (!form.password || String(form.password).length < 8)) {
     return "Password is required (minimum 8 characters).";
   }
   const cc = String(countryCode || form.branch_country || "").trim();

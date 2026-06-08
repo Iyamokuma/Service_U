@@ -98,11 +98,11 @@ export function suggestedStateAdminUsername(countryCode, stateCode) {
   return cc && st ? `${cc}.${st}.admin` : "";
 }
 
-export function validateStateBranchAdminForm(form, { countryCode, takenStates, isEdit } = {}) {
+export function validateStateBranchAdminForm(form, { countryCode, takenStates, isEdit, inviteCreate } = {}) {
   if (!String(form.full_name || "").trim()) return "Full name is required.";
-  if (!isEdit && !String(form.username || "").trim()) return "Username is required.";
+  if (!isEdit && !inviteCreate && !String(form.username || "").trim()) return "Username is required.";
   if (!String(form.email || "").trim()) return "Email is required.";
-  if (!isEdit && (!form.password || String(form.password).length < 8)) {
+  if (!isEdit && !inviteCreate && (!form.password || String(form.password).length < 8)) {
     return "Password is required (minimum 8 characters).";
   }
   const cc = String(countryCode || form.branch_country || "").trim();
