@@ -365,7 +365,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       form.branch_country,
       form.id,
     );
-    const inviteCreate = usesPlatformInviteCreate(me?.role, !form.id);
+    const inviteCreate = usesPlatformInviteCreate(me?.role, !!form.id);
     const validationMsg = validateAdminForm(form, {
       takenCountries,
       takenStates,
@@ -1133,7 +1133,7 @@ function AdminModal({
   const isSatellitePastor = me?.role === "satellite_church_admin";
   const isServiceLeader = isServiceUnitLeader(me?.role);
   const isEdit = !!data?.id;
-  const inviteCreate = usesPlatformInviteCreate(me?.role, !isEdit);
+  const inviteCreate = usesPlatformInviteCreate(me?.role, isEdit);
   const emptyForm = useCallback(
     () => ({
       full_name: "",
