@@ -8,6 +8,8 @@ import {
   validateStateBranchAdminForm,
 } from "../stateAdminForm.js";
 import { usesAdminInviteCreate } from "../adminAccountForm.js";
+import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
+import { adminCreateButtonLabel } from "../adminInviteUi.js";
 
 function shouldAutoFillUsername(username) {
   const u = String(username || "").trim().toLowerCase();
@@ -121,7 +123,7 @@ export function StateBranchAdminModal({
             onClick={submit}
             disabled={saving || (!isEdit && stateOptions.length === 0 && !initialStateCode)}
           >
-            {saving ? "Saving…" : reassignOnly ? "Save reassignment" : isEdit ? "Save changes" : "Create account"}
+            {adminCreateButtonLabel({ saving, isEdit, reassignOnly })}
           </button>
         </>
       }
@@ -165,6 +167,7 @@ export function StateBranchAdminModal({
       </div>
       {!reassignOnly ? (
         <>
+          {inviteCreate ? <AdminInviteBanner /> : null}
           <div className="sa-form-row">
             <div className="sa-field">
               <label className="sa-label">
@@ -194,12 +197,7 @@ export function StateBranchAdminModal({
             <label className="sa-label">
               Email <span className="sa-required">*</span>
             </label>
-            <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
-            {inviteCreate ? (
-              <div className="sa-field-hint">
-                An invitation email with an activation link will be sent to this address.
-              </div>
-            ) : null}
+            <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="leader@church.org" />
           </div>
           {!inviteCreate ? (
             <div className="sa-field">

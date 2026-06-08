@@ -19,6 +19,7 @@ import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { availableSatellitesForState } from "../stateSatelliteForm.js";
 import { exportCsv } from "../exportCsv.js";
+import { toastAfterAdminCreate } from "../adminInviteUi.js";
 
 const ADMINS_PAGE_SIZE = 25;
 
@@ -185,14 +186,13 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     setSaving(true);
     try {
       const payload = { ...form, viewer: me, ...adminApiScopeParams(me) };
-      if (form.id) await api.updateAdmin(form.id, payload);
-      else await api.createAdmin(payload);
-      toast(
-        form.id
-          ? "Workforce leader updated."
-          : `${form.role === "sub_unit_leader" ? "Sub-unit" : "Service unit"} leader created.`,
-        "success",
-      );
+      if (form.id) {
+        await api.updateAdmin(form.id, payload);
+        toastAfterAdminCreate(toast, { isEdit: true, updatedMessage: "Workforce leader updated." });
+      } else {
+        const res = await api.createAdmin(payload);
+        toastAfterAdminCreate(toast, { res, email: form.email, isEdit: false });
+      }
       setLeaderModal(null);
       reload?.();
       loadPending();
@@ -212,9 +212,13 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
     setSaving(true);
     try {
       const payload = { ...form, viewer: me, ...adminApiScopeParams(me) };
-      if (form.id) await api.updateAdmin(form.id, payload);
-      else await api.createAdmin(payload);
-      toast(form.id ? "Satellite Pastor Admin updated." : "Satellite Pastor Admin created.", "success");
+      if (form.id) {
+        await api.updateAdmin(form.id, payload);
+        toastAfterAdminCreate(toast, { isEdit: true, updatedMessage: "Satellite Pastor Admin updated." });
+      } else {
+        const res = await api.createAdmin(payload);
+        toastAfterAdminCreate(toast, { res, email: form.email, isEdit: false });
+      }
       setSatelliteModal(null);
       setReassignOnly(false);
       reload?.();

@@ -11,6 +11,7 @@ import { UnitMembers } from "./UnitMembers.jsx";
 import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { toastAfterAdminCreate } from "../adminInviteUi.js";
 
 function initialServiceUnitTab() {
   const tab = readUsersSectionTab();
@@ -80,9 +81,13 @@ export function ServiceUnitUsers({ admins: adminsPayload, units, reload }) {
     setSaving(true);
     try {
       const payload = { ...form, viewer: me, role: "sub_unit_leader", service_unit_id: unitId };
-      if (form.id) await api.updateAdmin(form.id, payload);
-      else await api.createAdmin(payload);
-      toast(form.id ? "Sub-unit leader updated." : "Sub-unit leader created.", "success");
+      if (form.id) {
+        await api.updateAdmin(form.id, payload);
+        toast("Sub-unit leader updated.", "success");
+      } else {
+        const res = await api.createAdmin(payload);
+        toastAfterAdminCreate(toast, { res, email: form.email, isEdit: false });
+      }
       setLeaderModal(null);
       reload?.();
     } catch (e) {
@@ -166,6 +171,8 @@ export function ServiceUnitUsers({ admins: adminsPayload, units, reload }) {
           <UsersPageMeta
             items={[
               `Unit members: ${memberTotal} approved in ${unitName || "your service unit"}`,
+              branchStateLabel(countryCode, stateCode) ? `State: ${branchStateLabel(countryCode, stateCode)}` : null,
+              satelliteSite ? `Satellite: ${satelliteSite}` : null,
               branchCountryLabel(countryCode) ? `${branchCountryLabel(countryCode)}` : null,
             ]}
           />

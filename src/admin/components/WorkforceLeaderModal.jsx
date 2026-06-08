@@ -4,6 +4,8 @@ import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { usesAdminInviteCreate } from "../adminAccountForm.js";
+import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
+import { adminCreateButtonLabel } from "../adminInviteUi.js";
 import { validateWorkforceLeaderForm } from "../stateLeaderForm.js";
 
 export function WorkforceLeaderModal({
@@ -127,7 +129,7 @@ export function WorkforceLeaderModal({
             Cancel
           </button>
           <button type="button" className="sa-btn sa-btn-primary" onClick={submit} disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create account"}
+            {adminCreateButtonLabel({ saving, isEdit })}
           </button>
         </>
       }
@@ -208,12 +210,14 @@ export function WorkforceLeaderModal({
           </select>
         </div>
       ) : null}
+      {inviteCreate ? <AdminInviteBanner /> : null}
+      <div className={inviteCreate ? "sa-invite-form-section" : undefined}>
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">
             Full name <span className="sa-required">*</span>
           </label>
-          <input className="sa-input" value={form.full_name} onChange={set("full_name")} />
+          <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
         </div>
         {!inviteCreate ? (
           <div className="sa-field">
@@ -228,12 +232,7 @@ export function WorkforceLeaderModal({
         <label className="sa-label">
           Email <span className="sa-required">*</span>
         </label>
-        <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
-        {inviteCreate ? (
-          <div className="sa-field-hint">
-            An invitation email with an activation link will be sent to this address.
-          </div>
-        ) : null}
+        <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="leader@church.org" />
       </div>
       {!inviteCreate ? (
         <div className="sa-field">
@@ -257,6 +256,7 @@ export function WorkforceLeaderModal({
           </select>
         </div>
       ) : null}
+      </div>
     </Modal>
   );
 }

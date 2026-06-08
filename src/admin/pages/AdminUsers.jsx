@@ -49,6 +49,8 @@ import {
   validateAdminForm,
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
+import { AdminInviteBanner } from "../components/AdminInviteBanner.jsx";
+import { adminCreateButtonLabel, toastAfterAdminCreate } from "../adminInviteUi.js";
 
 const ROLES = [
   { value: "general_admin", label: "General Admin", desc: "Full global access except creating Super Admin accounts." },
@@ -399,14 +401,8 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         } else {
           const res = await api.createAdmin(payload);
           savedRow = res?.data ?? null;
-          const sent = res?.data?.invite_email_sent;
           if (inviteCreate) {
-            toast(
-              sent
-                ? `Invitation email sent to ${form.email}.`
-                : `Admin created but invitation email was not sent. Check Resend configuration.`,
-              sent ? "success" : "error",
-            );
+            toastAfterAdminCreate(toast, { res, email: form.email, isEdit: false });
           } else {
             toast("Admin created.", "success");
           }
@@ -1274,16 +1270,15 @@ function AdminModal({
       footer={<>
         <button className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
         <button className="sa-btn sa-btn-primary" onClick={() => onSave(form)} disabled={saving || createBlocked}>
-          {saving
-            ? "Saving…"
-            : isEdit
-              ? "Save Changes"
-              : mustUseRequestFlowForCreate(me?.role, form.role)
-                ? "Submit request"
-                : "Create"}
+          {mustUseRequestFlowForCreate(me?.role, form.role) && !isEdit
+            ? saving
+              ? "Submitting…"
+              : "Submit request"
+            : adminCreateButtonLabel({ saving, isEdit })}
         </button>
       </>}
     >
+      {inviteCreate ? <AdminInviteBanner /> : null}
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">Full Name <span className="sa-required">*</span></label>
@@ -1310,12 +1305,7 @@ function AdminModal({
       </div>
       <div className="sa-field">
         <label className="sa-label">Email <span className="sa-required">*</span></label>
-        <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="john@example.com" />
-        {inviteCreate ? (
-          <div className="sa-field-hint">
-            An invitation email with an activation link will be sent to this address. They sign in with email only.
-          </div>
-        ) : null}
+        <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="admin@church.org" />
       </div>
       {!inviteCreate ? (
         <div className="sa-field">

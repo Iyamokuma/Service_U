@@ -3,6 +3,8 @@ import { api } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { DeleteConfirmWithMath } from "../components/DeleteConfirmWithMath.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { AdminInviteBanner } from "../components/AdminInviteBanner.jsx";
+import { toastAfterAdminCreate } from "../adminInviteUi.js";
 
 export function ServiceUnits({ data, reload }) {
   const toast = useToast();
@@ -47,11 +49,9 @@ export function ServiceUnits({ data, reload }) {
         toast("Unit updated.", "success");
       } else {
         const fn = String(form.leader_full_name || "").trim();
-        const un = String(form.leader_username || "").trim();
         const em = String(form.leader_email || "").trim();
-        const pw = String(form.leader_password || "");
-        if (!fn || !un || !em || !pw) {
-          toast("Fill all service unit leader fields.", "error");
+        if (!fn || !em) {
+          toast("Enter the service unit leader's full name and email.", "error");
           setSaving(false);
           return;
         }
@@ -62,17 +62,15 @@ export function ServiceUnits({ data, reload }) {
           sort_order: 0,
           is_active: form.is_active,
         });
-        await api.createAdmin({
+        const res = await api.createAdmin({
           full_name: fn,
-          username: un,
           email: em,
-          password: pw,
           role: "service_unit_leader",
           service_unit_id: unit.id,
           sub_unit_name: "",
           is_active: 1,
         });
-        toast(`Unit created. Leader is saved to Admin Accounts and can sign in as “${un}” with the password you set.`, "success");
+        toastAfterAdminCreate(toast, { res, email: em, isEdit: false });
       }
       setUnitModal(null);
       reload();
@@ -251,6 +249,7 @@ export function ServiceUnits({ data, reload }) {
           loadAdmins();
           reload();
         }}
+        onInviteSent={(res, email) => toastAfterAdminCreate(toast, { res, email, isEdit: false })}
         saving={saving}
       />
 
@@ -291,15 +290,13 @@ function roleLabel(role) {
   return role;
 }
 
-function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave, onAdminChange, saving }) {
+function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave, onAdminChange, onInviteSent, saving }) {
   const emptyCreateForm = useCallback(
     () => ({
       name: "",
       is_active: 1,
       leader_full_name: "",
-      leader_username: "",
       leader_email: "",
-      leader_password: "",
     }),
     []
   );
@@ -309,9 +306,7 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
   const [addLeaderForm, setAddLeaderForm] = useState({
     role: "sub_unit_leader",
     full_name: "",
-    username: "",
     email: "",
-    password: "",
     sub_unit_name: "",
   });
 
@@ -333,9 +328,7 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
         is_active: data.is_active ?? 1,
         overdue_threshold_days: data.overdue_threshold_days ?? "",
         leader_full_name: "",
-        leader_username: "",
         leader_email: "",
-        leader_password: "",
       });
     } else {
       setWizardStep(0);
@@ -365,16 +358,14 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
     if (!form.id) return;
     const body = {
       full_name: addLeaderForm.full_name.trim(),
-      username: addLeaderForm.username.trim(),
       email: addLeaderForm.email.trim(),
-      password: addLeaderForm.password,
       role: addLeaderForm.role,
       service_unit_id: form.id,
       sub_unit_name: addLeaderForm.role === "sub_unit_leader" ? addLeaderForm.sub_unit_name : "",
       is_active: 1,
     };
-    if (!body.full_name || !body.username || !body.email || !body.password) {
-      window.alert("Fill all leader account fields.");
+    if (!body.full_name || !body.email) {
+      window.alert("Enter the leader's full name and email.");
       return;
     }
     if (body.role === "service_unit_leader" && hasUnitLeader) {
@@ -386,17 +377,16 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
       return;
     }
     try {
-      await api.createAdmin(body);
+      const res = await api.createAdmin(body);
       setShowAddLeader(false);
       setAddLeaderForm({
         role: "sub_unit_leader",
         full_name: "",
-        username: "",
         email: "",
-        password: "",
         sub_unit_name: "",
       });
       onAdminChange?.();
+      onInviteSent?.(res, body.email);
     } catch (err) {
       window.alert(err.message);
     }
@@ -486,6 +476,7 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
             </div>
           ) : (
             <div className="sa-wizard-step">
+              <AdminInviteBanner />
               <div className="sa-field">
                 <label className="sa-label">
                   Leader full name <span className="sa-required">*</span>
@@ -499,25 +490,18 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
                   autoFocus
                 />
               </div>
-              <div className="sa-form-row">
-                <div className="sa-field">
-                  <label className="sa-label">
-                    Username <span className="sa-required">*</span>
-                  </label>
-                  <input className="sa-input" value={form.leader_username} onChange={set("leader_username")} placeholder="Login id" autoComplete="username" />
-                </div>
-                <div className="sa-field">
-                  <label className="sa-label">
-                    Email <span className="sa-required">*</span>
-                  </label>
-                  <input className="sa-input" type="email" value={form.leader_email} onChange={set("leader_email")} placeholder="leader@example.com" autoComplete="email" />
-                </div>
-              </div>
               <div className="sa-field">
                 <label className="sa-label">
-                  Password <span className="sa-required">*</span>
+                  Leader email <span className="sa-required">*</span>
                 </label>
-                <input className="sa-input" type="password" value={form.leader_password} onChange={set("leader_password")} placeholder="Initial password" autoComplete="new-password" />
+                <input
+                  className="sa-input"
+                  type="email"
+                  value={form.leader_email}
+                  onChange={set("leader_email")}
+                  placeholder="leader@church.org"
+                  autoComplete="email"
+                />
               </div>
             </div>
           )}
@@ -652,6 +636,7 @@ function UnitAdminsPanel({
 
       {showAddLeader ? (
         <form onSubmit={onSaveLeader} style={{ marginTop: 14, padding: 12, background: "var(--sa-surface-2, #f8fafc)", borderRadius: 8 }}>
+          <AdminInviteBanner />
           <div className="sa-field">
             <label className="sa-label">Role</label>
             <select
@@ -683,25 +668,15 @@ function UnitAdminsPanel({
               </select>
             </div>
           )}
-          <div className="sa-form-row">
-            <div className="sa-field">
-              <label className="sa-label">Full name</label>
-              <input
-                className="sa-input"
-                value={addLeaderForm.full_name}
-                onChange={(e) => setAddLeaderForm((f) => ({ ...f, full_name: e.target.value }))}
-                required
-              />
-            </div>
-            <div className="sa-field">
-              <label className="sa-label">Username</label>
-              <input
-                className="sa-input"
-                value={addLeaderForm.username}
-                onChange={(e) => setAddLeaderForm((f) => ({ ...f, username: e.target.value }))}
-                required
-              />
-            </div>
+          <div className="sa-field">
+            <label className="sa-label">Full name</label>
+            <input
+              className="sa-input"
+              value={addLeaderForm.full_name}
+              onChange={(e) => setAddLeaderForm((f) => ({ ...f, full_name: e.target.value }))}
+              placeholder="Jane Doe"
+              required
+            />
           </div>
           <div className="sa-field">
             <label className="sa-label">Email</label>
@@ -710,21 +685,12 @@ function UnitAdminsPanel({
               type="email"
               value={addLeaderForm.email}
               onChange={(e) => setAddLeaderForm((f) => ({ ...f, email: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">Password</label>
-            <input
-              className="sa-input"
-              type="password"
-              value={addLeaderForm.password}
-              onChange={(e) => setAddLeaderForm((f) => ({ ...f, password: e.target.value }))}
+              placeholder="leader@church.org"
               required
             />
           </div>
           <button type="submit" className="sa-btn sa-btn-primary sa-btn-sm">
-            Create admin account
+            Send invitation
           </button>
         </form>
       ) : null}

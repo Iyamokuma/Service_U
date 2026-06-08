@@ -9,6 +9,8 @@ import {
   validateSatellitePastorAdminForm,
 } from "../stateSatelliteForm.js";
 import { usesAdminInviteCreate } from "../adminAccountForm.js";
+import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
+import { adminCreateButtonLabel } from "../adminInviteUi.js";
 
 function shouldAutoFillUsername(username) {
   const u = String(username || "").trim().toLowerCase();
@@ -128,7 +130,7 @@ export function SatellitePastorAdminModal({
             onClick={submit}
             disabled={saving || (!isEdit && satelliteOptions.length === 0 && !initialSatellite)}
           >
-            {saving ? "Saving…" : reassignOnly ? "Save reassignment" : isEdit ? "Save changes" : "Create account"}
+            {adminCreateButtonLabel({ saving, isEdit, reassignOnly })}
           </button>
         </>
       }
@@ -187,6 +189,7 @@ export function SatellitePastorAdminModal({
       </div>
       {!reassignOnly ? (
         <>
+          {inviteCreate ? <AdminInviteBanner /> : null}
           <div className="sa-form-row">
             <div className="sa-field">
               <label className="sa-label">
@@ -213,12 +216,7 @@ export function SatellitePastorAdminModal({
             <label className="sa-label">
               Email <span className="sa-required">*</span>
             </label>
-            <input className="sa-input" type="email" value={form.email} onChange={set("email")} />
-            {inviteCreate ? (
-              <div className="sa-field-hint">
-                An invitation email with an activation link will be sent to this address.
-              </div>
-            ) : null}
+            <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="pastor@church.org" />
           </div>
           {!inviteCreate ? (
             <div className="sa-field">

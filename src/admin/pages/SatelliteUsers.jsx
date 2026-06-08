@@ -12,6 +12,7 @@ import { UnitMembers } from "./UnitMembers.jsx";
 import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { toastAfterAdminCreate } from "../adminInviteUi.js";
 
 function initialSatelliteTab() {
   const tab = readUsersSectionTab();
@@ -90,14 +91,13 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
     setSaving(true);
     try {
       const payload = { ...form, viewer: me };
-      if (form.id) await api.updateAdmin(form.id, payload);
-      else await api.createAdmin(payload);
-      toast(
-        form.id
-          ? "Leader updated."
-          : `${form.role === "sub_unit_leader" ? "Sub-unit" : "Service unit"} leader created.`,
-        "success",
-      );
+      if (form.id) {
+        await api.updateAdmin(form.id, payload);
+        toastAfterAdminCreate(toast, { isEdit: true, updatedMessage: "Leader updated." });
+      } else {
+        const res = await api.createAdmin(payload);
+        toastAfterAdminCreate(toast, { res, email: form.email, isEdit: false });
+      }
       setLeaderModal(null);
       reload?.();
       loadPending();
