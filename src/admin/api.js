@@ -86,15 +86,14 @@ async function adminInviteFetch(op, params = {}) {
   return body;
 }
 
-async function adminLoginFetch(emailOrUsername, password) {
-  const loginId = String(emailOrUsername || "").trim();
+async function adminLoginFetch(op, params = {}) {
   const res = await fetch(`${functionsBaseUrl()}/admin-login`, {
     method: "POST",
     headers: {
       ...supabaseAnonHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email: loginId, username: loginId, password }),
+    body: JSON.stringify({ op, ...params }),
   });
 
   let body = null;
@@ -105,7 +104,7 @@ async function adminLoginFetch(emailOrUsername, password) {
   }
 
   if (!res.ok) {
-    throw new Error(body?.error || "Invalid credentials.");
+    throw new Error(body?.error || "Request failed.");
   }
   return body;
 }
@@ -152,10 +151,21 @@ export const api = {
     }
   },
 
-  async login(body) {
+  async startLogin(body) {
     const email = String(body?.email ?? body?.username ?? "").trim();
     const password = String(body?.password || "").trim();
-    return adminLoginFetch(email, password);
+    return adminLoginFetch("startLogin", { email, username: email, password });
+  },
+
+  async verifyLoginOtp(challengeId, otp) {
+    return adminLoginFetch("verifyOtp", {
+      challenge_id: String(challengeId || "").trim(),
+      otp: String(otp || "").trim(),
+    });
+  },
+
+  async resendLoginOtp(challengeId) {
+    return adminLoginFetch("resendOtp", { challenge_id: String(challengeId || "").trim() });
   },
 
   async validateInvite(token) {
@@ -208,6 +218,14 @@ export const api = {
 
   async queue(params = {}) {
     return adminFetch("queue", withScopeParams(params));
+  },
+
+  async registration(id) {
+    return adminFetch("registration", withScopeParams({ id }));
+  },
+
+  async requestOpenCount() {
+    return adminFetch("requestOpenCount", withScopeParams({}));
   },
 
   async updateStatus(id, body) {

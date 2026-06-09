@@ -2301,6 +2301,20 @@
   padding: 0;
   margin: 0 auto;
 }
+.sa-login-otp-input {
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  font-variant-numeric: tabular-nums;
+}
+.sa-login-otp-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+}
 .sa-notify-empty .smh-loader--compact {
   padding: 12px 0;
 }

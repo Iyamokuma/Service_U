@@ -5,6 +5,9 @@ import {
   readAdminViewMode,
   writeAdminViewMode,
 } from "./adminViewMode.js";
+import { isRootSuperAdmin } from "./roles.js";
+
+const ADMIN_PAGE_STORAGE_KEY = "sm_admin_page";
 
 const AuthCtx = createContext(null);
 
@@ -108,6 +111,13 @@ export function AdminAuthProvider({ children }) {
   const loginWithToken = useCallback(async (token, adminUser) => {
     localStorage.setItem("admin_token", token);
     localStorage.setItem("admin_user", JSON.stringify(adminUser));
+    if (isRootSuperAdmin(adminUser?.role)) {
+      try {
+        sessionStorage.setItem(ADMIN_PAGE_STORAGE_KEY, "overview");
+      } catch {
+        /* ignore */
+      }
+    }
     setAdmin(adminUser);
     if (adminUser?.role === "country_super_admin") {
       const refreshed = await api.refreshSession(adminUser);
@@ -118,11 +128,37 @@ export function AdminAuthProvider({ children }) {
     }
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const clearLoginError = useCallback(() => setError(null), []);
+  const setLoginError = useCallback((msg) => setError(msg), []);
+
+  const startLogin = useCallback(async (email, password) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.login({ email, password });
+      const res = await api.startLogin({ email, password });
+      if (res?.step === "otp_required" && res.challenge_id) {
+        return {
+          needsOtp: true,
+          challengeId: res.challenge_id,
+          maskedEmail: res.email_masked,
+          expiresIn: res.expires_in,
+          resendAfter: res.resend_after,
+        };
+      }
+      throw new Error("Unexpected login response. Try again.");
+    } catch (e) {
+      setError(e.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const verifyLoginOtp = useCallback(async (challengeId, otp) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.verifyLoginOtp(challengeId, otp);
       await loginWithToken(res.token, res.admin);
       return true;
     } catch (e) {
@@ -133,15 +169,49 @@ export function AdminAuthProvider({ children }) {
     }
   }, [loginWithToken]);
 
+  const resendLoginOtp = useCallback(async (challengeId) => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await api.resendLoginOtp(challengeId);
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     try { await api.logout(); } catch { /* ignore */ }
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
+    try {
+      sessionStorage.removeItem(ADMIN_PAGE_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
     setAdmin(null);
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ admin, loading, error, login, loginWithToken, logout, refreshAdmin, viewMode, setViewMode }}>
+    <AuthCtx.Provider
+      value={{
+        admin,
+        loading,
+        error,
+        startLogin,
+        verifyLoginOtp,
+        resendLoginOtp,
+        clearLoginError,
+        setLoginError,
+        loginWithToken,
+        logout,
+        refreshAdmin,
+        viewMode,
+        setViewMode,
+      }}
+    >
       {children}
     </AuthCtx.Provider>
   );
