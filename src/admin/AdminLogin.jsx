@@ -1,18 +1,34 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { AdminBrandLogo } from "./components/AdminBrandLogo.jsx";
 import { SmhLoader } from "../components/SmhLoader.jsx";
 
 export function AdminLogin() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { startLogin, verifyLoginOtp, resendLoginOtp, loading, error, setLoginError, clearLoginError } =
     useAdminAuth();
   const [step, setStep] = useState("credentials");
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [showActivated, setShowActivated] = useState(() => searchParams.get("activated") === "1");
+  const [form, setForm] = useState(() => ({
+    email: String(searchParams.get("email") || "").trim(),
+    password: "",
+  }));
   const [otp, setOtp] = useState("");
   const [challenge, setChallenge] = useState(null);
   const [resendIn, setResendIn] = useState(0);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  useEffect(() => {
+    if (searchParams.get("activated") !== "1") return;
+    setShowActivated(true);
+    const email = String(searchParams.get("email") || "").trim();
+    if (email) setForm((f) => ({ ...f, email }));
+    setSearchParams({}, { replace: true });
+    // Run once when landing from invite activation (query params cleared after read).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (resendIn <= 0) return undefined;
@@ -76,6 +92,13 @@ export function AdminLogin() {
             </div>
           </div>
         </div>
+
+        {showActivated && step === "credentials" ? (
+          <div className="sa-login-success" role="status">
+            Your account is ready. Sign in with your email and password — we will email you a verification code
+            to complete login.
+          </div>
+        ) : null}
 
         {error ? <div className="sa-login-err">{error}</div> : null}
 

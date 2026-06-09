@@ -1,14 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { signAdminToken } from "../_shared/jwt.ts";
-import {
-  ensureCountryAdminHeadquarters,
-} from "../_shared/admin_ops.ts";
-import {
-  generateInviteToken,
-  getAdminAppUrl,
-  inviteExpiresAt,
-  shapeAdminForClient,
-} from "../_shared/admin_invite.ts";
+import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -49,7 +40,6 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
   try {
-    const jwtSecret = requireEnv("ADMIN_JWT_SECRET");
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -111,20 +101,12 @@ Deno.serve(async (req) => {
           must_change_password: 0,
           invite_token: null,
           invite_expires_at: null,
-          last_login: new Date().toISOString(),
         })
         .eq("id", row.id);
       if (updErr) return json(500, { error: updErr.message });
 
       const resolved = await ensureCountryAdminHeadquarters(supabase, row as Record<string, unknown>);
-      let service_unit_name = "";
-      if (resolved.service_unit_id != null) {
-        const { data: u } = await supabase.from("service_units").select("name").eq("id", resolved.service_unit_id).maybeSingle();
-        service_unit_name = String(u?.name || "");
-      }
-
-      const adminJwt = await signAdminToken(Number(resolved.id), jwtSecret);
-      const admin = shapeAdminForClient(resolved as Record<string, unknown>, service_unit_name);
+      const email = norm(resolved.email).toLowerCase();
 
       await supabase.from("activity_logs").insert({
         admin_id: resolved.id,
@@ -132,11 +114,11 @@ Deno.serve(async (req) => {
         action: "admin.invite_complete",
         entity_type: "admin",
         entity_id: String(resolved.id),
-        description: "Completed invite and set password",
+        description: "Completed invite and set password (sign-in required)",
         ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "",
       });
 
-      return json(200, { token: adminJwt, admin });
+      return json(200, { ok: true, email });
     }
 
     return json(400, { error: "Unknown op." });

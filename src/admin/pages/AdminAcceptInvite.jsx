@@ -3,11 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { AdminBrandLogo } from "../components/AdminBrandLogo.jsx";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 export function AdminAcceptInvite() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { admin, loginWithToken } = useAdminAuth();
+  const { admin } = useAdminAuth();
   const token = String(searchParams.get("token") || "").trim();
 
   const [loading, setLoading] = useState(true);
@@ -48,8 +49,10 @@ export function AdminAcceptInvite() {
     setError("");
     try {
       const res = await api.completeInvite(token, password);
-      await loginWithToken(res.token, res.admin);
-      navigate("/admin", { replace: true });
+      const email = String(res?.email || profile?.email || "").trim();
+      const q = new URLSearchParams({ activated: "1" });
+      if (email) q.set("email", email);
+      navigate(`/admin?${q.toString()}`, { replace: true });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -64,12 +67,12 @@ export function AdminAcceptInvite() {
           <AdminBrandLogo variant="login" />
           <div>
             <div className="sa-login-title">Activate admin account</div>
-            <div className="sa-login-sub">Set your password to continue</div>
+            <div className="sa-login-sub">Create your password</div>
           </div>
         </div>
 
         {loading ? (
-          <p className="sa-text-muted sa-text-sm">Checking invitation…</p>
+          <SmhLoader label="Checking invitation" size={48} />
         ) : null}
 
         {error ? <div className="sa-login-err">{error}</div> : null}
@@ -84,7 +87,8 @@ export function AdminAcceptInvite() {
                   You are joining as <strong>{String(profile.role).replace(/_/g, " ")}</strong>.
                 </>
               ) : null}{" "}
-              Use <strong>{profile.email}</strong> to sign in after you set your password.
+              After you save your password, you will sign in with <strong>{profile.email}</strong> and verify your
+              email with a one-time code.
             </p>
             <div className="sa-login-group">
               <label className="sa-login-label">New password</label>
@@ -111,7 +115,7 @@ export function AdminAcceptInvite() {
               />
             </div>
             <button className="sa-login-btn" type="submit" disabled={saving}>
-              {saving ? "Activating…" : "Activate & sign in"}
+              {saving ? "Saving…" : "Save password & continue to sign in"}
             </button>
           </>
         ) : null}
