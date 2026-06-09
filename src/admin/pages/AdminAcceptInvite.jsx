@@ -66,8 +66,8 @@ export function AdminAcceptInvite() {
         <div className="sa-login-logo">
           <AdminBrandLogo variant="login" />
           <div>
-            <div className="sa-login-title">Activate admin account</div>
-            <div className="sa-login-sub">Create your password</div>
+            <div className="sa-login-title">Salvation Ministries</div>
+            <div className="sa-login-sub">Set password</div>
           </div>
         </div>
 
@@ -79,17 +79,6 @@ export function AdminAcceptInvite() {
 
         {profile && !loading ? (
           <>
-            <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-              Welcome, <strong>{profile.full_name}</strong>.
-              {profile.role ? (
-                <>
-                  {" "}
-                  You are joining as <strong>{String(profile.role).replace(/_/g, " ")}</strong>.
-                </>
-              ) : null}{" "}
-              After you save your password, you will sign in with <strong>{profile.email}</strong> and verify your
-              email with a one-time code.
-            </p>
             <div className="sa-login-group">
               <label className="sa-login-label">New password</label>
               <input
@@ -115,7 +104,7 @@ export function AdminAcceptInvite() {
               />
             </div>
             <button className="sa-login-btn" type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save password & continue to sign in"}
+              {saving ? "Saving…" : "Continue"}
             </button>
           </>
         ) : null}

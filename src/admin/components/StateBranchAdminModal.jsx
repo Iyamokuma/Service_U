@@ -128,11 +128,6 @@ export function StateBranchAdminModal({
         </>
       }
     >
-      <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-        {reassignOnly
-          ? "Move this admin to a different state. The previous state becomes vacant."
-          : `Assign one State Branch Admin per state in ${countryLabel || cc}. They manage satellite pastor accounts for their state.`}
-      </p>
       {reassignOnly && isEdit ? (
         <div className="sa-field" style={{ marginBottom: 16 }}>
           <label className="sa-label">Admin</label>
@@ -187,9 +182,6 @@ export function StateBranchAdminModal({
                   placeholder="ng.la.admin"
                   disabled={isEdit}
                 />
-                {!isEdit && (
-                  <div className="sa-field-hint">Usernames are unique worldwide — use country and state codes.</div>
-                )}
               </div>
             ) : null}
           </div>

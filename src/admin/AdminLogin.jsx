@@ -12,7 +12,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
     if (initialStep === "otp" && readLoginChallenge()) return "otp";
     return "credentials";
   });
-  const [showActivated, setShowActivated] = useState(() => searchParams.get("activated") === "1");
   const [form, setForm] = useState(() => ({
     email: String(searchParams.get("email") || "").trim(),
     password: "",
@@ -30,11 +29,11 @@ export function AdminLogin({ initialStep = "credentials" }) {
   }, [step, challenge]);
 
   useEffect(() => {
-    if (searchParams.get("activated") !== "1") return;
-    setShowActivated(true);
     const email = String(searchParams.get("email") || "").trim();
     if (email) setForm((f) => ({ ...f, email }));
-    setSearchParams({}, { replace: true });
+    if (searchParams.get("activated") === "1") {
+      setSearchParams({}, { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -132,38 +131,24 @@ export function AdminLogin({ initialStep = "credentials" }) {
           <AdminBrandLogo variant="login" />
           <div>
             <div className="sa-login-title">Salvation Ministries</div>
-            <div className="sa-login-sub">
-              {step === "otp" ? "Verify your email" : "Admin Portal"}
-            </div>
+            <div className="sa-login-sub">{step === "otp" ? "Verification" : "Admin Portal"}</div>
           </div>
         </div>
-
-        {showActivated && step === "credentials" ? (
-          <div className="sa-login-success" role="status">
-            Your account is ready. Sign in with your email and password — we will email you a verification code
-            to complete login.
-          </div>
-        ) : null}
 
         {error ? <div className="sa-login-err">{error}</div> : null}
 
         {step === "credentials" ? (
           <>
             <div className="sa-login-group">
-              <label className="sa-login-label">Username or email</label>
+              <label className="sa-login-label">Email</label>
               <input
                 className="sa-login-input"
                 type="text"
                 autoComplete="username"
-                placeholder="username or you@church.org"
                 value={form.email}
                 onChange={set("email")}
                 required
               />
-              <div className="sa-field-hint" style={{ marginTop: 6 }}>
-                Super Admin signs in with password only. All other roles receive a 6-digit code by email after
-                password verification.
-              </div>
             </div>
 
             <div className="sa-login-group">
@@ -172,7 +157,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 className="sa-login-input"
                 type="password"
                 autoComplete="current-password"
-                placeholder="••••••••"
                 value={form.password}
                 onChange={set("password")}
                 required
@@ -186,34 +170,24 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 "Sign in"
               )}
             </button>
-
-            {loading ? (
-              <p className="sa-text-muted sa-text-sm sa-login-otp-pending" role="status">
-                Checking your password and preparing verification…
-              </p>
-            ) : null}
           </>
         ) : (
           <>
             {challenge?.emailSent === false && challenge?.message ? (
-              <div className="sa-login-warn" role="status">
+              <div className="sa-login-err" role="status">
                 {challenge.message}
               </div>
             ) : null}
 
-            <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-              We sent a 6-digit code to <strong>{challenge?.maskedEmail || "your email"}</strong>. Enter it below
-              to finish signing in.
-            </p>
-
             <div className="sa-login-group">
-              <label className="sa-login-label">Login code</label>
+              <label className="sa-login-label">
+                {challenge?.maskedEmail ? `Code · ${challenge.maskedEmail}` : "Code"}
+              </label>
               <input
                 className="sa-login-input sa-login-otp-input"
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                placeholder="000000"
                 maxLength={6}
                 pattern="[0-9]{6}"
                 value={otp}
@@ -227,15 +201,9 @@ export function AdminLogin({ initialStep = "credentials" }) {
               {loading ? (
                 <SmhLoader label="" variant="compact" size={24} className="sa-login-btn-loader" />
               ) : (
-                "Sign in"
+                "Continue"
               )}
             </button>
-
-            {loading ? (
-              <p className="sa-text-muted sa-text-sm sa-login-otp-pending" role="status">
-                Verifying code and opening your dashboard…
-              </p>
-            ) : null}
 
             <div className="sa-login-otp-actions">
               <button
@@ -244,10 +212,10 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 onClick={onResend}
                 disabled={loading || resendIn > 0}
               >
-                {resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"}
+                {resendIn > 0 ? `Resend (${resendIn}s)` : "Resend"}
               </button>
               <button type="button" className="sa-btn sa-btn-ghost sa-text-sm" onClick={backToCredentials}>
-                Use different account
+                Back
               </button>
             </div>
           </>

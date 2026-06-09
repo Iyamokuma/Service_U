@@ -453,11 +453,6 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
     >
       {isCreate ? (
         <>
-          <p className="sa-text-muted sa-text-sm" style={{ marginBottom: 12 }}>
-            {wizardStep === 0
-              ? "Step 1 of 2 — Enter unit details first. You will add the service unit leader on the next screen."
-              : "Step 2 of 2 — Service unit leader (required). This account can sign in and manage the queue for this unit."}
-          </p>
           {wizardStep === 0 ? (
             <div className="sa-wizard-step">
               <div className="sa-field">

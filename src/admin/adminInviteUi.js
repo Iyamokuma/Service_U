@@ -8,17 +8,14 @@ export function toastAfterAdminCreate(toast, { res, email, isEdit, updatedMessag
   const sent = res?.data?.invite_email_sent;
   const addr = String(email || res?.data?.email || "").trim();
   if (sent && addr) {
-    toast(`Invitation email sent to ${addr}. They will set their password from the link.`, "success");
+    toast(`Invitation sent to ${addr}.`, "success");
     return;
   }
   if (sent) {
-    toast("Invitation email sent. They must activate their account before signing in.", "success");
+    toast("Invitation sent.", "success");
     return;
   }
-  toast(
-    "Account was created but the invitation email could not be sent. Check email configuration or resend the invite.",
-    "error",
-  );
+  toast("Invitation email could not be sent.", "error");
 }
 
 export function adminCreateButtonLabel({ saving = false, isEdit = false, reassignOnly = false } = {}) {

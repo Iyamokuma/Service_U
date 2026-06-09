@@ -166,12 +166,6 @@ export function AdminReassignModal({
         </>
       }
     >
-      <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-        Move this person to a new role and dashboard. Their <strong>username and password stay the same</strong>.
-        Records for the country, state, or satellite they leave behind are <strong>not deleted</strong> — only this
-        account&apos;s assignment changes.
-      </p>
-
       <div className="sa-field" style={{ marginBottom: 12 }}>
         <label className="sa-label">Administrator</label>
         <input className="sa-input" value={form.full_name} disabled readOnly />
@@ -196,7 +190,6 @@ export function AdminReassignModal({
             </option>
           ))}
         </select>
-        <div className="sa-field-hint">After save, their sidebar and pages match this role on next login.</div>
       </div>
 
       {locationScoped ? (

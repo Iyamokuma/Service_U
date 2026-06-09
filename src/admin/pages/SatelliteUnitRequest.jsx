@@ -60,11 +60,6 @@ export function SatelliteUnitRequest() {
         <h2 className="sa-de-section-title" style={{ marginTop: 0 }}>
           Request a new service unit
         </h2>
-        <p className="sa-text-sm sa-text-muted" style={{ marginBottom: 20, lineHeight: 1.5 }}>
-          New service units are added by Super Admin after approval. Your request includes your branch context
-          automatically. Optional sub-units can be created together when the unit is approved.
-        </p>
-
         <div
           className="sa-text-sm"
           style={{

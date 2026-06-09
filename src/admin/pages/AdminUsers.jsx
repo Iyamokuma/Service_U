@@ -1294,12 +1294,6 @@ function AdminModal({
               placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
               disabled={isEdit}
             />
-            {form.role === "country_super_admin" && !isEdit && (
-              <div className="sa-field-hint">
-                Usernames are unique across all countries. For United Kingdom use something like{" "}
-                <strong>gb.country.admin</strong> (not <strong>country.admin</strong>, which is already used).
-              </div>
-            )}
           </div>
         ) : null}
       </div>
@@ -1388,7 +1382,6 @@ function AdminModal({
               </option>
             ))}
           </select>
-          <div className="sa-field-hint">{ROLES.find((r) => r.value === form.role)?.desc}</div>
         </div>
         {!(mustUseRequestFlowForCreate(me?.role, form.role) && !isEdit) ? (
           <div className="sa-field">
@@ -1413,13 +1406,6 @@ function AdminModal({
           <p className="sa-text-sm sa-fw-600" style={{ margin: "4px 0 8px" }}>
             Scope / location <span className="sa-required">*</span>
           </p>
-          {isGlobalAdmin && (form.role === "country_super_admin" || form.role === "state_super_admin") && (
-            <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 12px" }}>
-              {form.role === "country_super_admin"
-                ? "Country Admin accounts are assigned to one country and one headquarters state (where that admin also acts as State Branch Admin). States that already have an active State Branch Admin are not listed for new country accounts unless editing."
-                : "State Branch Admin accounts must be assigned to a country and state. States that already have an active State Branch Admin (or a pending request) are not listed."}
-            </p>
-          )}
         <div className="sa-form-row">
           <div className="sa-field">
             <label className="sa-label">Country <span className="sa-required">*</span></label>

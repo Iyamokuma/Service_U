@@ -38,9 +38,6 @@ export function ForceChangePassword() {
         <div className="sa-login-title" style={{ marginBottom: 8 }}>
           Set a new password
         </div>
-        <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 20px", lineHeight: 1.55 }}>
-          You must choose a new password before using the dashboard.
-        </p>
         <div className="sa-login-group">
           <label className="sa-login-label">New password</label>
           <input

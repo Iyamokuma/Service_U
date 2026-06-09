@@ -134,11 +134,6 @@ export function WorkforceLeaderModal({
         </>
       }
     >
-      <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
-        {lockedSatelliteSite
-          ? `Leaders are scoped to ${lockedSatelliteSite} in ${branchStateLabel(cc, st) || st}, ${branchCountryLabel(cc) || cc}.`
-          : `Workforce leaders are scoped to a satellite church in ${branchStateLabel(cc, st) || st}, ${branchCountryLabel(cc) || cc}.`}
-      </p>
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">Country</label>
