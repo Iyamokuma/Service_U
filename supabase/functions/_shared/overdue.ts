@@ -128,6 +128,17 @@ async function insertNotification(
   });
 }
 
+let lastOverdueEscalationRunMs = 0;
+const OVERDUE_ESCALATION_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Avoid scanning the full queue on every leader page load. */
+export async function processOverdueEscalationsThrottled(supabase: SupabaseClient): Promise<void> {
+  const now = Date.now();
+  if (now - lastOverdueEscalationRunMs < OVERDUE_ESCALATION_INTERVAL_MS) return;
+  lastOverdueEscalationRunMs = now;
+  await processOverdueEscalations(supabase);
+}
+
 export async function processOverdueEscalations(supabase: SupabaseClient): Promise<void> {
   const { globalDays, unitThresholds } = await loadOverdueConfig(supabase);
   const now = Date.now();

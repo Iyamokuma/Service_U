@@ -9,6 +9,7 @@ import { getAnnouncementScopePolicy } from "../announcementScopePolicy.js";
 import { AnnouncementCreateModal } from "../components/AnnouncementCreateModal.jsx";
 import { AnnouncementStatusTabs } from "../components/AnnouncementStatusTabs.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 /** Admin destination roles aligned with AnnouncementCreateModal options. */
 const ADMIN_DEST_ROLE_KEYS = [
@@ -67,10 +68,10 @@ function announcementMatchesGeoFilter(r, filters) {
 
 function formatMedium(r) {
   const e = Number(r.medium_email) === 1;
-  const s = Number(r.medium_sms) === 1;
-  if (e && s) return "Email, SMS";
+  const p = Number(r.medium_push) === 1;
+  if (e && p) return "Email, Push";
   if (e) return "Email";
-  if (s) return "SMS";
+  if (p) return "Push";
   return "—";
 }
 
@@ -390,10 +391,7 @@ export function Announcements() {
         <AnnouncementStatusTabs active={statusTab} onChange={setStatusTab} counts={tabCounts} />
         <div className="sa-table-wrap">
           {loading ? (
-            <div className="sa-loading">
-              <div className="sa-spinner" />
-              <span>Loading…</span>
-            </div>
+            <SmhLoader label="Loading announcements" />
           ) : loadError ? (
             <div className="sa-empty">
               <div className="sa-empty-text">{loadError}</div>
@@ -421,7 +419,7 @@ export function Announcements() {
                   <th>Message title</th>
                   <th>Destination</th>
                   <th>Message</th>
-                  <th>Email / SMS</th>
+                  <th>Email / Push</th>
                   <th>Timeline</th>
                   <th>By</th>
                   <th>Action</th>

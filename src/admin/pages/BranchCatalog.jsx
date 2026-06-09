@@ -6,6 +6,7 @@ import { useToast } from "../components/Toast.jsx";
 import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
 import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 import {
   buildAllRows,
   buildCountryRows,
@@ -365,10 +366,7 @@ export function BranchCatalog({ variant = "catalog" }) {
   if (loading && !catalog) {
     return (
       <div className="sa-locations-page">
-        <div className="sa-loading sa-locations-loading">
-          <div className="sa-spinner" />
-          <span>{copy.loading}</span>
-        </div>
+        <SmhLoader label={copy.loading.replace(/…$/, "")} className="sa-locations-loading" />
       </div>
     );
   }

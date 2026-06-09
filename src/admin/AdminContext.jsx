@@ -136,13 +136,23 @@ export function AdminAuthProvider({ children }) {
     setError(null);
     try {
       const res = await api.startLogin({ email, password });
-      if (res?.step === "otp_required" && res.challenge_id) {
+      if (res?.token && res?.admin) {
+        await loginWithToken(res.token, res.admin);
+        return { needsOtp: false, loggedIn: true };
+      }
+      const challengeId = String(res?.challenge_id || res?.challengeId || "").trim();
+      if (res?.step === "otp_required" || challengeId) {
+        if (!challengeId) {
+          throw new Error("Could not start verification. Try again.");
+        }
         return {
           needsOtp: true,
-          challengeId: res.challenge_id,
-          maskedEmail: res.email_masked,
-          expiresIn: res.expires_in,
-          resendAfter: res.resend_after,
+          challengeId,
+          maskedEmail: res.email_masked || res.emailMasked || "",
+          expiresIn: res.expires_in ?? res.expiresIn,
+          resendAfter: res.resend_after ?? res.resendAfter ?? 60,
+          emailSent: res.email_sent !== false,
+          message: String(res.message || ""),
         };
       }
       throw new Error("Unexpected login response. Try again.");
@@ -152,7 +162,7 @@ export function AdminAuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loginWithToken]);
 
   const verifyLoginOtp = useCallback(async (challengeId, otp) => {
     setLoading(true);

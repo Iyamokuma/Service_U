@@ -10,6 +10,7 @@ import { isServiceUnitLeader, isGlobalAdminRole } from "../roles.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { QueueSubUnitTabs } from "../components/QueueSubUnitTabs.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
 const QUEUE_STATUS_TABS = ["all", "new", "inprogress", "accepted", "rejected", "archived", "overdue"];
@@ -213,6 +214,18 @@ export function Queue({ units, initialTab = "all" }) {
   useEffect(() => {
     setExpanded(null);
   }, [filters.sub_unit, subUnitTab, statusTab]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    let cancelled = false;
+    api.registration(expanded).then((res) => {
+      if (cancelled || !res?.data) return;
+      setRows((prev) => prev.map((r) => (r.id === expanded ? { ...r, ...res.data } : r)));
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded]);
 
   const load = useCallback(async (params) => {
     setLoading(true);
@@ -511,7 +524,7 @@ export function Queue({ units, initialTab = "all" }) {
 
         <div className="sa-table-wrap">
           {loading ? (
-            <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div>
+            <SmhLoader label="Loading queue" />
           ) : tableRows.length === 0 ? (
             <div className="sa-empty">
               <div className="sa-empty-icon">{onOverdueTab ? "✓" : "📋"}</div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 export function Settings() {
@@ -23,7 +24,7 @@ export function Settings() {
     }
   };
 
-  if (!settings) return <div className="sa-loading"><div className="sa-spinner" /><span>Loading…</span></div>;
+  if (!settings) return <SmhLoader label="Loading settings" />;
 
   return (
     <div className="sa-card">

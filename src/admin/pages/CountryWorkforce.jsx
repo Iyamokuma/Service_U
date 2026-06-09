@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
@@ -274,9 +275,7 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
 
       <div className="sa-table-wrap">
         {unitsLoading ? (
-          <div className="sa-empty">
-            <div className="sa-empty-text">Loading workforce…</div>
-          </div>
+          <SmhLoader label="Loading workforce" />
         ) : pagination.rows.length === 0 ? (
           <div className="sa-empty">
             <div className="sa-empty-text">

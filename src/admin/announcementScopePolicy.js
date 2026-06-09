@@ -158,7 +158,7 @@ export function getAnnouncementDestinationLabels(policy) {
       },
       pastorsSubtitle: "",
       broadcastSubtitle:
-        "Send announcements to approved unit members in your sub-unit by email and/or SMS.",
+        "Send announcements to approved unit members in your sub-unit by email and/or push notification.",
       leaderModeOptions: LEADER_MODES_DEFAULT,
       leaderModeDisplay: {
         all: "All leaders",
@@ -184,7 +184,7 @@ export function getAnnouncementDestinationLabels(policy) {
       },
       pastorsSubtitle: "Satellite Pastor admins at churches within your state/region.",
       broadcastSubtitle:
-        "Broadcast to service unit members, service unit heads, or satellite pastors within your state by email and/or SMS.",
+        "Broadcast to service unit members, service unit heads, or satellite pastors within your state by email and/or push notification.",
       leaderModeOptions: BRANCH_AUDIENCE_LEADER_MODES,
       leaderModeDisplay: BRANCH_AUDIENCE_LEADER_DISPLAY,
       allRolesLabel: "All satellite pastors",
@@ -205,7 +205,7 @@ export function getAnnouncementDestinationLabels(policy) {
       },
       pastorsSubtitle: "State Branch Pastors and Satellite Pastors",
       broadcastSubtitle:
-        "Broadcast to service unit members, service unit heads, or pastors by email and/or SMS.",
+        "Broadcast to service unit members, service unit heads, or pastors by email and/or push notification.",
       leaderModeOptions: BRANCH_AUDIENCE_LEADER_MODES,
       leaderModeDisplay: BRANCH_AUDIENCE_LEADER_DISPLAY,
       allRolesLabel: "All pastors",
@@ -225,7 +225,7 @@ export function getAnnouncementDestinationLabels(policy) {
       },
       pastorsSubtitle: "",
       broadcastSubtitle:
-        "Broadcast to service unit members or sub-unit leaders within your service unit by email and/or SMS.",
+        "Broadcast to service unit members or sub-unit leaders within your service unit by email and/or push notification.",
       leaderModeOptions: LEADER_MODES_SERVICE_UNIT,
       leaderModeDisplay: LEADER_DISPLAY_SERVICE_UNIT,
       allRolesLabel: "All sub-unit leaders",
@@ -245,7 +245,7 @@ export function getAnnouncementDestinationLabels(policy) {
       },
       pastorsSubtitle: "",
       broadcastSubtitle:
-        "Broadcast to service unit members or service unit heads by email and/or SMS.",
+        "Broadcast to service unit members or service unit heads by email and/or push notification.",
       leaderModeOptions: LEADER_MODES_SATELLITE,
       leaderModeDisplay: SATELLITE_LEADER_DISPLAY,
       allRolesLabel: "All admins",
@@ -263,7 +263,7 @@ export function getAnnouncementDestinationLabels(policy) {
       admins: "Admins",
     },
     pastorsSubtitle: "",
-    broadcastSubtitle: "Broadcast to members, leaders, or admins by email and/or SMS.",
+    broadcastSubtitle: "Broadcast to members, leaders, or admins by email and/or push notification.",
     leaderModeOptions: LEADER_MODES_DEFAULT,
     leaderModeDisplay: {
       all: "All leaders",

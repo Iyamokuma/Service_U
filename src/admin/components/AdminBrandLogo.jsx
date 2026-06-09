@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SMH_LOGO_ALT, SMH_LOGO_SRC } from "../brandLogo.js";
+import { SMH_LOGO_ALT, SMH_LOGO_SRC } from "../../brandLogo.js";
 
 const VARIANT_CLASS = {
   sidebar: "sa-brand-logo",

@@ -25,16 +25,22 @@ export function isPlatformAdminRole(role: unknown): boolean {
   return r === "super_admin" || r === "general_admin";
 }
 
-/** Set ADMIN_EMAIL_INVITES=true in Supabase secrets to send Resend invite links on create. */
+/** Resend must be configured (RESEND_API_KEY, RESEND_FROM_EMAIL, ADMIN_APP_URL). */
 export function isEmailInviteEnabled(): boolean {
   const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
   const v = norm(denoEnv?.get?.("ADMIN_EMAIL_INVITES") || "").toLowerCase();
-  return v === "true" || v === "1" || v === "yes";
+  if (v === "false" || v === "0" || v === "no") return false;
+  return true;
 }
 
-export function usesInviteOnCreate(actorRole: unknown): boolean {
-  if (!isEmailInviteEnabled()) return false;
-  return isPlatformAdminRole(actorRole);
+/** All new admin accounts are invite-only (except Super Admin bootstrap). */
+export function usesInviteOnCreate(_actorRole: unknown): boolean {
+  if (!isEmailInviteEnabled()) {
+    throw new Error(
+      "Admin invites are required. Configure RESEND_API_KEY, RESEND_FROM_EMAIL, and ADMIN_APP_URL on the server.",
+    );
+  }
+  return true;
 }
 
 export async function generateInviteToken(): Promise<string> {
@@ -96,10 +102,26 @@ export function shapeAdminForClient(
   };
 }
 
+const ROLE_INVITE_LABELS: Record<string, string> = {
+  general_admin: "General Admin",
+  country_super_admin: "Country Admin",
+  state_super_admin: "State Branch Admin",
+  satellite_church_admin: "Satellite Pastor Admin",
+  service_unit_leader: "Service Unit Leader",
+  sub_unit_leader: "Sub-Unit Leader",
+  data_entry_admin: "Data Entry Admin",
+};
+
+export function inviteRoleLabel(role: unknown): string {
+  const r = norm(role);
+  return ROLE_INVITE_LABELS[r] || "Admin";
+}
+
 export async function sendAdminInviteEmail(
   to: string,
   fullName: string,
   inviteUrl: string,
+  role = "",
 ): Promise<boolean> {
   const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
   const key = denoEnv?.get?.("RESEND_API_KEY") || "";
@@ -107,12 +129,14 @@ export async function sendAdminInviteEmail(
   const email = norm(to).toLowerCase();
   if (!key || !from || !email || !inviteUrl) return false;
 
-  const subject = "Your Salvation Ministries admin account";
+  const roleLabel = inviteRoleLabel(role);
+  const subject = "Activate your Salvation Ministries admin account";
   const html = `
     <p>Hello ${fullName || "there"},</p>
-    <p>A Super Admin created an admin account for you on the Salvation Ministries dashboard.</p>
-    <p><a href="${inviteUrl}">Activate your account and set your password</a></p>
-    <p>This link expires in 72 hours. If it expires, ask your Super Admin to resend the invitation.</p>
+    <p>You have been invited as <strong>${roleLabel}</strong> on the Salvation Ministries admin dashboard.</p>
+    <p><a href="${inviteUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Activate account &amp; set password</a></p>
+    <p style="font-size:14px;color:#444;">Or copy this link: <a href="${inviteUrl}">${inviteUrl}</a></p>
+    <p>This link expires in <strong>72 hours</strong>. After activation, sign in with <strong>${email}</strong> and the password you choose.</p>
     <p style="color:#666;font-size:13px;">If you did not expect this email, you can ignore it.</p>
   `;
 

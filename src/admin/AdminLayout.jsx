@@ -4,6 +4,7 @@ import { AdminBrandLogo } from "./components/AdminBrandLogo.jsx";
 import { GlobalAdminGeoFilterBar } from "./components/GlobalAdminGeoFilterBar.jsx";
 import { AdminGeoFilterProvider } from "./AdminGeoFilterContext.jsx";
 import { AdminViewModeFloat } from "./components/AdminViewModeFloat.jsx";
+import { NotificationBell } from "./components/NotificationBell.jsx";
 import { Overview } from "./pages/Overview.jsx";
 import { Queue } from "./pages/Queue.jsx";
 import { ServiceUnits } from "./pages/ServiceUnits.jsx";
@@ -31,6 +32,7 @@ import {
   isActingAsStateAdmin,
   isStateLevelUi,
   normalizePageForViewMode,
+  normalizeGlobalAdminPage,
   normalizeStateAdminPage,
   normalizeSatelliteAdminPage,
   normalizeServiceUnitLeaderPage,
@@ -131,6 +133,9 @@ export function AdminLayout() {
     if (admin.role === "sub_unit_leader") {
       return normalizeSubUnitLeaderPage(page);
     }
+    if (isGlobalAdminRole(admin.role)) {
+      return normalizeGlobalAdminPage(page);
+    }
     return page;
   }, [page, admin, viewMode]);
 
@@ -181,7 +186,6 @@ export function AdminLayout() {
 
   useEffect(() => {
     if (!admin) return;
-    api.populateDemoData();
     loadUnits();
     loadAdmins();
   }, [admin, loadUnits, loadAdmins]);
@@ -204,6 +208,8 @@ export function AdminLayout() {
       setPage((p) => normalizeServiceUnitLeaderPage(p));
     } else if (admin.role === "sub_unit_leader") {
       setPage((p) => normalizeSubUnitLeaderPage(p));
+    } else if (isGlobalAdminRole(admin.role)) {
+      setPage((p) => normalizeGlobalAdminPage(p));
     } else if (admin.role === "data_entry_admin") {
       setPage((p) =>
         [
@@ -220,13 +226,13 @@ export function AdminLayout() {
     }
   }, [admin?.id, admin?.role, admin?.branch_state, viewMode, setPage]);
 
-  // Fetch pending count for sidebar badge
+  // Sidebar badges — refresh on login and when returning to queue/requests pages
   useEffect(() => {
     if (!admin) return;
     api.queue({ status: "new", per_page: 1, viewer: admin })
       .then((r) => setPendingCount(r.pagination?.total ?? 0))
       .catch(() => {});
-  }, [page, admin]);
+  }, [admin?.id, contentPage]);
 
   useEffect(() => {
     if (!admin) {
@@ -241,15 +247,10 @@ export function AdminLayout() {
       return;
     }
     api
-      .requests({ per_page: 500, page: 1 })
-      .then((r) => {
-        const pending = (r.data || []).filter(
-          (req) => req.status === "open" || req.status === "in_review",
-        ).length;
-        setOpenRequestCount(pending);
-      })
+      .requestOpenCount()
+      .then((r) => setOpenRequestCount(r.open ?? 0))
       .catch(() => {});
-  }, [page, admin, actingAsState]);
+  }, [admin?.id, actingAsState, contentPage]);
 
   useEffect(() => {
     try { localStorage.setItem("sm_admin_theme", theme); } catch { /* ignore */ }
@@ -285,6 +286,10 @@ export function AdminLayout() {
             </div>
           </div>
           <div className="sa-topbar-right">
+            <NotificationBell
+              onNavigateQueue={() => navigateToQueue("new")}
+              onNavigateAnnouncements={() => setPage("announcements")}
+            />
             <button
               type="button"
               className="sa-theme-toggle"

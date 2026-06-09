@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { api } from "../api.js";
 import { leaderScopeLabel } from "../leaderScope.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 export function RoleDashboard({ setPage }) {
   const { admin } = useAdminAuth();
@@ -88,10 +89,7 @@ function SatellitePastorDashboard({ setPage, admin }) {
       )}
 
       {loading ? (
-        <div className="sa-loading">
-          <div className="sa-spinner" />
-          <span>Loading dashboard...</span>
-        </div>
+        <SmhLoader label="Loading dashboard" />
       ) : (
         <>
           <div className="sa-stat-grid">

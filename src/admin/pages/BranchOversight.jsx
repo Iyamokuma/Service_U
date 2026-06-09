@@ -9,6 +9,7 @@ import { isCountrySuperAdmin, isStateSuperAdmin, isSupervisoryBranchRole } from 
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { leaderScopeLabel } from "../leaderScope.js";
 import { RegistrationDetails, fmtDate, fullName } from "./Queue.jsx";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
 
@@ -294,10 +295,7 @@ export function BranchOversight({ units }) {
 
         <div className="sa-table-wrap">
           {loading ? (
-            <div className="sa-loading">
-              <div className="sa-spinner" />
-              <span>Loading…</span>
-            </div>
+            <SmhLoader label="Loading applications" />
           ) : rows.length === 0 ? (
             <div className="sa-empty">
               <div className="sa-empty-icon">📋</div>

@@ -9,6 +9,21 @@ function up(s: unknown): string {
   return norm(s).toUpperCase();
 }
 
+/** Leaders may see legacy registrations with no satellite_site yet. */
+function satelliteSiteMatchesScope(adminSat: string, rowSatellite: unknown): boolean {
+  const sat = norm(adminSat);
+  if (!sat) return true;
+  const rowSat = norm(rowSatellite);
+  return !rowSat || rowSat === sat;
+}
+
+// deno-lint-ignore no-explicit-any
+function applyLeaderSatelliteSiteScope(q: any, sat: string): any {
+  const site = norm(sat);
+  if (!site) return q;
+  return q.in("satellite_site", [site, ""]);
+}
+
 /** Country Admin in State view: scope data to headquarters state only (Country Admin account only). */
 export function effectiveScopeAdmin(admin: AdminRow, scopeMode?: unknown): AdminRow {
   const role = norm(admin.role);
@@ -60,7 +75,7 @@ export function applyRegistrationScopeQuery(q: any, admin: AdminRow, scopeMode?:
     const sat = norm(admin.satellite_site);
     if (c) q2 = q2.eq("branch_country", c);
     if (st) q2 = q2.eq("branch_state", st);
-    if (sat) q2 = q2.eq("satellite_site", sat);
+    q2 = applyLeaderSatelliteSiteScope(q2, sat);
     return q2;
   }
   return q;
@@ -94,7 +109,7 @@ export function canAccessRegistration(admin: AdminRow, row: Record<string, unkno
     const sat = norm(admin.satellite_site);
     if (c && up(row.branch_country) !== c) return false;
     if (st && up(row.branch_state) !== st) return false;
-    if (sat && norm(row.satellite_site) !== sat) return false;
+    if (!satelliteSiteMatchesScope(sat, row.satellite_site)) return false;
     return true;
   }
   return false;

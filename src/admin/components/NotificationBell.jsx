@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
-export function NotificationBell({ onNavigateQueue }) {
+export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -82,7 +83,9 @@ export function NotificationBell({ onNavigateQueue }) {
           </div>
           <div className="sa-notify-list">
             {loading && items.length === 0 ? (
-              <div className="sa-notify-empty">Loading…</div>
+              <div className="sa-notify-empty">
+                <SmhLoader label="Loading notifications" variant="compact" size={32} />
+              </div>
             ) : items.length === 0 ? (
               <div className="sa-notify-empty">No notifications yet.</div>
             ) : (
@@ -94,13 +97,25 @@ export function NotificationBell({ onNavigateQueue }) {
                   tabIndex={0}
                   onClick={() => {
                     if (!n.read_at) markRead(n.id);
-                    if (n.type === "overdue_application" && onNavigateQueue) onNavigateQueue();
+                    if (n.type === "overdue_application" && onNavigateQueue) {
+                      onNavigateQueue();
+                      setOpen(false);
+                    } else if (n.type === "announcement" && onNavigateAnnouncements) {
+                      onNavigateAnnouncements();
+                      setOpen(false);
+                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       if (!n.read_at) markRead(n.id);
-                      if (n.type === "overdue_application" && onNavigateQueue) onNavigateQueue();
+                      if (n.type === "overdue_application" && onNavigateQueue) {
+                        onNavigateQueue();
+                        setOpen(false);
+                      } else if (n.type === "announcement" && onNavigateAnnouncements) {
+                        onNavigateAnnouncements();
+                        setOpen(false);
+                      }
                     }
                   }}
                 >

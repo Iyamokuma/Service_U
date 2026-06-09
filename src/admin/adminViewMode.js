@@ -51,6 +51,26 @@ export function adminApiScopeParams(admin) {
   return { scope_mode: readAdminViewMode(admin.id) === "state" ? "state" : "country" };
 }
 
+export const GLOBAL_ADMIN_PAGES = [
+  "overview",
+  "queue",
+  "units",
+  "members",
+  "locations",
+  "branch-catalog",
+  "admins",
+  "announcements",
+  "requests",
+  "activity",
+  "settings",
+];
+
+/** Super / General Admin nav — invalid stored pages fall back to Overview. */
+export function normalizeGlobalAdminPage(page) {
+  if (GLOBAL_ADMIN_PAGES.includes(page)) return page;
+  return "overview";
+}
+
 const COUNTRY_PAGES = [
   "overview",
   "oversight",

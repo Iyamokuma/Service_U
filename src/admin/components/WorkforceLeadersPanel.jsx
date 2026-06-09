@@ -183,9 +183,9 @@ export function WorkforceLeadersPanel({
                 <tr>
                   <th>Name</th>
                   {showRoleFilter ? <th>Role</th> : null}
-                  <th>Service unit</th>
-                  <th>Sub-unit</th>
-                  <th>Location</th>
+                  <th className="sa-leader-col-unit">Service unit</th>
+                  <th className="sa-leader-col-sub">Sub-unit</th>
+                  <th className="sa-leader-col-location">Location</th>
                   <th>Status</th>
                   {onOpenActions ? <th>Actions</th> : null}
                 </tr>
@@ -196,11 +196,18 @@ export function WorkforceLeadersPanel({
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
                       <div className="sa-text-sm sa-text-muted">{r.email || r.username}</div>
+                      {!showRoleFilter && r.role === "sub_unit_leader" ? (
+                        <div className="sa-text-sm sa-text-muted sa-leader-row-meta">
+                          {[r.unitName, r.subUnit !== "—" ? r.subUnit : "", r.location !== "—" ? r.location : ""]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      ) : null}
                     </td>
                     {showRoleFilter ? <td className="sa-text-sm">{r.roleLabel}</td> : null}
-                    <td className="sa-text-sm">{r.unitName}</td>
-                    <td className="sa-text-sm">{r.subUnit}</td>
-                    <td className="sa-text-sm">{r.location}</td>
+                    <td className="sa-text-sm sa-leader-col-unit">{r.unitName}</td>
+                    <td className="sa-text-sm sa-leader-col-sub">{r.subUnit}</td>
+                    <td className="sa-text-sm sa-leader-col-location">{r.location}</td>
                     <td>
                       <span className={`sa-badge ${isAdminActive(r) ? "active" : "inactive"}`}>
                         {isAdminActive(r) ? "Active" : "Inactive"}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 
@@ -70,7 +71,7 @@ export function ActivityLog() {
           <button className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setFilters({ search: "", action: "", admin_id: "", entity: "", from: "", to: "" })}>Clear</button>
           <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{pag.total} event{pag.total !== 1 ? "s" : ""}</span>
         </div>
-        {loading ? <div className="sa-loading"><div className="sa-spinner"/><span>Loading…</span></div> : rows.length === 0 ? <div className="sa-empty"><div className="sa-empty-icon">📋</div><div className="sa-empty-text">No activity found.</div></div> : (
+        {loading ? <SmhLoader label="Loading activity" /> : rows.length === 0 ? <div className="sa-empty"><div className="sa-empty-icon">📋</div><div className="sa-empty-text">No activity found.</div></div> : (
           <div style={{ padding: "8px 20px" }}><ul className="sa-activity-list">{rows.map((a) => { const cls = actionDotClass(a.action); return <li key={a.id} className="sa-activity-item"><div className={`sa-activity-dot ${cls}`}>{actionIcon(cls)}</div><div className="sa-activity-info"><div className="sa-activity-desc"><strong>{a.admin_name || "System"}</strong>{" — "}{a.description || a.action}</div><div className="sa-activity-meta"><span className="sa-badge viewer" style={{ fontSize: 10, padding: "1px 6px" }}>{a.action}</span>{a.entity_type && <> · {a.entity_type} #{a.entity_id}</>}{a.ip_address && <> · {a.ip_address}</>}{" · "}{fmtDateTime(a.created_at)}</div></div></li>; })}</ul></div>
         )}
         {pag.pages > 1 && <div className="sa-pagination"><span>Page {pag.page} of {pag.pages} ({pag.total} total)</span><div className="sa-pag-btns"><button className="sa-pag-btn" disabled={pag.page <= 1} onClick={() => gotoPage(pag.page - 1)}>‹</button>{Array.from({ length: Math.min(7, pag.pages) }, (_, i) => { const p = pag.page <= 4 ? i + 1 : pag.page - 3 + i; if (p > pag.pages) return null; return <button key={p} className={`sa-pag-btn${p === pag.page ? " active" : ""}`} onClick={() => gotoPage(p)}>{p}</button>; })}<button className="sa-pag-btn" disabled={pag.page >= pag.pages} onClick={() => gotoPage(pag.page + 1)}>›</button></div></div>}

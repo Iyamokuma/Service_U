@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { signAdminToken } from "../_shared/jwt.ts";
 import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
-import { isPlatformAdminRole, shapeAdminForClient } from "../_shared/admin_invite.ts";
+import { shapeAdminForClient } from "../_shared/admin_invite.ts";
 import {
   createLoginOtpChallenge,
   LOGIN_OTP_EXPIRES_SEC,
@@ -52,31 +52,26 @@ async function findAdminForLogin(
   supabase: ReturnType<typeof createClient>,
   loginId: string,
 ): Promise<AdminRow | null> {
+  const normalized = normText(loginId).toLowerCase();
+  if (!normalized) return null;
+
   const { data: byEmail, error: emailErr } = await supabase
     .from("admins")
     .select("*")
     .eq("is_active", 1)
-    .ilike("email", loginId)
+    .ilike("email", normalized)
     .maybeSingle();
   if (emailErr) throw new Error(emailErr.message);
+  if (byEmail) return byEmail;
 
-  let admin: AdminRow | null = byEmail;
-  if (!admin) {
-    const { data: byUsername, error: userErr } = await supabase
-      .from("admins")
-      .select("*")
-      .eq("is_active", 1)
-      .ilike("username", loginId)
-      .maybeSingle();
-    if (userErr) throw new Error(userErr.message);
-    if (byUsername && isPlatformAdminRole(byUsername.role)) admin = byUsername as AdminRow;
-  }
-
-  if (admin && !isPlatformAdminRole(admin.role) && normText(admin.email).toLowerCase() !== loginId) {
-    admin = null;
-  }
-
-  return admin;
+  const { data: byUsername, error: userErr } = await supabase
+    .from("admins")
+    .select("*")
+    .eq("is_active", 1)
+    .ilike("username", normalized)
+    .maybeSingle();
+  if (userErr) throw new Error(userErr.message);
+  return byUsername;
 }
 
 function assertPasswordAndInviteGate(admin: AdminRow, password: string): void {
@@ -125,10 +120,15 @@ async function issueAdminSession(
   return { token, admin: shaped };
 }
 
+function isRootSuperAdminRole(role: unknown): boolean {
+  return normText(role) === "super_admin";
+}
+
 async function handleStartLogin(
   supabase: ReturnType<typeof createClient>,
   loginId: string,
   password: string,
+  jwtSecret: string,
   req: Request,
 ) {
   const admin = await findAdminForLogin(supabase, loginId);
@@ -142,6 +142,10 @@ async function handleStartLogin(
     throw new Error("Invalid credentials.");
   }
 
+  if (isRootSuperAdminRole(admin.role)) {
+    return issueAdminSession(supabase, admin, jwtSecret, req, "Super Admin logged in");
+  }
+
   const email = normText(admin.email).toLowerCase();
   if (!email) {
     throw new Error("This account has no email on file. Ask your Super Admin to add one before signing in.");
@@ -150,22 +154,16 @@ async function handleStartLogin(
   const ip = clientIp(req);
   const { challengeId, code } = await createLoginOtpChallenge(supabase, Number(admin.id), ip);
   const sent = await sendLoginOtpEmail(email, String(admin.full_name || ""), code);
-  if (!sent) {
-    await supabase.from("admin_login_otp_challenges").update({
-      used_at: new Date().toISOString(),
-    }).eq("id", challengeId);
-    throw new Error(
-      "Could not send your login code. Check email configuration or try again in a few minutes.",
-    );
-  }
 
   await supabase.from("activity_logs").insert({
     admin_id: admin.id,
     admin_name: admin.full_name,
-    action: "admin.login_otp_sent",
+    action: sent ? "admin.login_otp_sent" : "admin.login_otp_send_failed",
     entity_type: "admin",
     entity_id: String(admin.id),
-    description: "Login verification code emailed",
+    description: sent
+      ? "Login verification code emailed"
+      : "Login verification code created but email delivery failed",
     ip_address: ip,
   });
 
@@ -175,6 +173,13 @@ async function handleStartLogin(
     email_masked: maskEmail(email),
     expires_in: LOGIN_OTP_EXPIRES_SEC,
     resend_after: LOGIN_OTP_RESEND_SEC,
+    email_sent: sent,
+    ...(sent
+      ? {}
+      : {
+        message:
+          "We could not email your code yet. Wait a moment, then tap Resend code on the next screen.",
+      }),
   };
 }
 
@@ -267,7 +272,7 @@ Deno.serve(async (req) => {
       const loginId = normText(body.email || body.username).toLowerCase();
       const password = normText(body.password);
       if (!loginId || !password) return json(400, { error: "Email and password are required." });
-      const result = await handleStartLogin(supabase, loginId, password, req);
+      const result = await handleStartLogin(supabase, loginId, password, jwtSecret, req);
       return json(200, result);
     }
 

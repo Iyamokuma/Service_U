@@ -77,8 +77,8 @@ Deno.serve(async (req) => {
       unit_id: body.unit_id != null && body.unit_id !== "" ? Number(body.unit_id) : null,
       unit_name: String(body.unit_name ?? ""),
       sub_unit: String(body.sub_unit ?? ""),
-      status: String(body.status ?? "new") || "new",
-      notes: String(body.notes ?? ""),
+      status: "new",
+      notes: "",
       submitted_at: String(body.submitted_at ?? new Date().toISOString()),
       photo_path: String(body.photo_path ?? ""),
     };

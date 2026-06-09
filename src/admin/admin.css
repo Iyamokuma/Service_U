@@ -141,6 +141,19 @@
   line-height: 1.5;
 }
 .sa-login-err { background: var(--sa-danger-bg); color: #b91c1c; border-radius: 12px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; border: 1px solid #fecaca; }
+.sa-login-warn {
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  border: 1px solid #fde68a;
+  line-height: 1.45;
+}
+.sa-login-page-loader {
+  min-height: 40vh;
+}
 .sa-login-badge {
   margin-top: 20px; text-align: center; font-size: 11px; color: #94a3b8;
   padding-top: 20px; border-top: 1px solid #f1f5f9;
@@ -2310,6 +2323,11 @@
 .sa-login-btn .sa-login-btn-loader {
   padding: 0;
   margin: 0 auto;
+}
+.sa-login-otp-pending {
+  margin: 12px 0 0;
+  text-align: center;
+  line-height: 1.45;
 }
 .sa-login-otp-input {
   text-align: center;

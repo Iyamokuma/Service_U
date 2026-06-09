@@ -9,6 +9,7 @@ import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnaly
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
 import { StatusDonut } from "../components/StatusDonut.jsx";
 import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function fmtDate(d) {
@@ -97,16 +98,12 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
     setSubUnit("");
     setStatus("all");
     setSex("");
-    setFrom("");
-    setTo("");
+    setSubmittedDate("");
   };
 
   if (loading && !data) {
     return (
-      <div className="sa-loading">
-        <div className="sa-spinner" />
-        <span>Loading…</span>
-      </div>
+      <SmhLoader label="Loading overview" />
     );
   }
   if (!data) {
@@ -459,10 +456,7 @@ export function Overview({ units, setPage, navigateToQueue }) {
 
   if (loading) {
     return (
-      <div className="sa-loading">
-        <div className="sa-spinner" />
-        <span>Loading…</span>
-      </div>
+      <SmhLoader label="Loading overview" />
     );
   }
   if (!data) {

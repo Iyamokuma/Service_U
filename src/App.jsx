@@ -14,6 +14,7 @@ import { SERVICE_UNITS, isEmail, isPhone, registrationSubmitFieldErrors } from "
 import { shrinkPhotoDataUrl } from "./photoCompress.js";
 import { isSupabaseSubmitConfigured, submitRegistration } from "./registrationSubmit.js";
 import { fetchServiceUnitsCatalog } from "./serviceUnitsCatalog.js";
+import { FormTopBrand } from "./components/FormTopBrand.jsx";
 
 function firstValidationErrorEl() {
   return (
@@ -283,12 +284,7 @@ export default function App() {
   if (done) {
     return (
       <div className="page">
-        <header className="brand">
-          <div className="brand-mark">S</div>
-          <div className="brand-name">Salvation Ministries</div>
-          <div className="brand-divider" />
-          <div className="brand-meta">Form · v1.0</div>
-        </header>
+        <FormTopBrand />
         <div className="success">
           <div className="success-mark">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -315,12 +311,7 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="brand">
-        <div className="brand-mark">S</div>
-        <div className="brand-name">Salvation Ministries</div>
-        <div className="brand-divider" />
-        <div className="brand-meta">Form · v1.0</div>
-      </header>
+      <FormTopBrand />
 
       <section className="hero">
         <div className="hero-eyebrow">Service Unit Registration</div>

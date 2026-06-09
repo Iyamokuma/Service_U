@@ -27,7 +27,7 @@ const emptyForm = () => ({
   body: "",
   destination_type: "members",
   medium_email: true,
-  medium_sms: false,
+  medium_push: true,
   scheduled_at: "",
   members: { branch_country: "", branch_state: "", satellite_site: "", service_unit_id: "", sub_unit: "" },
   leaders: { mode: "all", branch_country: "", branch_state: "", satellite_site: "", service_unit_id: "", sub_unit: "" },
@@ -234,7 +234,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       destination_type,
       destination_config,
       medium_email: form.medium_email,
-      medium_sms: form.medium_sms,
+      medium_push: form.medium_push,
       workflow_action,
       scheduled_at: workflow_action === "schedule" ? form.scheduled_at : "",
     };
@@ -242,7 +242,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
 
   function validate() {
     if (!form.title.trim() || !form.body.trim()) return "Title and message are required.";
-    if (!form.medium_email && !form.medium_sms) return "Select at least one medium: Email or SMS.";
+    if (!form.medium_email && !form.medium_push) {
+      return "Select at least one medium: Email or Push notification.";
+    }
     if (policy.membersOnly && form.destination_type !== "members") {
       return "Sub-unit leaders may only send announcements to their unit members.";
     }
@@ -739,12 +741,16 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             <label className="sa-field-toggle" style={{ cursor: "pointer" }}>
               <input
                 type="checkbox"
-                checked={form.medium_sms}
-                onChange={(e) => setForm((f) => ({ ...f, medium_sms: e.target.checked }))}
+                checked={form.medium_push}
+                onChange={(e) => setForm((f) => ({ ...f, medium_push: e.target.checked }))}
               />
-              <span className="sa-field-toggle-label">SMS</span>
+              <span className="sa-field-toggle-label">Push notification</span>
             </label>
           </div>
+          <p className="sa-field-hint" style={{ marginTop: 8, marginBottom: 0 }}>
+            Email sends to recipient addresses. Push delivers in-app notifications to admin accounts in your audience
+            (leaders and pastors).
+          </p>
         </div>
         <div className="sa-field" style={{ marginBottom: 0 }}>
           <label className="sa-field-toggle sa-ann-schedule-toggle">

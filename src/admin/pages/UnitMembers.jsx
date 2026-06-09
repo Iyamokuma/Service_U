@@ -9,6 +9,7 @@ import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "..
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
+import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 export function UnitMembers({
   units,
@@ -407,10 +408,7 @@ export function UnitMembers({
 
         <div className="sa-table-wrap">
           {loading ? (
-            <div className="sa-loading">
-              <div className="sa-spinner" />
-              <span>Loading…</span>
-            </div>
+            <SmhLoader label="Loading members" />
           ) : (
             <table className="sa-table">
               <thead>
@@ -421,7 +419,7 @@ export function UnitMembers({
                   <th>Email</th>
                   <th>Unit</th>
                   <th>Sub-unit</th>
-                  {simpleSearchGeo && !isSubUnitLeaderGeo ? <th>Location</th> : null}
+                  {simpleSearchGeo ? <th>Location</th> : null}
                   <th>Submitted</th>
                 </tr>
               </thead>
@@ -436,7 +434,7 @@ export function UnitMembers({
                     <td>{r.email || "—"}</td>
                     <td>{r.unit_name}</td>
                     <td>{r.sub_unit || "—"}</td>
-                    {simpleSearchGeo && !isSubUnitLeaderGeo ? (
+                    {simpleSearchGeo ? (
                       <td className="sa-text-sm">
                         {[r.satellite_site, branchStateLabel(countryCode, r.branch_state)]
                           .filter(Boolean)
@@ -448,7 +446,7 @@ export function UnitMembers({
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={simpleSearchGeo && !isSubUnitLeaderGeo ? 8 : 7} className="sa-empty-text" style={{ textAlign: "center", padding: "20px" }}>
+                    <td colSpan={simpleSearchGeo ? 8 : 7} className="sa-empty-text" style={{ textAlign: "center", padding: "20px" }}>
                       No approved members found.
                     </td>
                   </tr>
