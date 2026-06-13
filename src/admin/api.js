@@ -168,6 +168,26 @@ export const api = {
     return adminLoginFetch("resendOtp", { challenge_id: String(challengeId || "").trim() });
   },
 
+  async sendLoginEmailOtp(challengeId) {
+    return adminLoginFetch("sendOtp", { challenge_id: String(challengeId || "").trim() });
+  },
+
+  async verifyDualLoginOtp(challengeId, emailOtp, totp) {
+    return adminLoginFetch("verifyDualOtp", {
+      challenge_id: String(challengeId || "").trim(),
+      email_otp: String(emailOtp || "").trim(),
+      totp: String(totp || "").trim(),
+    });
+  },
+
+  async startTotpEnrollment() {
+    return adminFetch("startTotpEnrollment", {});
+  },
+
+  async confirmTotpEnrollment(code) {
+    return adminFetch("confirmTotpEnrollment", { code: String(code || "").trim() });
+  },
+
   async validateInvite(token) {
     return adminInviteFetch("validateInvite", { token: String(token || "").trim() });
   },

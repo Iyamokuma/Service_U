@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { signAdminToken } from "../_shared/jwt.ts";
 import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
 import { shapeAdminForClient } from "../_shared/admin_invite.ts";
+import { isRootSuperAdminRole, verifyAdminTotp } from "../_shared/admin_totp.ts";
 import {
   createLoginOtpChallenge,
   LOGIN_OTP_EXPIRES_SEC,
@@ -9,6 +10,8 @@ import {
   maskEmail,
   resendLoginOtpChallenge,
   sendLoginOtpEmail,
+  sendLoginOtpForChallenge,
+  verifyDualLoginChallenge,
   verifyLoginOtpChallenge,
 } from "../_shared/admin_login_otp.ts";
 
@@ -48,6 +51,10 @@ function clientIp(req: Request): string {
 
 type AdminRow = Record<string, unknown>;
 
+function isTotpEnabled(admin: AdminRow): boolean {
+  return admin.totp_enabled === true || Number(admin.totp_enabled) === 1;
+}
+
 async function findAdminForLogin(
   supabase: ReturnType<typeof createClient>,
   loginId: string,
@@ -86,6 +93,18 @@ function assertPasswordAndInviteGate(admin: AdminRow, password: string): void {
   }
 }
 
+async function touchDashboardActivated(
+  supabase: ReturnType<typeof createClient>,
+  admin: AdminRow,
+) {
+  if (isRootSuperAdminRole(admin.role)) return;
+  if (admin.dashboard_activated_at) return;
+  await supabase
+    .from("admins")
+    .update({ dashboard_activated_at: new Date().toISOString() })
+    .eq("id", admin.id);
+}
+
 async function issueAdminSession(
   supabase: ReturnType<typeof createClient>,
   admin: AdminRow,
@@ -95,6 +114,7 @@ async function issueAdminSession(
 ) {
   const now = new Date().toISOString();
   await supabase.from("admins").update({ last_login: now }).eq("id", admin.id);
+  await touchDashboardActivated(supabase, admin);
 
   const resolved = await ensureCountryAdminHeadquarters(supabase, admin);
 
@@ -115,13 +135,10 @@ async function issueAdminSession(
     service_unit_name = String(u?.name || "");
   }
 
+  const { data: fresh } = await supabase.from("admins").select("*").eq("id", resolved.id).maybeSingle();
   const token = await signAdminToken(Number(resolved.id), jwtSecret);
-  const shaped = shapeAdminForClient(resolved as Record<string, unknown>, service_unit_name);
+  const shaped = shapeAdminForClient((fresh || resolved) as Record<string, unknown>, service_unit_name);
   return { token, admin: shaped };
-}
-
-function isRootSuperAdminRole(role: unknown): boolean {
-  return normText(role) === "super_admin";
 }
 
 async function handleStartLogin(
@@ -153,7 +170,24 @@ async function handleStartLogin(
 
   const ip = clientIp(req);
   const { challengeId, code } = await createLoginOtpChallenge(supabase, Number(admin.id), ip);
+
+  if (isTotpEnabled(admin)) {
+    return {
+      step: "dual_verify_required",
+      challenge_id: challengeId,
+      email_masked: maskEmail(email),
+      expires_in: LOGIN_OTP_EXPIRES_SEC,
+      resend_after: 0,
+      email_sent: false,
+    };
+  }
+
   const sent = await sendLoginOtpEmail(email, String(admin.full_name || ""), code);
+  if (sent) {
+    await supabase.from("admin_login_otp_challenges").update({
+      otp_emailed_at: new Date().toISOString(),
+    }).eq("id", challengeId);
+  }
 
   await supabase.from("activity_logs").insert({
     admin_id: admin.id,
@@ -178,7 +212,7 @@ async function handleStartLogin(
       ? {}
       : {
         message:
-          "We could not email your code yet. Wait a moment, then tap Resend code on the next screen.",
+          "We could not email your code yet. Wait a moment, then tap Send code on the next screen.",
       }),
   };
 }
@@ -198,6 +232,71 @@ async function handleVerifyOtp(
   }
 
   return issueAdminSession(supabase, admin as AdminRow, jwtSecret, req, "Admin logged in (email code verified)");
+}
+
+async function handleVerifyDualOtp(
+  supabase: ReturnType<typeof createClient>,
+  challengeId: string,
+  emailOtp: string,
+  totp: string,
+  jwtSecret: string,
+  req: Request,
+) {
+  const adminId = await verifyDualLoginChallenge(
+    supabase,
+    challengeId,
+    emailOtp,
+    totp,
+    (id, code) => verifyAdminTotp(supabase, id, code),
+  );
+  const { data: admin, error } = await supabase.from("admins").select("*").eq("id", adminId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!admin || Number(admin.is_active) !== 1) {
+    throw new Error("This account is no longer active.");
+  }
+  if (!isTotpEnabled(admin as AdminRow)) {
+    throw new Error("Authenticator is not enabled on this account.");
+  }
+
+  return issueAdminSession(
+    supabase,
+    admin as AdminRow,
+    jwtSecret,
+    req,
+    "Admin logged in (email + authenticator verified)",
+  );
+}
+
+async function handleSendOtp(
+  supabase: ReturnType<typeof createClient>,
+  challengeId: string,
+  req: Request,
+) {
+  const { code, email_masked, adminEmail, fullName, adminId } = await sendLoginOtpForChallenge(
+    supabase,
+    challengeId,
+  );
+  const sent = await sendLoginOtpEmail(adminEmail, fullName, code);
+  if (!sent) {
+    throw new Error("Could not send your login code. Try again shortly.");
+  }
+
+  await supabase.from("activity_logs").insert({
+    admin_id: adminId,
+    admin_name: fullName,
+    action: "admin.login_otp_sent",
+    entity_type: "admin",
+    entity_id: challengeId,
+    description: "Login verification code emailed",
+    ip_address: clientIp(req),
+  });
+
+  return {
+    ok: true,
+    email_masked,
+    expires_in: LOGIN_OTP_EXPIRES_SEC,
+    resend_after: LOGIN_OTP_RESEND_SEC,
+  };
 }
 
 async function handleResendOtp(
@@ -248,6 +347,8 @@ Deno.serve(async (req) => {
       password?: string;
       challenge_id?: string;
       otp?: string;
+      email_otp?: string;
+      totp?: string;
     };
 
     const op = normText(body.op) || "startLogin";
@@ -259,6 +360,24 @@ Deno.serve(async (req) => {
       if (!challengeId || !otp) return json(400, { error: "Missing challenge or code." });
       const session = await handleVerifyOtp(supabase, challengeId, otp, jwtSecret, req);
       return json(200, session);
+    }
+
+    if (op === "verifyDualOtp") {
+      const challengeId = normText(body.challenge_id);
+      const emailOtp = normText(body.email_otp || body.otp);
+      const totp = normText(body.totp);
+      if (!challengeId || !emailOtp || !totp) {
+        return json(400, { error: "Email code and authenticator code are required." });
+      }
+      const session = await handleVerifyDualOtp(supabase, challengeId, emailOtp, totp, jwtSecret, req);
+      return json(200, session);
+    }
+
+    if (op === "sendOtp") {
+      const challengeId = normText(body.challenge_id);
+      if (!challengeId) return json(400, { error: "Missing login session." });
+      const result = await handleSendOtp(supabase, challengeId, req);
+      return json(200, result);
     }
 
     if (op === "resendOtp") {

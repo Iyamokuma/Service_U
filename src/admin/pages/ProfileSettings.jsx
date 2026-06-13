@@ -4,6 +4,7 @@ import { useToast } from "../components/Toast.jsx";
 import { api } from "../api.js";
 import { isCountrySuperAdmin } from "../roles.js";
 import { CountryAdminHqSettings } from "../components/CountryAdminHqSettings.jsx";
+import { AdminTotpSecurity } from "../components/AdminTotpSecurity.jsx";
 import { availableHomeStatesForCountryAdmin } from "../stateAdminForm.js";
 
 export function ProfileSettings() {
@@ -83,6 +84,8 @@ export function ProfileSettings() {
 
   return (
     <>
+      <AdminTotpSecurity />
+
       {isCountryAdmin ? (
         <div className="sa-card" style={{ marginBottom: 16 }}>
           <div className="sa-card-body">

@@ -9,6 +9,7 @@ import {
 } from "./location_directory.ts";
 import { applyRegistrationScopeQuery, canAccessRegistration } from "./registration_scope.ts";
 import {
+  clampCriticalDays,
   clampOverdueDays,
   clearOverdueEscalation,
   enrichRowOverdue,
@@ -16,6 +17,8 @@ import {
   loadOverdueConfig,
   processOverdueEscalationsThrottled,
 } from "./overdue.ts";
+import { processRegistrationLeaderDigests } from "./registration_leader_notify.ts";
+import { sendRegistrationStatusEmail } from "./registration_status_email.ts";
 import { ADMIN_LIST_COLUMNS, REGISTRATION_QUEUE_COLUMNS } from "./registration_columns.ts";
 import {
   generateInviteToken,
@@ -29,6 +32,14 @@ import {
   shapeAdminForClient,
   usesInviteOnCreate,
 } from "./admin_invite.ts";
+import {
+  buildTotpUri,
+  encryptTotpSecret,
+  decryptTotpSecret,
+  generateTotpSecretBase32,
+  isRootSuperAdminRole,
+  verifyTotpCode,
+} from "./admin_totp.ts";
 
 type AdminRow = Record<string, unknown>;
 type Ctx = { admin: AdminRow; ip: string };
@@ -744,6 +755,96 @@ async function logActivity(
   });
 }
 
+async function handleStartTotpEnrollment(supabase: SupabaseClient, admin: AdminRow, ip: string) {
+  if (isRootSuperAdminRole(admin.role)) {
+    throw new Error("Super Admin accounts do not use authenticator MFA.");
+  }
+  if (admin.totp_enabled === true || Number(admin.totp_enabled) === 1) {
+    throw new Error("Authenticator is already enabled.");
+  }
+  const secret = generateTotpSecretBase32();
+  const enc = await encryptTotpSecret(secret);
+  const { error } = await supabase.from("admins").update({
+    totp_secret_encrypted: enc,
+    totp_enabled: false,
+  }).eq("id", admin.id);
+  if (error) throw new Error(error.message);
+  await logActivity(
+    supabase,
+    admin,
+    "admin.totp_enroll_started",
+    "admin",
+    String(admin.id),
+    "Authenticator enrollment started",
+    ip,
+  );
+  const email = String(admin.email || admin.username || "admin");
+  return {
+    otpauth_uri: buildTotpUri(secret, email),
+    secret_base32: secret,
+  };
+}
+
+async function handleConfirmTotpEnrollment(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  admin: AdminRow,
+  ip: string,
+) {
+  if (isRootSuperAdminRole(admin.role)) {
+    throw new Error("Super Admin accounts do not use authenticator MFA.");
+  }
+  const code = String(params.code || "").trim();
+  if (!code) throw new Error("Enter the code from your authenticator app.");
+
+  const { data: row, error } = await supabase
+    .from("admins")
+    .select("totp_secret_encrypted,totp_enabled,email")
+    .eq("id", admin.id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row) throw new Error("Account not found.");
+  if (row.totp_enabled === true || Number(row.totp_enabled) === 1) {
+    throw new Error("Authenticator is already enabled.");
+  }
+  const enc = String(row.totp_secret_encrypted || "").trim();
+  if (!enc) throw new Error("Start enrollment before confirming.");
+
+  const secret = await decryptTotpSecret(enc);
+  if (!verifyTotpCode(secret, code)) {
+    throw new Error("Incorrect code. Try again.");
+  }
+
+  const now = new Date().toISOString();
+  const { error: updErr } = await supabase.from("admins").update({
+    totp_enabled: true,
+    totp_enrolled_at: now,
+  }).eq("id", admin.id);
+  if (updErr) throw new Error(updErr.message);
+
+  await logActivity(
+    supabase,
+    admin,
+    "admin.totp_enrolled",
+    "admin",
+    String(admin.id),
+    "Authenticator MFA enabled",
+    ip,
+  );
+
+  let service_unit_name = "";
+  if (admin.service_unit_id != null) {
+    const { data: u } = await supabase.from("service_units").select("name").eq("id", admin.service_unit_id)
+      .maybeSingle();
+    service_unit_name = String(u?.name || "");
+  }
+  const { data: fresh } = await supabase.from("admins").select("*").eq("id", admin.id).maybeSingle();
+  return {
+    ok: true,
+    admin: shapeAdminForClient((fresh || admin) as Record<string, unknown>, service_unit_name),
+  };
+}
+
 export async function dispatchAdminOp(
   supabase: SupabaseClient,
   op: string,
@@ -860,6 +961,10 @@ export async function dispatchAdminOp(
       return handleCatalogDeleteChurch(supabase, params, admin, ip);
     case "catalogCreateLocation":
       return handleCatalogCreateLocation(supabase, params, admin, ip);
+    case "startTotpEnrollment":
+      return handleStartTotpEnrollment(supabase, admin, ip);
+    case "confirmTotpEnrollment":
+      return handleConfirmTotpEnrollment(supabase, params, admin, ip);
     default:
       throw new Error(`Unsupported op: ${op}`);
   }
@@ -904,6 +1009,7 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
   if (leaderRoles.includes(role)) {
     try {
       await processOverdueEscalationsThrottled(supabase);
+      await processRegistrationLeaderDigests(supabase);
     } catch {
       /* do not block queue */
     }
@@ -927,10 +1033,10 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
     if (params.filter_branch) oq = oq.eq("satellite_site", norm(params.filter_branch));
     const { data: rawOverdue, error: oErr } = await oq.limit(8000);
     if (oErr) throw new Error(oErr.message);
-    const { globalDays, unitThresholds } = await loadOverdueConfig(supabase);
+    const { globalDays, unitThresholds, criticalDays } = await loadOverdueConfig(supabase);
     const now = Date.now();
     let rows = (rawOverdue || [])
-      .map((r: Record<string, unknown>) => enrichRowOverdue(r, globalDays, unitThresholds, now))
+      .map((r: Record<string, unknown>) => enrichRowOverdue(r, globalDays, unitThresholds, criticalDays, now))
       .filter((r) => r.is_overdue);
     rows.sort((a, b) => Number(b.days_overdue) - Number(a.days_overdue));
     const total = rows.length;
@@ -968,17 +1074,11 @@ async function handleStats(supabase: SupabaseClient, params: Record<string, unkn
   if (error) throw new Error(error.message);
   const rows = (rowsRaw || []) as Record<string, unknown>[];
 
-  const { globalDays, unitThresholds } = await loadOverdueConfig(supabase);
+  const { globalDays, unitThresholds, criticalDays } = await loadOverdueConfig(supabase);
   const now = Date.now();
-  const enriched = rows.map((r) => enrichRowOverdue(r, globalDays, unitThresholds, now));
+  const enriched = rows.map((r) => enrichRowOverdue(r, globalDays, unitThresholds, criticalDays, now));
   const overdueOpen = enriched.filter((r) => r.is_overdue);
-  let overdue_critical = 0;
-  for (const r of overdueOpen) {
-    const submittedMs = new Date(String(r.submitted_at || "")).getTime();
-    const th = Number(r.overdue_threshold_days) || globalDays;
-    const crossedMs = submittedMs + th * 86400000;
-    if (now - crossedMs >= 24 * 3600000) overdue_critical = 1;
-  }
+  const criticalOpen = overdueOpen.filter((r) => r.is_critical);
 
   const bySubOverdue: Record<string, number> = {};
   overdueOpen.forEach((r) => {
@@ -999,9 +1099,11 @@ async function handleStats(supabase: SupabaseClient, params: Record<string, unkn
     approved: rows.filter((r) => normStatus(r.status) === "accepted").length,
     rejected: rows.filter((r) => normStatus(r.status) === "rejected").length,
     overdue_count: overdueOpen.length,
-    overdue_critical,
+    critical_count: criticalOpen.length,
+    overdue_critical: criticalOpen.length > 0 ? 1 : 0,
     overdue_threshold_days: globalDays,
     overdue_threshold_hours: globalDays * 24,
+    critical_threshold_days: criticalDays,
     active_members: rows.filter((r) => normStatus(r.status) === "accepted").length,
     this_week: rows.filter((r) => {
       const t = new Date(String(r.submitted_at || "")).getTime();
@@ -1145,6 +1247,13 @@ async function handleUpdateStatus(
     `Status → ${patch.status}`,
     ip,
   );
+  if (currentStatus !== nextStatus) {
+    try {
+      await sendRegistrationStatusEmail(supabase, row as Record<string, unknown>, nextStatus);
+    } catch {
+      /* best-effort */
+    }
+  }
   return { ok: true };
 }
 
@@ -2078,16 +2187,18 @@ async function handleApproveServiceUnitProposal(
 async function handleSettings(supabase: SupabaseClient) {
   const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
   if (error) throw new Error(error.message);
-  const row = data || { templates: {}, overdue_threshold_hours: 72, overdue_threshold_days: 3, permissions: {} };
+  const row = data || { templates: {}, overdue_threshold_hours: 72, overdue_threshold_days: 3, critical_threshold_days: 30, permissions: {} };
   const days = clampOverdueDays(
     row.overdue_threshold_days ?? Math.ceil(Number(row.overdue_threshold_hours ?? 72) / 24),
     3,
   );
+  const criticalDays = clampCriticalDays(row.critical_threshold_days, 30);
   return {
     data: {
       ...row,
       overdue_threshold_days: days,
       overdue_threshold_hours: days * 24,
+      critical_threshold_days: criticalDays,
     },
   };
 }
@@ -2102,11 +2213,16 @@ async function handleUpdateSettings(supabase: SupabaseClient, params: Record<str
       : cur?.overdue_threshold_days ?? 3,
     3,
   );
+  const criticalDays = clampCriticalDays(
+    body.critical_threshold_days ?? cur?.critical_threshold_days ?? 30,
+    30,
+  );
   const next = {
     id: 1,
     templates: { ...(cur?.templates as object || {}), ...(body.templates as object || {}) },
     overdue_threshold_days: days,
     overdue_threshold_hours: days * 24,
+    critical_threshold_days: criticalDays,
     permissions: { ...(cur?.permissions as object || {}), ...(body.permissions as object || {}) },
   };
   const { error } = await supabase.from("app_settings").upsert(next);
@@ -2622,19 +2738,54 @@ async function deliverAnnouncement(
         metadata: { destination_type: destType },
       });
     }
-    if (mediumEmail) {
+    if (mediumEmail && destType !== "members") {
       const email = norm(a.email).toLowerCase();
-      if (email) await trySendAdminEmail(email, title, htmlBody);
+      if (email) {
+        await trySendAdminEmail(email, title, htmlBody);
+      }
     }
   }
 
   if (destType === "members" && mediumEmail) {
     const members = await fetchMemberEmailsForAnnouncementScope(supabase, scope);
     for (const m of members) {
+      if (!m.email) continue;
       const greeting = m.name ? `Hello ${m.name},` : "Hello,";
       await trySendAdminEmail(m.email, title, `<p>${greeting}</p>${htmlBody}`);
     }
   }
+}
+
+/** Process due scheduled announcements (for cron / process-scheduled edge function). */
+export async function runScheduledAnnouncements(supabase: SupabaseClient): Promise<number> {
+  const now = new Date().toISOString();
+  const { data: due, error } = await supabase.from("announcements").select("*").eq(
+    "workflow_status",
+    "scheduled",
+  ).lte("scheduled_at", now).limit(50);
+  if (error) throw new Error(error.message);
+
+  let sent = 0;
+  for (const row of due || []) {
+    const id = Number((row as { id?: unknown }).id);
+    const { error: upErr } = await supabase.from("announcements").update({
+      workflow_status: "sent",
+      sent_at: now,
+      scheduled_at: null,
+    }).eq("id", id);
+    if (upErr) continue;
+
+    const { data: sentRow } = await supabase.from("announcements").select("*").eq("id", id).maybeSingle();
+    if (sentRow) {
+      try {
+        await deliverAnnouncement(supabase, sentRow as Record<string, unknown>);
+      } catch {
+        /* partial delivery ok */
+      }
+    }
+    sent++;
+  }
+  return sent;
 }
 
 async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {

@@ -31,6 +31,7 @@ const NAV_SUPER = [
       { id: "requests", label: "Requests", icon: <RequestIcon /> },
       { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
       { id: "settings", label: "Settings", icon: <SettingsIcon /> },
+      { id: "profile", label: "Profile / Security", icon: <SettingsIcon /> },
     ],
   },
 ];

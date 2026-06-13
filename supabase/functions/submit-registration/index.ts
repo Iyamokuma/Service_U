@@ -8,6 +8,11 @@ import {
   registrationIdentityColumns,
   registrationIdentityConflictMessage,
 } from "../_shared/registration_identity.ts";
+import { sendRegistrationWelcomeEmail } from "../_shared/registration_welcome.ts";
+import {
+  processRegistrationLeaderDigests,
+  queueSubUnitLeaderNotifications,
+} from "../_shared/registration_leader_notify.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -26,6 +31,10 @@ function requireEnv(name: string): string {
   const v = Deno.env.get(name);
   if (!v) throw new Error(`Missing required env: ${name}`);
   return v;
+}
+
+function norm(s: unknown): string {
+  return String(s ?? "").trim();
 }
 
 Deno.serve(async (req) => {
@@ -86,6 +95,14 @@ Deno.serve(async (req) => {
     if (!row.first_name || !row.surname || !row.phone1) {
       return json(400, { error: "Missing required fields (name, phone)." });
     }
+    const email = norm(row.email);
+    if (!email) {
+      return json(400, { error: "Email address is required." });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return json(400, { error: "Enter a valid email address." });
+    }
+    row.email = email;
     const churchId = body.church_id != null && body.church_id !== "" ? Number(body.church_id) : null;
     if (!Number.isFinite(churchId) || churchId! <= 0) {
       return json(400, { error: "Church / branch selection is required." });
@@ -129,6 +146,31 @@ Deno.serve(async (req) => {
     if (error) {
       const friendly = registrationIdentityConflictMessage(error);
       return json(400, { error: friendly || error.message });
+    }
+
+    if (row.email) {
+      try {
+        await sendRegistrationWelcomeEmail(supabase, {
+          email: row.email,
+          first_name: row.first_name,
+          surname: row.surname,
+          unit_id: row.unit_id,
+          unit_name: row.unit_name,
+          sub_unit: row.sub_unit,
+          satellite_site: row.satellite_site,
+        });
+      } catch {
+        /* email is best-effort; registration already saved */
+      }
+    }
+
+    if (data?.id) {
+      try {
+        await queueSubUnitLeaderNotifications(supabase, { ...row, id: data.id });
+        await processRegistrationLeaderDigests(supabase);
+      } catch {
+        /* best-effort leader digest */
+      }
     }
 
     return json(200, { ok: true, id: data?.id });

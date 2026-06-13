@@ -45,10 +45,10 @@ export function Settings() {
 
         <h3 style={{ margin: "20px 0 12px" }}>Overdue &amp; alerts</h3>
         <p className="sa-text-sm sa-text-muted" style={{ maxWidth: 640, lineHeight: 1.55, marginBottom: 14 }}>
-          Overdue is <strong>not a status</strong>. Records stay <strong>New</strong> or <strong>In Progress</strong> and also appear on the
-          Overdue queue tab once they pass this threshold (1–30 days). Override per service unit on Service Units.
-          Sub-unit leaders are notified in-app and by email when configured (<code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code>);
-          escalations go to the service unit leader after 24 hours and the satellite pastor after 48 hours with no action.
+          Overdue is <strong>not a status</strong>. Records stay <strong>New</strong> or <strong>In Progress</strong> and appear on the
+          Overdue queue tab once they pass the overdue threshold (1–30 days). Override per service unit on Service Units.
+          Sub-unit leaders receive batched email and in-app alerts for overdue records.
+          Service unit leaders receive batched email when records become <strong>critical</strong> (days overdue past the critical threshold below).
         </p>
         <div className="sa-form-row">
           <div className="sa-field">
@@ -70,7 +70,25 @@ export function Settings() {
               }}
             />
           </div>
+          <div className="sa-field">
+            <label className="sa-label">Critical threshold (days overdue)</label>
+            <input
+              className="sa-input"
+              type="number"
+              min={1}
+              max={90}
+              step={1}
+              value={settings.critical_threshold_days ?? 30}
+              onChange={(e) => {
+                const days = Math.min(90, Math.max(1, Number(e.target.value || 30)));
+                setSettings((s) => ({ ...s, critical_threshold_days: days }));
+              }}
+            />
+          </div>
         </div>
+        <p className="sa-text-sm sa-text-muted" style={{ maxWidth: 640, lineHeight: 1.55, marginBottom: 14 }}>
+          Placeholders for applicant emails: <code>{"{{name}}"}</code>, <code>{"{{unit}}"}</code>
+        </p>
 
         <h3 style={{ margin: "20px 0 12px" }}>User Permissions</h3>
         <div className="sa-form-row">

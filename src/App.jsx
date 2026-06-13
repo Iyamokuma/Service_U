@@ -71,8 +71,8 @@ function validate(form, units) {
   else if (!isPhone(form.phone1)) e.phone1 = "Enter a valid phone number.";
   if (form.phone2 && !isPhone(form.phone2))
     e.phone2 = "Enter a valid phone number, or leave blank.";
-  if (form.email && !isEmail(form.email))
-    e.email = "Enter a valid email, or leave blank.";
+  if (!form.email.trim()) e.email = "Email address is required.";
+  else if (!isEmail(form.email)) e.email = "Enter a valid email address.";
   if (!form.nationality) e.nationality = "Select your nationality.";
   if (!form.sex) e.sex = "Select your sex.";
   if (!form.maritalStatus) e.maritalStatus = "Select your marital status.";
@@ -301,8 +301,8 @@ export default function App() {
             Thank you, <em>{form.firstName}</em>.
           </h2>
           <p className="hero-sub" style={{ margin: "0 auto" }}>
-            Your service unit registration has been received. A unit coordinator
-            will be in touch within a week.
+            Your service unit registration has been received. We have sent a confirmation
+            to <strong>{form.email}</strong>. A unit coordinator will be in touch within a week.
           </p>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { totpClientMeta } from "./admin_totp.ts";
 
 function norm(s: unknown): string {
   return String(s ?? "").trim();
@@ -99,6 +100,8 @@ export function shapeAdminForClient(
     service_unit_name: serviceUnitName,
     must_change_password: Number(row.must_change_password ?? 0) === 1,
     pending_invite: pendingInvite,
+    dashboard_activated_at: row.dashboard_activated_at ?? null,
+    ...totpClientMeta(row),
   };
 }
 

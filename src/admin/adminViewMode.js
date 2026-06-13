@@ -63,6 +63,7 @@ export const GLOBAL_ADMIN_PAGES = [
   "requests",
   "activity",
   "settings",
+  "profile",
 ];
 
 /** Super / General Admin nav — invalid stored pages fall back to Overview. */

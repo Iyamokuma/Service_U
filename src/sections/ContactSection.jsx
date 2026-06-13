@@ -68,10 +68,10 @@ export function ContactSection({ form, set, errors }) {
 
         <Field
           label="Email address"
-          optional
+          required
           error={errors.email}
           span="2"
-          hint="If provided, must be unique — one registration per email."
+          hint="We will send a confirmation to this address. One registration per email."
         >
           <TextInput
             type="email"

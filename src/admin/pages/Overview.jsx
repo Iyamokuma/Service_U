@@ -7,7 +7,7 @@ import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStateLabel, branchCountryLabel } from "../branchRegions.js";
 import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
-import { StatusDonut } from "../components/StatusDonut.jsx";
+import { CategoryHistogram, GenderHistogram, StatusPieChart } from "../components/charts/DashboardCharts.jsx";
 import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 
@@ -115,7 +115,6 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
   }
 
   const { totals, by_unit, by_sex, trend, recent_activity } = data;
-  const maxUnit = Math.max(...by_unit.map((r) => +r.cnt), 1);
   const sexMap = {};
   by_sex.forEach((r) => {
     sexMap[r.sex || "Unknown"] = +r.cnt;
@@ -124,8 +123,10 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
   const accDelta = (totals.accepted_this_month ?? 0) - (totals.accepted_prev_month ?? 0);
   const rejDelta = (totals.rejected_this_month ?? 0) - (totals.rejected_prev_month ?? 0);
   const thDays = totals.overdue_threshold_days ?? Math.max(1, Math.round((totals.overdue_threshold_hours ?? 72) / 24));
+  const critDays = totals.critical_threshold_days ?? 30;
+  const criticalCount = totals.critical_count ?? (totals.overdue_critical ? totals.overdue_count : 0);
   const overdueCardState =
-    (totals.overdue_count ?? 0) === 0 ? "zero" : totals.overdue_critical ? "critical" : "amber";
+    (totals.overdue_count ?? 0) === 0 ? "zero" : criticalCount > 0 ? "critical" : "amber";
 
   const branchOpts = data.branch_options ?? [];
 
@@ -252,11 +253,14 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
       </div>
 
       {totals.overdue_count > 0 && (
-        <div className="sa-dash-alert">
+        <div className={`sa-dash-alert${criticalCount > 0 ? " sa-dash-alert--critical" : ""}`}>
           <span className="sa-dash-alert-icon" aria-hidden>⚠</span>
           <div className="sa-dash-alert-text">
-            <strong>{totals.overdue_count}</strong> overdue application{totals.overdue_count !== 1 ? "s" : ""} across visible scope
-            {filterParams.filter_country || filterParams.filter_unit_id ? "" : " — action required"} (threshold: {thDays} day{thDays !== 1 ? "s" : ""} in Settings).
+            <strong>{totals.overdue_count}</strong> overdue application{totals.overdue_count !== 1 ? "s" : ""}
+            {criticalCount > 0 ? (
+              <> — <strong>{criticalCount}</strong> critical ({critDays}+ days past overdue threshold)</>
+            ) : null}
+            {" "}(overdue after {thDays} day{thDays !== 1 ? "s" : ""} · critical after {critDays} days overdue).
           </div>
           <button type="button" className="sa-btn sa-btn-sm sa-dash-alert-btn" onClick={goOverdueQueue}>
             View queue
@@ -283,8 +287,14 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
         <DashStatCard
           label="Overdue"
           value={totals.overdue_count}
-          sub={overdueCardState === "zero" ? "On track" : overdueCardState === "critical" ? "Needs urgent action" : "Requires attention"}
+          sub={overdueCardState === "zero" ? `Threshold: ${thDays}d` : `${criticalCount} critical · threshold ${thDays}d`}
           overdueState={overdueCardState}
+        />
+        <DashStatCard
+          label="Critical"
+          value={criticalCount}
+          sub={`${critDays} days past overdue threshold`}
+          overdueState={criticalCount > 0 ? "critical" : undefined}
         />
         <DashStatCard
           label="Accepted this month"
@@ -315,18 +325,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
             <span className="sa-text-sm sa-text-muted">{by_unit.length} units</span>
           </div>
           <div className="sa-card-body">
-            <div className="sa-bar-chart">
-              {by_unit.map((r) => (
-                <div className="sa-bar-row" key={r.unit_name}>
-                  <div className="sa-bar-label">{r.unit_name}</div>
-                  <div className="sa-bar-track">
-                    <div className="sa-bar-fill" style={{ width: `${(+r.cnt / maxUnit) * 100}%` }} />
-                  </div>
-                  <div className="sa-bar-count">{r.cnt}</div>
-                </div>
-              ))}
-              {by_unit.length === 0 && <div className="sa-text-muted sa-text-sm">No data for filters.</div>}
-            </div>
+            <CategoryHistogram rows={by_unit} labelKey="unit_name" valueKey="cnt" />
           </div>
         </div>
 
@@ -335,7 +334,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
             <span className="sa-card-title">Status distribution</span>
           </div>
           <div className="sa-card-body sa-dash-donut-body">
-            <StatusDonut distribution={totals.status_distribution || {}} />
+            <StatusPieChart distribution={totals.status_distribution || {}} />
             <div className="sa-dash-overdue-list-wrap">
               <div className="sa-dash-overdue-title">Top overdue (sub-units)</div>
               <ul className="sa-dash-overdue-list">
@@ -371,7 +370,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
             <span className="sa-card-title">Gender breakdown</span>
           </div>
           <div className="sa-card-body sa-card-body--gender">
-            <GenderBreakdown sexMap={sexMap} />
+            <GenderHistogram sexMap={sexMap} />
           </div>
         </div>
       </div>
@@ -468,7 +467,6 @@ export function Overview({ units, setPage, navigateToQueue }) {
   }
 
   const { totals, by_unit, by_sex, trend, recent_activity } = data;
-  const maxUnit = Math.max(...by_unit.map((r) => +r.cnt), 1);
   const sexMap = {};
   by_sex.forEach((r) => {
     sexMap[r.sex || "Unknown"] = +r.cnt;
@@ -481,12 +479,15 @@ export function Overview({ units, setPage, navigateToQueue }) {
       : scope && scope !== "—"
         ? scope
         : "Your visible registrations";
+  const thDays = totals.overdue_threshold_days ?? 3;
+  const critDays = totals.critical_threshold_days ?? 30;
+  const criticalCount = totals.critical_count ?? 0;
   const overdueVisual =
     (totals.overdue_count ?? 0) === 0
-      ? { state: "zero", sub: "On track" }
-      : totals.overdue_critical
-        ? { state: "critical", sub: "Needs urgent action" }
-        : { state: "amber", sub: "Requires attention" };
+      ? { state: "zero", sub: `Threshold ${thDays}d` }
+      : criticalCount > 0
+        ? { state: "critical", sub: `${criticalCount} critical (${critDays}d+ overdue)` }
+        : { state: "amber", sub: `${totals.overdue_count} overdue · threshold ${thDays}d` };
 
   return (
     <>
@@ -543,7 +544,7 @@ export function Overview({ units, setPage, navigateToQueue }) {
               <span className="sa-card-title">Gender breakdown</span>
             </div>
             <div className="sa-card-body sa-card-body--gender">
-              <GenderBreakdown sexMap={sexMap} />
+              <GenderHistogram sexMap={sexMap} />
             </div>
           </div>
         </div>
@@ -558,18 +559,7 @@ export function Overview({ units, setPage, navigateToQueue }) {
                 <span className="sa-text-sm sa-text-muted">{by_unit.length} units</span>
               </div>
               <div className="sa-card-body">
-                <div className="sa-bar-chart">
-                  {by_unit.map((r) => (
-                    <div className="sa-bar-row" key={r.unit_name}>
-                      <div className="sa-bar-label">{r.unit_name}</div>
-                      <div className="sa-bar-track">
-                        <div className="sa-bar-fill" style={{ width: `${(+r.cnt / maxUnit) * 100}%` }} />
-                      </div>
-                      <div className="sa-bar-count">{r.cnt}</div>
-                    </div>
-                  ))}
-                  {by_unit.length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
-                </div>
+                <CategoryHistogram rows={by_unit} labelKey="unit_name" valueKey="cnt" />
               </div>
             </div>
             <RegistrationTrendAnalytics
@@ -585,7 +575,7 @@ export function Overview({ units, setPage, navigateToQueue }) {
               <span className="sa-card-title">Gender breakdown</span>
             </div>
             <div className="sa-card-body sa-card-body--gender-wide">
-              <GenderBreakdown sexMap={sexMap} />
+              <GenderHistogram sexMap={sexMap} />
             </div>
           </div>
         </>

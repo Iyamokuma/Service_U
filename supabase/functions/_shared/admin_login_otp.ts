@@ -174,13 +174,15 @@ export async function resendLoginOtpChallenge(
   const otp_hash = await hashOtpCode(code);
   const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString();
 
+  const now = new Date().toISOString();
   const { error: updErr } = await supabase
     .from("admin_login_otp_challenges")
     .update({
       otp_hash,
       expires_at: expiresAt,
       attempts: 0,
-      last_sent_at: new Date().toISOString(),
+      last_sent_at: now,
+      otp_emailed_at: now,
     })
     .eq("id", challengeId);
   if (updErr) throw new Error(updErr.message);
@@ -193,6 +195,138 @@ export async function resendLoginOtpChallenge(
     fullName: String(admin.full_name || ""),
     adminId: Number(admin.id),
   };
+}
+
+/** Email login code for a challenge (first send or resend). */
+export async function sendLoginOtpForChallenge(
+  supabase: SupabaseClient,
+  challengeId: string,
+): Promise<{
+  code: string;
+  expiresAt: string;
+  email_masked: string;
+  adminEmail: string;
+  fullName: string;
+  adminId: number;
+}> {
+  const { data: row, error } = await supabase
+    .from("admin_login_otp_challenges")
+    .select("id,admin_id,attempts,expires_at,used_at,last_sent_at,otp_emailed_at")
+    .eq("id", challengeId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row || row.used_at) {
+    throw new Error("This login session expired. Sign in again with your password.");
+  }
+
+  const emailedAt = row.otp_emailed_at ? new Date(String(row.otp_emailed_at)).getTime() : 0;
+  if (emailedAt > 0) {
+    const waitSec = RESEND_COOLDOWN_SEC - Math.floor((Date.now() - emailedAt) / 1000);
+    if (waitSec > 0) {
+      throw new Error(`Wait ${waitSec} second${waitSec === 1 ? "" : "s"} before requesting a new code.`);
+    }
+  }
+
+  const { data: admin, error: adminErr } = await supabase
+    .from("admins")
+    .select("id,email,full_name,is_active")
+    .eq("id", row.admin_id)
+    .maybeSingle();
+  if (adminErr) throw new Error(adminErr.message);
+  if (!admin || Number(admin.is_active) !== 1) {
+    throw new Error("This account is no longer active.");
+  }
+
+  const email = norm(admin.email).toLowerCase();
+  if (!email) throw new Error("This account has no email address. Contact your Super Admin.");
+
+  const code = generateOtpCode();
+  const otp_hash = await hashOtpCode(code);
+  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  const { error: updErr } = await supabase
+    .from("admin_login_otp_challenges")
+    .update({
+      otp_hash,
+      expires_at: expiresAt,
+      attempts: 0,
+      last_sent_at: now,
+      otp_emailed_at: now,
+    })
+    .eq("id", challengeId);
+  if (updErr) throw new Error(updErr.message);
+
+  return {
+    code,
+    expiresAt,
+    email_masked: maskEmail(email),
+    adminEmail: email,
+    fullName: String(admin.full_name || ""),
+    adminId: Number(admin.id),
+  };
+}
+
+export async function verifyDualLoginChallenge(
+  supabase: SupabaseClient,
+  challengeId: string,
+  emailOtpRaw: string,
+  totpRaw: string,
+  verifyTotp: (adminId: number, code: string) => Promise<boolean>,
+): Promise<number> {
+  const emailOtp = norm(emailOtpRaw).replace(/\D/g, "");
+  const totpCode = norm(totpRaw).replace(/\D/g, "");
+  if (!/^\d{6}$/.test(emailOtp)) {
+    throw new Error("Enter the 6-digit email code.");
+  }
+  if (!/^\d{6}$/.test(totpCode)) {
+    throw new Error("Enter the 6-digit authenticator code.");
+  }
+
+  const { data: row, error } = await supabase
+    .from("admin_login_otp_challenges")
+    .select("id,admin_id,otp_hash,attempts,expires_at,used_at,otp_emailed_at")
+    .eq("id", challengeId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row || row.used_at) {
+    throw new Error("This login session expired. Sign in again with your password.");
+  }
+  if (!row.otp_emailed_at) {
+    throw new Error("Send the email code before signing in.");
+  }
+
+  const expires = new Date(String(row.expires_at)).getTime();
+  if (!expires || expires < Date.now()) {
+    throw new Error("This session has expired. Sign in again with your password.");
+  }
+
+  const attempts = Number(row.attempts ?? 0);
+  if (attempts >= MAX_ATTEMPTS) {
+    throw new Error("Too many incorrect attempts. Sign in again with your password.");
+  }
+
+  const expected = await hashOtpCode(emailOtp);
+  const emailOk = expected === row.otp_hash;
+  const totpOk = await verifyTotp(Number(row.admin_id), totpCode);
+
+  if (!emailOk || !totpOk) {
+    await supabase
+      .from("admin_login_otp_challenges")
+      .update({ attempts: attempts + 1 })
+      .eq("id", challengeId);
+    const left = MAX_ATTEMPTS - attempts - 1;
+    if (left <= 0) {
+      throw new Error("Too many incorrect attempts. Sign in again with your password.");
+    }
+    if (!emailOk && !totpOk) throw new Error(`Incorrect email and authenticator codes. ${left} attempt${left === 1 ? "" : "s"} left.`);
+    if (!emailOk) throw new Error(`Incorrect email code. ${left} attempt${left === 1 ? "" : "s"} left.`);
+    throw new Error(`Incorrect authenticator code. ${left} attempt${left === 1 ? "" : "s"} left.`);
+  }
+
+  const now = new Date().toISOString();
+  await supabase.from("admin_login_otp_challenges").update({ used_at: now }).eq("id", challengeId);
+  return Number(row.admin_id);
 }
 
 export async function verifyLoginOtpChallenge(

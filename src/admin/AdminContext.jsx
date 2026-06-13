@@ -141,6 +141,17 @@ export function AdminAuthProvider({ children }) {
         return { needsOtp: false, loggedIn: true };
       }
       const challengeId = String(res?.challenge_id || res?.challengeId || "").trim();
+      if (res?.step === "dual_verify_required") {
+        if (!challengeId) throw new Error("Could not start verification. Try again.");
+        return {
+          needsDualVerify: true,
+          challengeId,
+          maskedEmail: res.email_masked || res.emailMasked || "",
+          expiresIn: res.expires_in ?? res.expiresIn,
+          resendAfter: res.resend_after ?? res.resendAfter ?? 0,
+          emailSent: false,
+        };
+      }
       if (res?.step === "otp_required" || challengeId) {
         if (!challengeId) {
           throw new Error("Could not start verification. Try again.");
@@ -192,6 +203,34 @@ export function AdminAuthProvider({ children }) {
     }
   }, []);
 
+  const sendLoginEmailOtp = useCallback(async (challengeId) => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await api.sendLoginEmailOtp(challengeId);
+    } catch (e) {
+      setError(e.message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const verifyDualLoginOtp = useCallback(async (challengeId, emailOtp, totp) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.verifyDualLoginOtp(challengeId, emailOtp, totp);
+      await loginWithToken(res.token, res.admin);
+      return true;
+    } catch (e) {
+      setError(e.message);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [loginWithToken]);
+
   const logout = useCallback(async () => {
     try { await api.logout(); } catch { /* ignore */ }
     localStorage.removeItem("admin_token");
@@ -212,6 +251,8 @@ export function AdminAuthProvider({ children }) {
         error,
         startLogin,
         verifyLoginOtp,
+        verifyDualLoginOtp,
+        sendLoginEmailOtp,
         resendLoginOtp,
         clearLoginError,
         setLoginError,

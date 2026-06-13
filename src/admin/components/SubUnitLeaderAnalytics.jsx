@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { StatusDonut } from "./StatusDonut.jsx";
+import { StatusPieChart } from "./charts/DashboardCharts.jsx";
 import { REGISTRATION_RANGE_PRESETS } from "./RegistrationTrendAnalytics.jsx";
 
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -313,7 +313,7 @@ export function SubUnitLeaderAnalytics({
               <span className="sa-subunit-side-title">Pipeline</span>
               <span className="sa-subunit-side-sub">Status mix</span>
             </div>
-            <StatusDonut distribution={dist} compact />
+            <StatusPieChart distribution={dist} compact />
           </div>
           <div className="sa-subunit-side-card">
             <div className="sa-subunit-side-head">

@@ -43,6 +43,7 @@ import { ServiceUnitUsers } from "./pages/ServiceUnitUsers.jsx";
 import { SubUnitUsers } from "./pages/SubUnitUsers.jsx";
 import { countryAdminHomeState } from "./roles.js";
 import { writeUsersSectionTab } from "./usersSectionTab.js";
+import { TotpEnrollmentGate } from "./components/TotpEnrollmentGate.jsx";
 
 const PAGE_TITLES_DEFAULT = {
   overview: "Overview",
@@ -323,6 +324,7 @@ export function AdminLayout() {
         ) : null}
 
         <div className="sa-content">
+          <TotpEnrollmentGate page={contentPage}>
           {contentPage === "role-dashboard" && <RoleDashboard setPage={setPage} />}
           {contentPage === "data-locations" && admin?.role === "data_entry_admin" && <DataEntryLocationForm />}
           {(contentPage === "locations" || contentPage === "branch-catalog") &&
@@ -370,7 +372,8 @@ export function AdminLayout() {
             <SubUnitUsers units={units} />
           )}
           {contentPage === "settings"  && canPlatformSettings && <Settings />}
-          {contentPage === "profile"   && !canPlatformSettings && <ProfileSettings />}
+          {contentPage === "profile"   && <ProfileSettings />}
+          </TotpEnrollmentGate>
         </div>
       </div>
     </div>
