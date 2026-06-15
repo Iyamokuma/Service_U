@@ -118,10 +118,92 @@ async function assertAdminEmailAvailable(
 ): Promise<void> {
   const e = norm(email).toLowerCase();
   if (!e) throw new Error("Email is required.");
-  const { data, error } = await supabase.from("admins").select("id, email").ilike("email", e);
+  const { data, error } = await supabase.from("admins").select("id, email, is_active, must_change_password, invite_token, invite_expires_at").ilike("email", e);
   if (error) throw new Error(error.message);
   const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
-  if (taken) throw new Error("That email is already used by another admin account.");
+  if (!taken) return;
+  if (Number((taken as { is_active?: number }).is_active) !== 1) {
+    throw new Error(
+      "That email belongs to a deactivated admin. Delete that account from the admin dashboard, then send a new invite.",
+    );
+  }
+  const pendingInvite = Number((taken as { must_change_password?: number }).must_change_password) === 1 &&
+    !!norm((taken as { invite_token?: string }).invite_token);
+  if (pendingInvite) {
+    throw new Error(
+      "That email already has a pending invitation. Resend the invite or delete the account before creating another.",
+    );
+  }
+  throw new Error("That email is already used by another admin account.");
+}
+
+/** Permanently remove an admin row and related login/notification data. */
+async function purgeAdminRecord(
+  supabase: SupabaseClient,
+  adminId: number,
+  actor?: AdminRow | null,
+  ip = "",
+  logNote = "Deleted admin",
+): Promise<void> {
+  const id = Number(adminId);
+  if (!Number.isFinite(id) || id < 1) throw new Error("Invalid admin id.");
+
+  const { data: target, error: loadErr } = await supabase
+    .from("admins")
+    .select("id,full_name,email,role")
+    .eq("id", id)
+    .maybeSingle();
+  if (loadErr) throw new Error(loadErr.message);
+  if (!target) return;
+
+  if (norm(target.role) === "super_admin") {
+    throw new Error("Super Admin accounts cannot be deleted.");
+  }
+
+  await supabase.from("admin_login_otp_challenges").delete().eq("admin_id", id);
+  await supabase.from("admin_notifications").delete().eq("admin_id", id);
+  await supabase.from("registration_notify_queue").delete().eq("admin_id", id);
+  await supabase.from("overdue_notify_dedup").delete().eq("admin_id", id);
+
+  const { error: delErr } = await supabase.from("admins").delete().eq("id", id);
+  if (delErr) throw new Error(`Could not delete admin from database: ${delErr.message}`);
+
+  const { data: stillThere, error: verifyErr } = await supabase.from("admins").select("id").eq("id", id).maybeSingle();
+  if (verifyErr) throw new Error(verifyErr.message);
+  if (stillThere) {
+    throw new Error("Admin could not be removed from the database. Try again or contact support.");
+  }
+
+  if (actor) {
+    await logActivity(supabase, actor, "admin.delete", "admin", String(id), logNote, ip);
+  }
+}
+
+/** Remove inactive or expired-invite rows so the same email can be invited again. */
+async function reclaimAdminEmailForNewInvite(supabase: SupabaseClient, email: string): Promise<void> {
+  const e = norm(email).toLowerCase();
+  if (!e) return;
+  const { data: rows, error } = await supabase
+    .from("admins")
+    .select("id,is_active,must_change_password,invite_token,invite_expires_at")
+    .ilike("email", e);
+  if (error) throw new Error(error.message);
+
+  for (const row of rows || []) {
+    const inactive = Number(row.is_active) !== 1;
+    const pendingInvite = Number(row.must_change_password) === 1 && !!norm(row.invite_token);
+    const inviteExpired = pendingInvite && row.invite_expires_at &&
+      new Date(String(row.invite_expires_at)).getTime() < Date.now();
+    if (inactive || inviteExpired) {
+      await purgeAdminRecord(
+        supabase,
+        Number(row.id),
+        null,
+        "",
+        inactive ? `Reclaimed deactivated admin email ${e}` : `Reclaimed expired invite for ${e}`,
+      );
+    }
+  }
 }
 
 const ROLES_REQUIRING_COUNTRY = new Set([
@@ -474,6 +556,7 @@ async function insertAdminFromBody(
   if (!inviteCreate) {
     await assertAdminUsernameAvailable(supabase, String(row.username));
   }
+  await reclaimAdminEmailForNewInvite(supabase, email);
   await assertAdminEmailAvailable(supabase, email);
 
   if (inviteCreate) {
@@ -1858,10 +1941,17 @@ async function handleDeleteAdmin(supabase: SupabaseClient, params: Record<string
   if (role === "satellite_church_admin") {
     await assertSatelliteAdminTarget(admin, target as Record<string, unknown>);
   }
-  const { error } = await supabase.from("admins").delete().eq("id", params.id);
-  if (error) throw new Error(error.message);
-  await logActivity(supabase, admin, "admin.delete", "admin", String(params.id), "Deleted admin", ip);
-  return { ok: true };
+  if (norm(target.role) === "super_admin") {
+    throw new Error("Super Admin accounts cannot be deleted.");
+  }
+  await purgeAdminRecord(
+    supabase,
+    Number(params.id),
+    admin,
+    ip,
+    `Deleted admin ${target.full_name || target.email || params.id}`,
+  );
+  return { ok: true, deleted: true };
 }
 
 async function handleUpdateRegistrationBranch(

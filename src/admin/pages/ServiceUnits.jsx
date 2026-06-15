@@ -344,7 +344,7 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
   const hasUnitLeader = leaders.some((a) => a.role === "service_unit_leader");
 
   async function removeAdminAccount(admin) {
-    if (!window.confirm(`Remove admin “${admin.full_name}” (${admin.username})?`)) return;
+    if (!window.confirm(`Delete ${admin.full_name} (${admin.username}) permanently? They can be invited again with the same email.`)) return;
     try {
       await api.deleteAdmin(admin.id);
       onAdminChange?.();

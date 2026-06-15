@@ -29,7 +29,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
     email: String(searchParams.get("email") || "").trim(),
     password: "",
   }));
-  const [activatedNotice, setActivatedNotice] = useState(false);
   const [emailOtp, setEmailOtp] = useState("");
   const [totp, setTotp] = useState("");
   const [challenge, setChallenge] = useState(() => readLoginChallenge());
@@ -47,10 +46,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
   useEffect(() => {
     const email = String(searchParams.get("email") || "").trim();
     if (email) setForm((f) => ({ ...f, email }));
-    if (searchParams.get("activated") === "1") {
-      setActivatedNotice(true);
-      setSearchParams({}, { replace: true });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -194,12 +189,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
       description={description}
       footer="Secure admin access · Salvation Ministries"
     >
-      {activatedNotice ? (
-        <div className="sa-login-success" role="status">
-          Your account is activated. Sign in with the email and password you just created.
-        </div>
-      ) : null}
-
       {error ? <div className="sa-login-err" role="alert">{error}</div> : null}
 
       <form onSubmit={onSubmit}>

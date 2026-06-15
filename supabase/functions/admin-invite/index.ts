@@ -107,6 +107,10 @@ Deno.serve(async (req) => {
           must_change_password: 0,
           invite_token: null,
           invite_expires_at: null,
+          totp_enabled: false,
+          totp_secret_encrypted: null,
+          totp_enrolled_at: null,
+          dashboard_activated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
       if (updErr) return json(500, { error: updErr.message });

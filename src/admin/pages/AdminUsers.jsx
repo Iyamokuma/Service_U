@@ -481,7 +481,9 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       toast("You cannot delete your own account.", "error");
       return;
     }
-    const ok = window.confirm(`Delete ${admin.full_name} (${admin.username}) permanently?`);
+    const ok = window.confirm(
+      `Delete ${admin.full_name} (${admin.username}) permanently? Their account will be removed from the database and can be invited again with the same email.`,
+    );
     if (!ok) return;
     try {
       await api.deleteAdmin(admin.id, { viewer: me });

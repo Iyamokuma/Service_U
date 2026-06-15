@@ -7,7 +7,7 @@ import { PasswordField } from "../components/PasswordField.jsx";
 import { roleDisplayLabel } from "../roles.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 
-const INVITE_STEPS = ["Open invite", "Set password", "You're in"];
+const INVITE_STEPS = ["Open invite", "Set password", "Sign in"];
 
 export function AdminAcceptInvite() {
   const [searchParams] = useSearchParams();
@@ -86,9 +86,9 @@ export function AdminAcceptInvite() {
       activeStep={activeStep}
       description={
         phase === "form"
-          ? "Create a password for your admin account. You will be signed in automatically — verification codes are only needed when you sign in again later."
+          ? "Choose a password for your admin account. You will be signed in automatically."
           : phase === "success"
-            ? "Your account is ready."
+            ? "Your account is ready. Redirecting to the dashboard…"
             : phase === "loading"
               ? "Checking your invitation…"
               : ""
