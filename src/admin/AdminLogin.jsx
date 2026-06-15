@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAdminAuth } from "./AdminContext.jsx";
-import { AdminBrandLogo } from "./components/AdminBrandLogo.jsx";
+import { AdminAuthCard } from "./components/AdminAuthCard.jsx";
+import { PasswordField } from "./components/PasswordField.jsx";
 import { SmhLoader } from "../components/SmhLoader.jsx";
 import { clearLoginChallenge, readLoginChallenge, saveLoginChallenge } from "./loginChallenge.js";
+
+const LOGIN_STEPS = ["Sign in", "Verify"];
 
 export function AdminLogin({ initialStep = "credentials" }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,6 +29,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
     email: String(searchParams.get("email") || "").trim(),
     password: "",
   }));
+  const [activatedNotice, setActivatedNotice] = useState(false);
   const [emailOtp, setEmailOtp] = useState("");
   const [totp, setTotp] = useState("");
   const [challenge, setChallenge] = useState(() => readLoginChallenge());
@@ -44,6 +48,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
     const email = String(searchParams.get("email") || "").trim();
     if (email) setForm((f) => ({ ...f, email }));
     if (searchParams.get("activated") === "1") {
+      setActivatedNotice(true);
       setSearchParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -172,29 +177,42 @@ export function AdminLogin({ initialStep = "credentials" }) {
   const onSubmit =
     step === "dual" ? onDualSubmit : step === "otp" ? onOtpSubmit : onCredentialsSubmit;
 
-  const subTitle =
-    step === "dual" ? "Verification" : step === "otp" ? "Verification" : "Admin Portal";
+  const isVerifyStep = step === "otp" || step === "dual";
+
+  const subtitle = isVerifyStep ? "Verify your identity" : "Admin sign in";
+  const description = isVerifyStep
+    ? step === "dual"
+      ? "Enter the 6-digit code from your email and the 6-digit code from your authenticator app."
+      : "We sent a 6-digit code to your email. Enter it below to finish signing in."
+    : "";
 
   return (
-    <div className="sa-login-page">
-      <form className="sa-login-card" onSubmit={onSubmit}>
-        <div className="sa-login-logo">
-          <AdminBrandLogo variant="login" />
-          <div>
-            <div className="sa-login-title">Salvation Ministries</div>
-            <div className="sa-login-sub">{subTitle}</div>
-          </div>
+    <AdminAuthCard
+      subtitle={subtitle}
+      steps={LOGIN_STEPS}
+      activeStep={isVerifyStep ? 1 : 0}
+      description={description}
+      footer="Secure admin access · Salvation Ministries"
+    >
+      {activatedNotice ? (
+        <div className="sa-login-success" role="status">
+          Your account is activated. Sign in with the email and password you just created.
         </div>
+      ) : null}
 
-        {error ? <div className="sa-login-err">{error}</div> : null}
+      {error ? <div className="sa-login-err" role="alert">{error}</div> : null}
 
+      <form onSubmit={onSubmit}>
         {step === "credentials" ? (
           <>
             <div className="sa-login-group">
-              <label className="sa-login-label">Email</label>
+              <label className="sa-login-label" htmlFor="admin-login-email">
+                Email
+              </label>
               <input
+                id="admin-login-email"
                 className="sa-login-input"
-                type="text"
+                type="email"
                 autoComplete="username"
                 value={form.email}
                 onChange={set("email")}
@@ -202,10 +220,12 @@ export function AdminLogin({ initialStep = "credentials" }) {
               />
             </div>
             <div className="sa-login-group">
-              <label className="sa-login-label">Password</label>
-              <input
-                className="sa-login-input"
-                type="password"
+              <label className="sa-login-label" htmlFor="admin-login-password">
+                Password
+              </label>
+              <PasswordField
+                id="admin-login-password"
+                inputClassName="sa-login-input"
                 autoComplete="current-password"
                 value={form.password}
                 onChange={set("password")}
@@ -216,22 +236,23 @@ export function AdminLogin({ initialStep = "credentials" }) {
               {loading ? (
                 <SmhLoader label="" variant="compact" size={24} className="sa-login-btn-loader" />
               ) : (
-                "Sign in"
+                "Continue"
               )}
             </button>
           </>
         ) : step === "otp" ? (
           <>
             {challenge?.emailSent === false && challenge?.message ? (
-              <div className="sa-login-err" role="status">
+              <div className="sa-login-warn" role="status">
                 {challenge.message}
               </div>
             ) : null}
             <div className="sa-login-group">
-              <label className="sa-login-label">
+              <label className="sa-login-label" htmlFor="admin-login-email-otp">
                 {challenge?.maskedEmail ? `Email code · ${challenge.maskedEmail}` : "Email code"}
               </label>
               <input
+                id="admin-login-email-otp"
                 className="sa-login-input sa-login-otp-input"
                 type="text"
                 inputMode="numeric"
@@ -241,13 +262,14 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
                 autoFocus
+                placeholder="000000"
               />
             </div>
             <button className="sa-login-btn" type="submit" disabled={loading || emailOtp.length !== 6}>
               {loading ? (
                 <SmhLoader label="" variant="compact" size={24} className="sa-login-btn-loader" />
               ) : (
-                "Continue"
+                "Verify & sign in"
               )}
             </button>
             <div className="sa-login-otp-actions">
@@ -257,20 +279,21 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 onClick={onResend}
                 disabled={loading || resendIn > 0}
               >
-                {resendIn > 0 ? `Resend (${resendIn}s)` : "Resend"}
+                {resendIn > 0 ? `Resend code (${resendIn}s)` : "Resend code"}
               </button>
               <button type="button" className="sa-btn sa-btn-ghost sa-text-sm" onClick={backToCredentials}>
-                Back
+                Back to sign in
               </button>
             </div>
           </>
         ) : (
           <>
             <div className="sa-login-group">
-              <label className="sa-login-label">
+              <label className="sa-login-label" htmlFor="admin-login-dual-email-otp">
                 {challenge?.maskedEmail ? `Email code · ${challenge.maskedEmail}` : "Email code"}
               </label>
               <input
+                id="admin-login-dual-email-otp"
                 className="sa-login-input sa-login-otp-input"
                 type="text"
                 inputMode="numeric"
@@ -280,6 +303,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
                 autoFocus
+                placeholder="000000"
               />
               <div className="sa-login-otp-actions" style={{ marginTop: 8, justifyContent: "flex-start" }}>
                 <button
@@ -288,14 +312,17 @@ export function AdminLogin({ initialStep = "credentials" }) {
                   onClick={onSendEmailCode}
                   disabled={loading || resendIn > 0}
                 >
-                  {resendIn > 0 ? `Send code (${resendIn}s)` : emailSent ? "Resend code" : "Send code"}
+                  {resendIn > 0 ? `Send code (${resendIn}s)` : emailSent ? "Resend code" : "Send email code"}
                 </button>
               </div>
             </div>
 
             <div className="sa-login-group">
-              <label className="sa-login-label">Authenticator code</label>
+              <label className="sa-login-label" htmlFor="admin-login-totp">
+                Authenticator code
+              </label>
               <input
+                id="admin-login-totp"
                 className="sa-login-input sa-login-otp-input"
                 type="text"
                 inputMode="numeric"
@@ -303,6 +330,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 value={totp}
                 onChange={(e) => setTotp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
+                placeholder="000000"
               />
             </div>
 
@@ -314,18 +342,18 @@ export function AdminLogin({ initialStep = "credentials" }) {
               {loading ? (
                 <SmhLoader label="" variant="compact" size={24} className="sa-login-btn-loader" />
               ) : (
-                "Sign in"
+                "Verify & sign in"
               )}
             </button>
 
             <div className="sa-login-otp-actions">
               <button type="button" className="sa-btn sa-btn-ghost sa-text-sm" onClick={backToCredentials}>
-                Back
+                Back to sign in
               </button>
             </div>
           </>
         )}
       </form>
-    </div>
+    </AdminAuthCard>
   );
 }

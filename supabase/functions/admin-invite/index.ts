@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
+import { issueAdminSession } from "../_shared/admin_session.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -33,6 +33,12 @@ function requireEnv(name: string): string {
   const v = Deno.env.get(name);
   if (!v) throw new Error(`Missing required env: ${name}`);
   return v;
+}
+
+function clientIp(req: Request): string {
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("cf-connecting-ip") ||
+    "";
 }
 
 Deno.serve(async (req) => {
@@ -105,20 +111,39 @@ Deno.serve(async (req) => {
         .eq("id", row.id);
       if (updErr) return json(500, { error: updErr.message });
 
-      const resolved = await ensureCountryAdminHeadquarters(supabase, row as Record<string, unknown>);
-      const email = norm(resolved.email).toLowerCase();
+      const { data: fresh, error: freshErr } = await supabase
+        .from("admins")
+        .select("*")
+        .eq("id", row.id)
+        .maybeSingle();
+      if (freshErr) return json(500, { error: freshErr.message });
+      if (!fresh) return json(500, { error: "Account could not be loaded after activation." });
+
+      const jwtSecret = requireEnv("ADMIN_JWT_SECRET");
+      const session = await issueAdminSession(
+        supabase,
+        fresh as Record<string, unknown>,
+        jwtSecret,
+        req,
+        "Completed invite and signed in",
+      );
 
       await supabase.from("activity_logs").insert({
-        admin_id: resolved.id,
-        admin_name: resolved.full_name,
+        admin_id: fresh.id,
+        admin_name: fresh.full_name,
         action: "admin.invite_complete",
         entity_type: "admin",
-        entity_id: String(resolved.id),
-        description: "Completed invite and set password (sign-in required)",
-        ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "",
+        entity_id: String(fresh.id),
+        description: "Completed invite and set password",
+        ip_address: clientIp(req),
       });
 
-      return json(200, { ok: true, email });
+      return json(200, {
+        ok: true,
+        email: norm(fresh.email).toLowerCase(),
+        token: session.token,
+        admin: session.admin,
+      });
     }
 
     return json(400, { error: "Unknown op." });

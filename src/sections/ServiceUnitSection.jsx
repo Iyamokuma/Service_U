@@ -3,7 +3,7 @@ import { Collapse } from "../components/Collapse.jsx";
 import { SectionHead } from "./SectionHead.jsx";
 import { SERVICE_UNITS } from "../data.js";
 
-export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS }) {
+export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS, locationLabel = "" }) {
   const renderUnit = (u) => {
     const isSelected = Number(form.unitId) === Number(u.id);
     const showSubs = isSelected && !!u.subs?.length;
@@ -38,6 +38,9 @@ export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS })
             <Collapse open={true}>
               <div className="sub-unit-wrap">
                 <div className="sub-unit-label">{u.name} — choose a sub-unit</div>
+                {locationLabel ? (
+                  <div className="sub-unit-location">Church location: {locationLabel}</div>
+                ) : null}
                 <div className="sub-unit-chips">
                   {u.subs.map((s) => (
                     <button

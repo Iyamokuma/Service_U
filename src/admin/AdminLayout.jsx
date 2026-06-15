@@ -19,6 +19,7 @@ import { RoleDashboard } from "./pages/RoleDashboard.jsx";
 import { DataEntryLocationForm } from "./pages/DataEntryLocationForm.jsx";
 import { BranchCatalog } from "./pages/BranchCatalog.jsx";
 import { Announcements } from "./pages/Announcements.jsx";
+import { Notifications } from "./pages/Notifications.jsx";
 import { CountryUsers } from "./pages/CountryUsers.jsx";
 import { StateUsers } from "./pages/StateUsers.jsx";
 import { SatelliteUsers } from "./pages/SatelliteUsers.jsx";
@@ -43,6 +44,7 @@ import { ServiceUnitUsers } from "./pages/ServiceUnitUsers.jsx";
 import { SubUnitUsers } from "./pages/SubUnitUsers.jsx";
 import { countryAdminHomeState } from "./roles.js";
 import { writeUsersSectionTab } from "./usersSectionTab.js";
+import { useAdminNotifications } from "./useAdminNotifications.js";
 import { TotpEnrollmentGate } from "./components/TotpEnrollmentGate.jsx";
 
 const PAGE_TITLES_DEFAULT = {
@@ -59,6 +61,7 @@ const PAGE_TITLES_DEFAULT = {
   oversight: "Application Queue",
   "role-dashboard": "Dashboard",
   announcements: "Announcements",
+  notifications: "Notifications",
   "data-locations": "Propose church location",
   "branch-catalog": "Branch directory",
   "unit-request": "Request Service Unit",
@@ -96,6 +99,7 @@ function getPageTitle(page, role) {
 
 export function AdminLayout() {
   const { admin, viewMode } = useAdminAuth();
+  const { unread: notificationUnread } = useAdminNotifications({ perPage: 1 });
   const uiRole = effectiveUiRole(admin, viewMode);
   const actingAsState = isActingAsStateAdmin(admin, viewMode);
   const canPlatformSettings = isGlobalAdminRole(admin?.role);
@@ -191,6 +195,33 @@ export function AdminLayout() {
     loadAdmins();
   }, [admin, loadUnits, loadAdmins]);
 
+  /** Email deep links: /admin?page=queue&tab=new */
+  useEffect(() => {
+    if (!admin) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const pageParam = params.get("page");
+      const tabParam = params.get("tab");
+      if (!pageParam) return;
+      setPage(pageParam);
+      if (tabParam && (pageParam === "queue" || pageParam === "oversight")) {
+        setQueueTab(tabParam);
+        try {
+          sessionStorage.setItem("sm_admin_queue_tab", tabParam);
+        } catch {
+          /* ignore */
+        }
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete("page");
+      url.searchParams.delete("tab");
+      const cleaned = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, "", cleaned);
+    } catch {
+      /* ignore */
+    }
+  }, [admin?.id, setPage]);
+
   useEffect(() => {
     if (!admin) return;
     if (admin.role === "country_super_admin") {
@@ -218,6 +249,7 @@ export function AdminLayout() {
           "data-locations",
           "locations",
           "branch-catalog",
+          "notifications",
           "activity",
           "profile",
         ].includes(p)
@@ -275,7 +307,13 @@ export function AdminLayout() {
   return (
     <AdminGeoFilterProvider admin={admin}>
     <div className="sa-root" data-theme={theme}>
-      <Sidebar page={contentPage} setPage={setPage} pendingCount={pendingCount} requestOpenCount={openRequestCount} />
+      <Sidebar
+        page={contentPage}
+        setPage={setPage}
+        pendingCount={pendingCount}
+        requestOpenCount={openRequestCount}
+        notificationUnreadCount={notificationUnread}
+      />
 
       <div className="sa-main">
         <div className="sa-topbar">
@@ -288,8 +326,10 @@ export function AdminLayout() {
           </div>
           <div className="sa-topbar-right">
             <NotificationBell
-              onNavigateQueue={() => navigateToQueue("new")}
+              onNavigateQueue={(tab) => navigateToQueue(tab || "new")}
               onNavigateAnnouncements={() => setPage("announcements")}
+              onOpenInbox={() => setPage("notifications")}
+              onNavigateRequests={() => setPage("requests")}
             />
             <button
               type="button"
@@ -356,6 +396,9 @@ export function AdminLayout() {
           {contentPage === "activity"  && <ActivityLog />}
           {contentPage === "oversight" && <BranchOversight units={units} />}
           {contentPage === "announcements" && <Announcements />}
+          {contentPage === "notifications" && (
+            <Notifications setPage={setPage} navigateToQueue={navigateToQueue} />
+          )}
           {contentPage === "users" && isCountrySuperAdmin(admin?.role) && !actingAsState && (
             <CountryUsers admins={admins} units={units} reload={loadAdmins} setPage={setPage} />
           )}

@@ -1,34 +1,39 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { applicantDisplayName, renderTemplate, sendHtmlEmail } from "./resend_mail.ts";
+import { formatOrgSubject, getOrgName, sendEmail, wrapEmailHtml } from "./email_delivery.ts";
+import { applicantDisplayName, renderTemplate } from "./resend_mail.ts";
 import { normStatus } from "./overdue.ts";
 
 function norm(s: unknown): string {
   return String(s ?? "").trim();
 }
 
-type TemplateKey = "approved" | "rejected" | "waitlisted";
+type TemplateKey = "approved" | "rejected";
 
 function templateKeyForStatus(status: string): TemplateKey | null {
   const st = normStatus(status);
   if (st === "accepted") return "approved";
   if (st === "rejected") return "rejected";
-  if (st === "in_progress") return "waitlisted";
   return null;
 }
 
 const DEFAULT_TEMPLATES: Record<TemplateKey, string> = {
-  approved: "Hello {{name}}, your registration to join {{unit}} has been approved.",
-  rejected: "Hello {{name}}, your registration to join {{unit}} was not approved at this time.",
-  waitlisted: "Hello {{name}}, your registration to join {{unit}} is currently waitlisted.",
+  approved:
+    "Hello {{name}},\n\nGood news — your registration to join the {{unit}} department has been approved.\n\nA coordinator from {{unit}} will contact you shortly with next steps.\n\nGod bless you.",
+  rejected:
+    "Hello {{name}},\n\nThank you for your interest in serving with the {{unit}} department. After review, your registration was not approved at this time.\n\nIf you have questions, please contact your church coordinator.",
 };
 
 const SUBJECTS: Record<TemplateKey, string> = {
-  approved: "Your service unit registration was approved",
-  rejected: "Update on your service unit registration",
-  waitlisted: "Your service unit registration is waitlisted",
+  approved: "Your service unit application was approved",
+  rejected: "Update on your service unit application",
 };
 
-/** Send applicant email when queue status changes (accepted / rejected / in progress). */
+const PREVIEWS: Record<TemplateKey, string> = {
+  approved: "Your application has been approved. A coordinator will contact you shortly.",
+  rejected: "An update on your service unit registration application.",
+};
+
+/** Send applicant email when an admin approves or rejects (accepted / rejected only). */
 export async function sendRegistrationStatusEmail(
   supabase: SupabaseClient,
   row: Record<string, unknown>,
@@ -47,12 +52,24 @@ export async function sendRegistrationStatusEmail(
   const rawTemplate = norm(templates[key]) || DEFAULT_TEMPLATES[key];
 
   const name = applicantDisplayName(String(row.first_name || ""), String(row.surname || ""));
-  const unit = norm(row.unit_name) || "your service unit";
+  const unit = norm(row.unit_name) || "Service Unit";
   const sub = norm(row.sub_unit);
-  const unitLabel = sub ? `${unit} (${sub})` : unit;
+  const department = sub ? `${unit} (${sub})` : unit;
 
-  const bodyText = renderTemplate(rawTemplate, { name, unit: unitLabel });
-  const html = `<p>${bodyText.replace(/\n/g, "</p><p>")}</p>`;
+  const bodyText = renderTemplate(rawTemplate, { name, unit: department });
+  const paragraphs = bodyText.split(/\n\n+/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+  const bodyHtml = `${paragraphs}<p style="color:#64748b;font-size:14px;">${getOrgName()}</p>`;
 
-  return sendHtmlEmail(email, SUBJECTS[key], html);
+  const html = wrapEmailHtml({
+    title: key === "approved" ? "Application approved" : "Application update",
+    previewText: PREVIEWS[key],
+    bodyHtml,
+  });
+
+  return sendEmail({
+    to: email,
+    subject: formatOrgSubject(SUBJECTS[key]),
+    html,
+    tags: [key === "approved" ? "registration_approved" : "registration_rejected"],
+  });
 }

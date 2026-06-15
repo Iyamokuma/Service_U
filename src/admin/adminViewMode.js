@@ -60,6 +60,7 @@ export const GLOBAL_ADMIN_PAGES = [
   "branch-catalog",
   "admins",
   "announcements",
+  "notifications",
   "requests",
   "activity",
   "settings",
@@ -80,6 +81,7 @@ const COUNTRY_PAGES = [
   "locations",
   "activity",
   "announcements",
+  "notifications",
   "profile",
 ];
 
@@ -90,6 +92,7 @@ export const STATE_LEVEL_PAGES = [
   "requests",
   "activity",
   "announcements",
+  "notifications",
   "profile",
 ];
 
@@ -107,6 +110,7 @@ export const SERVICE_UNIT_LEADER_PAGES = [
   "queue",
   "users",
   "announcements",
+  "notifications",
   "activity",
   "profile",
 ];
@@ -116,6 +120,7 @@ export const SUB_UNIT_LEADER_PAGES = [
   "queue",
   "users",
   "announcements",
+  "notifications",
   "profile",
 ];
 
@@ -125,6 +130,7 @@ const SATELLITE_ADMIN_PAGES = [
   "users",
   "requests",
   "announcements",
+  "notifications",
   "profile",
 ];
 

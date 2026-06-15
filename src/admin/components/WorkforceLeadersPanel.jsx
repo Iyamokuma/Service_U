@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AdminLoginMeta } from "./AdminLoginMeta.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "./AdminRowActionsMenu.jsx";
 import { isAdminActive } from "./adminRowMenuItems.js";
 import { branchStateLabel } from "../branchRegions.js";
@@ -195,7 +196,7 @@ export function WorkforceLeadersPanel({
                   <tr key={r.id}>
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
-                      <div className="sa-text-sm sa-text-muted">{r.email || r.username}</div>
+                      <AdminLoginMeta username={r.username} email={r.email} />
                       {!showRoleFilter && r.role === "sub_unit_leader" ? (
                         <div className="sa-text-sm sa-text-muted sa-leader-row-meta">
                           {[r.unitName, r.subUnit !== "—" ? r.subUnit : "", r.location !== "—" ? r.location : ""]

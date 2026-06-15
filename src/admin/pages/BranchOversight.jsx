@@ -9,6 +9,12 @@ import { isCountrySuperAdmin, isStateSuperAdmin, isSupervisoryBranchRole } from 
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { leaderScopeLabel } from "../leaderScope.js";
 import { RegistrationDetails, fmtDate, fullName } from "./Queue.jsx";
+import { ApplicationStatusBadge } from "../components/ApplicationStatusBadge.jsx";
+import {
+  applyQueueStatusTab,
+  queueStatusTabLabel,
+  queueStatusTabsForRole,
+} from "../queueStatusTabs.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
@@ -34,6 +40,7 @@ export function BranchOversight({ units }) {
   const [expanded, setExpanded] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
   const [acceptVerifyModal, setAcceptVerifyModal] = useState(null);
+  const [statusTab, setStatusTab] = useState("all");
   const [filters, setFilters] = useState({
     search: "",
     unit_id: "",
@@ -60,18 +67,28 @@ export function BranchOversight({ units }) {
     api.stats({ viewer: admin }).then(setStats).catch(() => setStats(null));
   }, [admin]);
 
+  const statusTabs = useMemo(() => queueStatusTabsForRole(admin?.role), [admin?.role]);
+  const onOverdueTab = statusTab === "overdue";
+  const onCriticalTab = statusTab === "critical";
+  const onSlaTab = onOverdueTab || onCriticalTab;
+
   const load = useCallback(
     async (page = 1) => {
       if (!admin) return;
       setLoading(true);
       try {
-        const res = await api.queue({
+        const scoped = {
           ...filters,
           page,
           per_page: 25,
           viewer: admin,
           ...(countrySupervisoryQueue ? { scope_mode: "country" } : {}),
-        });
+        };
+        applyQueueStatusTab(scoped, statusTab);
+        if (statusTab === "all") {
+          scoped.status = filters.status || "";
+        }
+        const res = await api.queue(scoped);
         setRows(res.data || []);
         setPag(res.pagination || { page: 1, pages: 1, total: 0 });
       } catch (e) {
@@ -80,7 +97,7 @@ export function BranchOversight({ units }) {
         setLoading(false);
       }
     },
-    [admin, filters, toast, countrySupervisoryQueue]
+    [admin, filters, toast, countrySupervisoryQueue, statusTab]
   );
 
   useEffect(() => {
@@ -187,16 +204,58 @@ export function BranchOversight({ units }) {
             </div>
             <div className="sa-stat-value">{stats.totals.approved}</div>
           </div>
-          <div className="sa-stat-card">
+          <div className={`sa-stat-card${(stats.totals.overdue_count ?? 0) === 0 ? " sa-stat-card--overdue-zero" : (stats.totals.critical_count ?? 0) > 0 ? " sa-stat-card--overdue-critical" : " sa-stat-card--overdue-amber"}`}>
             <div className="sa-stat-header">
-              <span className="sa-stat-label">Units touched</span>
+              <span className="sa-stat-label">Overdue</span>
             </div>
-            <div className="sa-stat-value">{stats.totals.active_units}</div>
+            <div className="sa-stat-value">{stats.totals.overdue_count ?? 0}</div>
+            <div className="sa-text-sm sa-text-muted" style={{ marginTop: 8 }}>
+              {(stats.totals.critical_count ?? 0) > 0
+                ? `${stats.totals.critical_count} critical`
+                : "Open applications past threshold"}
+            </div>
           </div>
+          {isSatelliteSupervisory ? (
+            <div className={`sa-stat-card${(stats.totals.critical_count ?? 0) > 0 ? " sa-stat-card--overdue-critical" : ""}`}>
+              <div className="sa-stat-header">
+                <span className="sa-stat-label">Critical</span>
+              </div>
+              <div className="sa-stat-value">{stats.totals.critical_count ?? 0}</div>
+            </div>
+          ) : (
+            <div className="sa-stat-card">
+              <div className="sa-stat-header">
+                <span className="sa-stat-label">Units touched</span>
+              </div>
+              <div className="sa-stat-value">{stats.totals.active_units}</div>
+            </div>
+          )}
         </div>
       )}
 
       <div className="sa-card">
+        <div className="sa-card-body sa-unit-tab-row" role="tablist" aria-label="Application status">
+          {statusTabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`sa-unit-tab-btn ${statusTab === tab ? "is-active" : ""}`}
+              onClick={() => setStatusTab(tab)}
+              title={queueStatusTabLabel(tab)}
+            >
+              {queueStatusTabLabel(tab)}
+            </button>
+          ))}
+        </div>
+        {(onOverdueTab || onCriticalTab) && (
+          <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
+            <span className="sa-text-muted sa-text-sm">
+              {onCriticalTab
+                ? "Critical applications have exceeded the critical overdue threshold. Service unit leaders are notified."
+                : "Overdue applications are still New or In Progress but past the review threshold."}
+            </span>
+          </div>
+        )}
         <div className="sa-filters">
           <div className="sa-search" style={{ minWidth: 220 }}>
             <span className="sa-search-icon">
@@ -233,14 +292,16 @@ export function BranchOversight({ units }) {
               </option>
             ))}
           </select>
-          <select className="sa-select" value={filters.status} onChange={setFilter("status")}>
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replace("_", " ")}
-              </option>
-            ))}
-          </select>
+          {statusTab === "all" && (
+            <select className="sa-select" value={filters.status} onChange={setFilter("status")}>
+              <option value="">All statuses</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replace("_", " ")}
+                </option>
+              ))}
+            </select>
+          )}
           <select className="sa-select" value={filters.sex} onChange={setFilter("sex")}>
             <option value="">All genders</option>
             <option value="Male">Male</option>
@@ -289,7 +350,11 @@ export function BranchOversight({ units }) {
             Clear
           </button>
           <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto" }}>
-            {pag.total} result{pag.total !== 1 ? "s" : ""}
+            {onOverdueTab
+              ? `${pag.total} overdue`
+              : onCriticalTab
+                ? `${pag.total} critical`
+                : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
           </span>
         </div>
 
@@ -311,13 +376,14 @@ export function BranchOversight({ units }) {
                   <th>Unit</th>
                   <th>Status</th>
                   <th>Submitted</th>
+                  {onSlaTab ? <th>Days overdue</th> : null}
                   <th>{canAction ? "Actions" : ""}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <Fragment key={r.id}>
-                    <tr>
+                    <tr className={onSlaTab ? (onCriticalTab ? "sa-row-critical" : "sa-row-overdue") : undefined}>
                       <td className="sa-text-muted">{r.id}</td>
                       <td>
                         <div className="sa-fw-600">{fullName(r)}</div>
@@ -329,9 +395,12 @@ export function BranchOversight({ units }) {
                         {r.sub_unit && <div className="sa-text-sm sa-text-muted">{r.sub_unit}</div>}
                       </td>
                       <td>
-                        <span className={`sa-badge ${r.status}`}>{r.status.replace("_", " ")}</span>
+                        <ApplicationStatusBadge row={r} />
                       </td>
                       <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
+                      {onSlaTab ? (
+                        <td className="sa-fw-600">{Number(r.days_overdue ?? 0)}</td>
+                      ) : null}
                       <td>
                         <div className="sa-table-actions">
                           <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
@@ -358,7 +427,7 @@ export function BranchOversight({ units }) {
                     </tr>
                     {expanded === r.id && (
                       <tr className="sa-detail-row">
-                        <td colSpan={7}>
+                        <td colSpan={onSlaTab ? 8 : 7}>
                           <RegistrationDetails r={r} />
                         </td>
                       </tr>

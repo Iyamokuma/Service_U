@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildAdminDeepLink } from "./admin_invite.ts";
+import { emailCtaButtonHtml } from "./email_delivery.ts";
 import { sendHtmlEmail } from "./resend_mail.ts";
 
 function norm(s: unknown): string {
@@ -53,6 +55,8 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
     byAdmin.get(aid)!.push(rid);
   }
 
+  const respondUrl = buildAdminDeepLink("queue", { tab: "new" });
+
   for (const [adminId, regIds] of byAdmin) {
     const uniqueIds = [...new Set(regIds)];
     const { data: admin } = await supabase.from("admins").select("id,email,full_name,sub_unit_name").eq(
@@ -91,14 +95,25 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
       ? "New service unit registration in your queue"
       : `${items.length} new service unit registrations in your queue`;
 
+    const ctaHtml = respondUrl ? emailCtaButtonHtml("Respond", respondUrl) : "";
+    const fallbackLink = respondUrl
+      ? `<p style="margin-top:12px;font-size:13px;color:#64748b;">Or open this link: <a href="${respondUrl}">${respondUrl}</a></p>`
+      : `<p>Please sign in to the admin dashboard to review.</p>`;
+
     const html = `
       <p>Hello ${norm((admin as { full_name?: string })?.full_name) || "there"},</p>
       <p>The following application${items.length === 1 ? "" : "s"} ${items.length === 1 ? "has" : "have"} been submitted for <strong>${subUnit}</strong>:</p>
       <ul>${listHtml}</ul>
-      <p>Please sign in to the admin dashboard to review.</p>
+      <p>Sign in to review and respond to ${items.length === 1 ? "this application" : "these applications"}.</p>
+      ${ctaHtml}
+      ${fallbackLink}
     `;
 
-    await sendHtmlEmail(email, title, html);
+    await sendHtmlEmail(email, title, html, {
+      tags: ["new_registration_leader"],
+      previewText: `New application${items.length === 1 ? "" : "s"} waiting in your ${subUnit} queue.`,
+      title: "New application request",
+    });
 
     await supabase.from("admin_notifications").insert({
       admin_id: adminId,

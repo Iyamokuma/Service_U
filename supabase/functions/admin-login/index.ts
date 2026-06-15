@@ -1,8 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { signAdminToken } from "../_shared/jwt.ts";
-import { ensureCountryAdminHeadquarters } from "../_shared/admin_ops.ts";
-import { shapeAdminForClient } from "../_shared/admin_invite.ts";
 import { isRootSuperAdminRole, verifyAdminTotp } from "../_shared/admin_totp.ts";
+import { issueAdminSession } from "../_shared/admin_session.ts";
 import {
   createLoginOtpChallenge,
   LOGIN_OTP_EXPIRES_SEC,
@@ -91,54 +89,6 @@ function assertPasswordAndInviteGate(admin: AdminRow, password: string): void {
   if (!storedPassword || storedPassword !== password) {
     throw new Error("Invalid credentials.");
   }
-}
-
-async function touchDashboardActivated(
-  supabase: ReturnType<typeof createClient>,
-  admin: AdminRow,
-) {
-  if (isRootSuperAdminRole(admin.role)) return;
-  if (admin.dashboard_activated_at) return;
-  await supabase
-    .from("admins")
-    .update({ dashboard_activated_at: new Date().toISOString() })
-    .eq("id", admin.id);
-}
-
-async function issueAdminSession(
-  supabase: ReturnType<typeof createClient>,
-  admin: AdminRow,
-  jwtSecret: string,
-  req: Request,
-  logDescription: string,
-) {
-  const now = new Date().toISOString();
-  await supabase.from("admins").update({ last_login: now }).eq("id", admin.id);
-  await touchDashboardActivated(supabase, admin);
-
-  const resolved = await ensureCountryAdminHeadquarters(supabase, admin);
-
-  await supabase.from("activity_logs").insert({
-    admin_id: resolved.id,
-    admin_name: resolved.full_name,
-    action: "admin.login",
-    entity_type: "admin",
-    entity_id: String(resolved.id),
-    description: logDescription,
-    ip_address: clientIp(req),
-  });
-
-  let service_unit_name = "";
-  if (resolved.service_unit_id != null) {
-    const { data: u } = await supabase.from("service_units").select("name").eq("id", resolved.service_unit_id)
-      .maybeSingle();
-    service_unit_name = String(u?.name || "");
-  }
-
-  const { data: fresh } = await supabase.from("admins").select("*").eq("id", resolved.id).maybeSingle();
-  const token = await signAdminToken(Number(resolved.id), jwtSecret);
-  const shaped = shapeAdminForClient((fresh || resolved) as Record<string, unknown>, service_unit_name);
-  return { token, admin: shaped };
 }
 
 async function handleStartLogin(

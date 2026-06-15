@@ -4,6 +4,7 @@ import { Modal } from "../components/Modal.jsx";
 import { SearchableSelect } from "../components/SearchableSelect.jsx";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { exportCsv } from "../exportCsv.js";
@@ -44,6 +45,7 @@ import {
   occupiedCountryCodes,
   ROLES_WITH_COUNTRY,
   ROLES_WITH_STATE,
+  ROLES_WITH_SATELLITE,
   usesPlatformInviteCreate,
   ADMIN_EMAIL_INVITES_ENABLED,
   validateAdminForm,
@@ -1029,8 +1031,7 @@ function AdminAccountsTable({
           <thead>
             <tr>
               <th>Name</th>
-              <th>Username</th>
-              <th>Email</th>
+              <th>Login</th>
               <th>Role</th>
               <th>Scope/Service Unit</th>
               <th>Status</th>
@@ -1050,8 +1051,9 @@ function AdminAccountsTable({
                     </div>
                   </div>
                 </td>
-                <td className="sa-text-muted sa-text-sm">{a.username}</td>
-                <td className="sa-truncate sa-text-sm">{a.email}</td>
+                <td>
+                  <AdminLoginMeta username={a.username} email={a.email} />
+                </td>
                 <td>
                   <span className={`sa-badge ${a.role}`}>{roleDisplayLabel(a.role)}</span>
                 </td>
@@ -1349,7 +1351,7 @@ function AdminModal({
                   sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
                   branch_country,
                   branch_state,
-                  satellite_site: role === "satellite_church_admin" ? f.satellite_site : "",
+                  satellite_site: ROLES_WITH_SATELLITE.includes(role) ? f.satellite_site : "",
                 };
                 if (
                   role === "country_super_admin" &&
@@ -1423,7 +1425,7 @@ function AdminModal({
                     ...f,
                     branch_country,
                     branch_state: hqDefault,
-                    satellite_site: f.role === "satellite_church_admin" ? "" : f.satellite_site,
+                    satellite_site: ROLES_WITH_SATELLITE.includes(f.role) ? "" : f.satellite_site,
                   };
                   if (
                     f.role === "country_super_admin" &&
@@ -1458,7 +1460,7 @@ function AdminModal({
                   setForm((f) => ({
                     ...f,
                     branch_state: e.target.value,
-                    satellite_site: f.role === "satellite_church_admin" ? "" : f.satellite_site,
+                    satellite_site: ROLES_WITH_SATELLITE.includes(f.role) ? "" : f.satellite_site,
                   }))
                 }
                 disabled={
@@ -1490,7 +1492,7 @@ function AdminModal({
         </>
       )}
 
-      {form.role === "satellite_church_admin" && (
+      {ROLES_WITH_SATELLITE.includes(form.role) && (
         <div className="sa-field">
           <label className="sa-label">Satellite church <span className="sa-required">*</span></label>
           <SearchableSelect
@@ -1512,7 +1514,9 @@ function AdminModal({
           <div className="sa-field-hint">
             {form.branch_country && form.branch_state && satelliteOptions.length === 0
               ? "No churches listed for this state yet. Add branches via Data Entry or approve a location request first."
-              : "Pastor admin is scoped to this satellite within the selected state."}
+              : form.role === "satellite_church_admin"
+                ? "Pastor admin is scoped to this satellite within the selected state."
+                : "Leader is assigned to this church location within the selected state."}
           </div>
         </div>
       )}

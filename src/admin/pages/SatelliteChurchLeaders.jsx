@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { UsersContextSwitch } from "../components/UsersContextSwitch.jsx";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
@@ -187,7 +188,7 @@ export function SatelliteChurchLeaders({
                   <tr key={r.id}>
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
-                      <div className="sa-text-sm sa-text-muted">{r.username}</div>
+                      <AdminLoginMeta username={r.username} email={r.email} />
                     </td>
                     <td className="sa-text-sm">{r.unitName}</td>
                     <td>
@@ -218,7 +219,7 @@ export function SatelliteChurchLeaders({
                   <tr key={r.id}>
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
-                      <div className="sa-text-sm sa-text-muted">{r.username}</div>
+                      <AdminLoginMeta username={r.username} email={r.email} />
                     </td>
                     <td className="sa-text-sm">{r.unitName}</td>
                     <td className="sa-text-sm">{r.subUnit}</td>

@@ -22,11 +22,18 @@ export function DataEntryLocationForm() {
   const [stateName, setStateName] = useState("");
   const [lgaName, setLgaName] = useState("");
   const [satellites, setSatellites] = useState([""]);
+  const [countrySearch, setCountrySearch] = useState("");
 
   const [loadingGeo, setLoadingGeo] = useState({ continents: true, countries: false, states: false, lgas: false });
   const [submitting, setSubmitting] = useState(false);
 
   const catalogCountry = branchCountryCodeFromIso2(countryIso2);
+
+  const filteredCountries = countries.filter((c) => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || c.iso2.toLowerCase().includes(q);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +206,7 @@ export function DataEntryLocationForm() {
                 setContinent(e.target.value);
                 setCountryIso2("");
                 setCountryName("");
+                setCountrySearch("");
               }}
             >
               <option value="">{loadingGeo.continents ? "Loading…" : "Select continent"}</option>
@@ -212,6 +220,16 @@ export function DataEntryLocationForm() {
 
           <div className="sa-field">
             <label className="sa-label">Country</label>
+            {continent && !loadingGeo.countries && countries.length > 0 ? (
+              <input
+                className="sa-input"
+                style={{ marginBottom: 8 }}
+                value={countrySearch}
+                disabled={!continent}
+                onChange={(e) => setCountrySearch(e.target.value)}
+                placeholder="Search country name or code (e.g. Nigeria, NG)"
+              />
+            ) : null}
             <select
               className="sa-field-select"
               value={countryIso2}
@@ -223,13 +241,23 @@ export function DataEntryLocationForm() {
                 setCountryName(row?.name || "");
               }}
             >
-              <option value="">{loadingGeo.countries ? "Loading…" : "Select country"}</option>
-              {countries.map((c) => (
+              <option value="">
+                {loadingGeo.countries ? "Loading…" : continent ? "Select country" : "Select continent first"}
+              </option>
+              {filteredCountries.map((c) => (
                 <option key={c.iso2} value={c.iso2}>
                   {c.name} ({c.iso2})
                 </option>
               ))}
             </select>
+            {continent && !loadingGeo.countries ? (
+              <p className="sa-field-hint">
+                {countries.length} countries in {continent}
+                {countrySearch && filteredCountries.length !== countries.length
+                  ? ` · ${filteredCountries.length} match search`
+                  : ""}
+              </p>
+            ) : null}
           </div>
 
           <div className="sa-field">
@@ -251,19 +279,32 @@ export function DataEntryLocationForm() {
 
           <div className="sa-field">
             <label className="sa-label">LGA / city (directory)</label>
-            <select
-              className="sa-field-select"
-              value={lgaName}
-              disabled={!stateName || loadingGeo.lgas}
-              onChange={(e) => setLgaName(e.target.value)}
-            >
-              <option value="">{loadingGeo.lgas ? "Loading…" : "Select LGA or city"}</option>
-              {lgas.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            {lgas.length > 0 || loadingGeo.lgas ? (
+              <select
+                className="sa-field-select"
+                value={lgaName}
+                disabled={!stateName || loadingGeo.lgas}
+                onChange={(e) => setLgaName(e.target.value)}
+              >
+                <option value="">{loadingGeo.lgas ? "Loading…" : "Select LGA or city"}</option>
+                {lgas.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="sa-input"
+                value={lgaName}
+                disabled={!stateName}
+                onChange={(e) => setLgaName(e.target.value)}
+                placeholder={stateName ? "Type LGA or city name" : "Select state first"}
+              />
+            )}
+            {!loadingGeo.lgas && stateName && !lgas.length ? (
+              <p className="sa-field-hint">No directory list for this state — type the LGA or city manually.</p>
+            ) : null}
           </div>
         </div>
 

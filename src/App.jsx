@@ -15,6 +15,7 @@ import { shrinkPhotoDataUrl } from "./photoCompress.js";
 import { isSupabaseSubmitConfigured, submitRegistration } from "./registrationSubmit.js";
 import { fetchServiceUnitsCatalog } from "./serviceUnitsCatalog.js";
 import { FormTopBrand } from "./components/FormTopBrand.jsx";
+import { branchCountryLabel, branchStateLabel } from "./admin/branchRegions.js";
 
 function firstValidationErrorEl() {
   return (
@@ -142,6 +143,16 @@ export default function App() {
   }, []);
 
   const allErrors = useMemo(() => validate(form, serviceUnits), [form, serviceUnits]);
+
+  const locationLabel = useMemo(() => {
+    const parts = [];
+    const country = branchCountryLabel(form.branchCountry);
+    const state = branchStateLabel(form.branchCountry, form.branchState);
+    if (country) parts.push(country);
+    if (state) parts.push(state);
+    if (form.satelliteSite) parts.push(form.satelliteSite);
+    return parts.join(" · ");
+  }, [form.branchCountry, form.branchState, form.satelliteSite]);
 
   const errors = useMemo(() => {
     const base = submitted ? allErrors : {};
@@ -301,8 +312,12 @@ export default function App() {
             Thank you, <em>{form.firstName}</em>.
           </h2>
           <p className="hero-sub" style={{ margin: "0 auto" }}>
-            Your service unit registration has been received. We have sent a confirmation
-            to <strong>{form.email}</strong>. A unit coordinator will be in touch within a week.
+            <strong>Application received successfully.</strong> We have sent a confirmation to{" "}
+            <strong>{form.email}</strong>. You will be contacted shortly by the{" "}
+            <strong>
+              {serviceUnits.find((u) => Number(u.id) === Number(form.unitId))?.name || "service unit"}
+            </strong>{" "}
+            department.
           </p>
         </div>
       </div>
@@ -334,7 +349,7 @@ export default function App() {
         <FaithSection form={form} set={set} errors={errors} />
         <PhotoSection form={form} set={set} />
         <ChurchMembershipSection form={form} set={set} errors={errors} />
-        <ServiceUnitSection form={form} set={set} errors={errors} units={serviceUnits} />
+        <ServiceUnitSection form={form} set={set} errors={errors} units={serviceUnits} locationLabel={locationLabel} />
 
         <div className="submit-bar">
           {saveError && (

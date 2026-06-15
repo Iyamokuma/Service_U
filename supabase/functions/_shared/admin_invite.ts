@@ -10,6 +10,18 @@ export function getAdminAppUrl(): string {
   return norm(denoEnv?.get?.("ADMIN_APP_URL") || "").replace(/\/+$/, "");
 }
 
+/** Deep link into the admin SPA (e.g. queue + tab for email CTAs). */
+export function buildAdminDeepLink(page: string, params: Record<string, string> = {}): string {
+  const base = getAdminAppUrl();
+  if (!base) return "";
+  const q = new URLSearchParams({ page });
+  for (const [key, value] of Object.entries(params)) {
+    const v = norm(value);
+    if (v) q.set(key, v);
+  }
+  return `${base}?${q.toString()}`;
+}
+
 /** Resend "from" — supports RESEND_FROM_EMAIL or legacy RESEND_SENDER_NAME + RESEND_SENDER_EMAIL. */
 export function getResendFromAddress(): string {
   const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
@@ -125,12 +137,20 @@ export async function sendAdminInviteEmail(
   fullName: string,
   inviteUrl: string,
   role = "",
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
   const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
   const key = denoEnv?.get?.("RESEND_API_KEY") || "";
   const from = getResendFromAddress();
   const email = norm(to).toLowerCase();
-  if (!key || !from || !email || !inviteUrl) return false;
+  if (!key) return { ok: false, error: "RESEND_API_KEY is not set in Supabase Edge Function secrets." };
+  if (!from) {
+    return {
+      ok: false,
+      error: "RESEND_FROM_EMAIL is not set. Use a verified sender, e.g. Salvation Ministries <noreply@yourdomain.com>.",
+    };
+  }
+  if (!email) return { ok: false, error: "Recipient email is missing." };
+  if (!inviteUrl) return { ok: false, error: "Invite link could not be built (check ADMIN_APP_URL)." };
 
   const roleLabel = inviteRoleLabel(role);
   const subject = "Activate your Salvation Ministries admin account";
@@ -155,10 +175,18 @@ export async function sendAdminInviteEmail(
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");
       console.error("Resend invite email failed:", res.status, errBody);
+      let detail = errBody;
+      try {
+        const parsed = JSON.parse(errBody) as { message?: string };
+        if (parsed.message) detail = parsed.message;
+      } catch {
+        /* use raw body */
+      }
+      return { ok: false, error: detail || `Resend rejected the email (HTTP ${res.status}).` };
     }
-    return res.ok;
+    return { ok: true };
   } catch (err) {
     console.error("Resend invite email error:", err);
-    return false;
+    return { ok: false, error: err instanceof Error ? err.message : "Could not reach Resend." };
   }
 }

@@ -29,7 +29,12 @@ export function Settings() {
   return (
     <div className="sa-card">
       <div className="sa-card-body">
-        <h3 style={{ marginBottom: 12 }}>Notification Templates</h3>
+        <h3 style={{ marginBottom: 12 }}>Applicant notification templates</h3>
+        <p className="sa-text-sm sa-text-muted" style={{ maxWidth: 640, lineHeight: 1.55, marginBottom: 14 }}>
+          Applicants receive a confirmation email when they submit the form. When an admin moves an application to{" "}
+          <strong>Accepted</strong> or <strong>Rejected</strong>, the matching template below is emailed automatically.
+          Use <code>{`{{name}}`}</code> and <code>{`{{unit}}`}</code> (department / service unit).
+        </p>
         <div className="sa-field">
           <label className="sa-label">Approved template</label>
           <textarea className="sa-textarea" value={settings.templates.approved} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...s.templates, approved: e.target.value } }))} />
@@ -37,10 +42,6 @@ export function Settings() {
         <div className="sa-field">
           <label className="sa-label">Rejected template</label>
           <textarea className="sa-textarea" value={settings.templates.rejected} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...s.templates, rejected: e.target.value } }))} />
-        </div>
-        <div className="sa-field">
-          <label className="sa-label">Waitlisted template</label>
-          <textarea className="sa-textarea" value={settings.templates.waitlisted} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...s.templates, waitlisted: e.target.value } }))} />
         </div>
 
         <h3 style={{ margin: "20px 0 12px" }}>Overdue &amp; alerts</h3>

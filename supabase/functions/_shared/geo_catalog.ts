@@ -1,24 +1,38 @@
-/**
- * Geography for data-entry flows (continent → country → state → LGA).
- * Countries from CountriesNow (full list); continents from ISO region map.
- */
+/** Server-side geography for admin data-entry flows (CountriesNow + ISO region map). */
 
 const ISO_COUNTRIES_URL =
   "https://cdn.jsdelivr.net/gh/lukes/ISO-3166-Countries-with-Regional-Codes@master/all/all.json";
 const CN_BASE = "https://countriesnow.space/api/v0.1";
 
-/** Salvation Ministries priority countries shown first in lists. */
 const PRIORITY_ISO2 = ["NG", "GH", "CM", "GM", "BJ", "AE", "GB", "CH", "US"];
 
-let isoRegionByCode = null;
-let countriesNowCache = null;
+type CountriesNowResponse<T> = {
+  error?: boolean;
+  msg?: string;
+  data?: T;
+};
 
-function normContinent(c) {
-  const x = String(c || "").trim();
+type IsoCountryRow = {
+  name?: string;
+  "alpha-2"?: string;
+  region?: string;
+};
+
+type CnIsoRow = {
+  name?: string;
+  Iso2?: string;
+  iso2?: string;
+};
+
+let isoRegionByCode: Map<string, string> | null = null;
+let countriesNowCache: { iso2: string; name: string }[] | null = null;
+
+function normContinent(c: unknown): string {
+  const x = String(c ?? "").trim();
   return x || "Other";
 }
 
-function sortCountriesWithPriority(list) {
+function sortCountriesWithPriority(list: { iso2: string; name: string }[]) {
   return [...list].sort((a, b) => {
     const pa = PRIORITY_ISO2.indexOf(a.iso2);
     const pb = PRIORITY_ISO2.indexOf(b.iso2);
@@ -31,14 +45,9 @@ function sortCountriesWithPriority(list) {
   });
 }
 
-async function countriesNowGet(path) {
-  let res;
-  try {
-    res = await fetch(`${CN_BASE}${path}`);
-  } catch {
-    throw new Error("Could not reach the geography directory. Check your connection and try again.");
-  }
-  const j = await res.json();
+async function countriesNowGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${CN_BASE}${path}`);
+  const j = await res.json() as CountriesNowResponse<T>;
   if (!res.ok || j.error) {
     throw new Error(j.msg || "Geography lookup failed.");
   }
@@ -48,18 +57,13 @@ async function countriesNowGet(path) {
   return j.data;
 }
 
-async function loadIsoRegionByCode() {
+async function loadIsoRegionByCode(): Promise<Map<string, string>> {
   if (isoRegionByCode) return isoRegionByCode;
-  let res;
-  try {
-    res = await fetch(ISO_COUNTRIES_URL);
-  } catch {
-    throw new Error("Could not reach the country directory. Check your connection and try again.");
-  }
+  const res = await fetch(ISO_COUNTRIES_URL);
   if (!res.ok) throw new Error("Could not load country directory.");
-  const rows = await res.json();
+  const rows = await res.json() as IsoCountryRow[];
   if (!Array.isArray(rows)) throw new Error("Could not load country directory.");
-  const map = new Map();
+  const map = new Map<string, string>();
   for (const row of rows) {
     const iso2 = String(row["alpha-2"] || "").toUpperCase();
     if (!iso2) continue;
@@ -69,9 +73,9 @@ async function loadIsoRegionByCode() {
   return map;
 }
 
-async function fetchCountriesNowIso() {
+async function fetchCountriesNowIso(): Promise<{ iso2: string; name: string }[]> {
   if (countriesNowCache) return countriesNowCache;
-  const rows = await countriesNowGet("/countries/iso");
+  const rows = await countriesNowGet<CnIsoRow[]>("/countries/iso");
   if (!Array.isArray(rows)) throw new Error("Could not load country directory.");
   countriesNowCache = rows
     .map((r) => ({
@@ -82,10 +86,9 @@ async function fetchCountriesNowIso() {
   return countriesNowCache;
 }
 
-/** @returns {Promise<{ code: string, label: string }[]>} */
-export async function fetchContinents() {
+export async function geoFetchContinents(): Promise<{ code: string; label: string }[]> {
   const [countries, regionMap] = await Promise.all([fetchCountriesNowIso(), loadIsoRegionByCode()]);
-  const set = new Map();
+  const set = new Map<string, { code: string; label: string }>();
   for (const c of countries) {
     const label = regionMap.get(c.iso2) || "Other";
     const code = label.toUpperCase().replace(/\s+/g, "_").slice(0, 16);
@@ -94,8 +97,7 @@ export async function fetchContinents() {
   return [...set.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** @param {string} continentLabel e.g. "Africa" */
-export async function fetchCountriesForContinent(continentLabel) {
+export async function geoFetchCountriesForContinent(continentLabel: string) {
   const want = String(continentLabel || "").trim().toLowerCase();
   const [countries, regionMap] = await Promise.all([fetchCountriesNowIso(), loadIsoRegionByCode()]);
   const filtered = countries
@@ -104,22 +106,22 @@ export async function fetchCountriesForContinent(continentLabel) {
   return sortCountriesWithPriority(filtered);
 }
 
-/** @param {string} countryName Common name e.g. "Nigeria" */
-export async function fetchStatesForCountryName(countryName) {
+export async function geoFetchStatesForCountryName(countryName: string): Promise<string[]> {
   const country = String(countryName || "").trim();
   if (!country) return [];
-  const data = await countriesNowGet(`/countries/states/q?country=${encodeURIComponent(country)}`);
+  const data = await countriesNowGet<{ states?: unknown[] }>(
+    `/countries/states/q?country=${encodeURIComponent(country)}`,
+  );
   const states = data?.states;
   if (!Array.isArray(states)) return [];
-  return states.map((s) => (typeof s === "string" ? s : s.name || String(s))).filter(Boolean);
+  return states.map((s) => (typeof s === "string" ? s : (s as { name?: string }).name || String(s))).filter(Boolean);
 }
 
-/** @param {string} countryName @param {string} stateName */
-export async function fetchLgasOrCities(countryName, stateName) {
+export async function geoFetchLgasOrCities(countryName: string, stateName: string): Promise<string[]> {
   const country = String(countryName || "").trim().toLowerCase();
   const state = String(stateName || "").trim();
   if (!country || !state) return [];
-  const cities = await countriesNowGet(
+  const cities = await countriesNowGet<unknown[]>(
     `/countries/state/cities/q?country=${encodeURIComponent(country)}&state=${encodeURIComponent(state)}`,
   );
   if (!Array.isArray(cities)) return [];

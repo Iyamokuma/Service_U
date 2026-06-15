@@ -18,6 +18,7 @@ export function PersonalSection({ form, set, errors }) {
           <TextInput
             value={form.surname}
             onChange={(v) => set("surname", v)}
+            filter="alpha"
             placeholder="e.g. Okafor"
             autoComplete="family-name"
             state={
@@ -29,6 +30,7 @@ export function PersonalSection({ form, set, errors }) {
           <TextInput
             value={form.firstName}
             onChange={(v) => set("firstName", v)}
+            filter="alpha"
             placeholder="e.g. Chinwe"
             autoComplete="given-name"
             state={
@@ -40,6 +42,7 @@ export function PersonalSection({ form, set, errors }) {
           <TextInput
             value={form.otherNames}
             onChange={(v) => set("otherNames", v)}
+            filter="alpha"
             placeholder="Middle names or names you also go by"
           />
         </Field>

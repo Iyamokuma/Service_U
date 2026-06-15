@@ -9,27 +9,17 @@ import { useAdminAuth } from "../AdminContext.jsx";
 import { isServiceUnitLeader, isGlobalAdminRole } from "../roles.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { QueueSubUnitTabs } from "../components/QueueSubUnitTabs.jsx";
+import { ApplicationStatusBadge } from "../components/ApplicationStatusBadge.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
+import {
+  applyQueueStatusTab,
+  pipelineStatusLabel,
+  queueStatusTabLabel,
+  queueStatusTabsForRole,
+} from "../queueStatusTabs.js";
 
 const STATUSES = ["new", "in_progress", "accepted", "rejected", "archived"];
-const QUEUE_STATUS_TABS = ["all", "new", "inprogress", "accepted", "rejected", "archived", "overdue"];
-
-function queueStatusTabLabel(tab) {
-  if (tab === "all") return "All";
-  if (tab === "new") return "New";
-  if (tab === "inprogress") return "In Progress";
-  if (tab === "accepted") return "Accepted";
-  if (tab === "rejected") return "Rejected";
-  if (tab === "archived") return "Archived";
-  if (tab === "overdue") return "Overdue";
-  return tab;
-}
-
-function pipelineStatusLabel(st) {
-  if (st === "in_progress") return "In Progress";
-  return String(st || "new").replace(/_/g, " ");
-}
 
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -176,28 +166,10 @@ export function Queue({ units, initialTab = "all" }) {
         ...(isGlobalAdmin ? geo.apiParams : {}),
       };
       delete scoped.overdue_only;
-      switch (statusTab) {
-        case "new":
-          scoped.status = "new";
-          break;
-        case "inprogress":
-          scoped.status = "in_progress";
-          break;
-        case "accepted":
-          scoped.status = "accepted";
-          break;
-        case "rejected":
-          scoped.status = "rejected";
-          break;
-        case "archived":
-          scoped.status = "archived";
-          break;
-        case "overdue":
-          scoped.status = "";
-          scoped.overdue_only = true;
-          break;
-        default:
-          scoped.status = isLeader ? "" : filters.status || "";
+      delete scoped.critical_only;
+      applyQueueStatusTab(scoped, statusTab, { isLeader });
+      if (statusTab === "all" && !isLeader) {
+        scoped.status = filters.status || "";
       }
       return scoped;
     },
@@ -359,9 +331,13 @@ export function Queue({ units, initialTab = "all" }) {
 
   const showIntakeFilters = true;
   const onOverdueTab = statusTab === "overdue";
+  const onCriticalTab = statusTab === "critical";
+  const onSlaTab = onOverdueTab || onCriticalTab;
+  const statusTabs = useMemo(() => queueStatusTabsForRole(admin?.role), [admin?.role]);
+
   const leaderNewQueueTab = isLeader && statusTab === "new";
   const tableRows = rows;
-  const tableColSpan = (isLeader ? 6 : 9) + (onOverdueTab ? 1 : 0);
+  const tableColSpan = (isLeader ? 6 : 9) + (onSlaTab ? 1 : 0);
 
   const queueMetaItems = useMemo(() => {
     if (!isServiceLeader) return [];
@@ -373,7 +349,9 @@ export function Queue({ units, initialTab = "all" }) {
     items.push(
       onOverdueTab
         ? `${pag.total} overdue`
-        : `${pag.total} application${pag.total !== 1 ? "s" : ""} · ${queueStatusTabLabel(statusTab)}`,
+        : onCriticalTab
+          ? `${pag.total} critical`
+          : `${pag.total} application${pag.total !== 1 ? "s" : ""} · ${queueStatusTabLabel(statusTab)}`,
     );
     return items;
   }, [isServiceLeader, serviceUnitName, showSubUnitTabs, subUnitTab, onOverdueTab, pag.total, statusTab]);
@@ -407,7 +385,7 @@ export function Queue({ units, initialTab = "all" }) {
       ) : null}
       <div className="sa-card">
         <div className="sa-card-body sa-unit-tab-row" role="tablist" aria-label="Application status">
-          {QUEUE_STATUS_TABS.map((tab) => (
+          {statusTabs.map((tab) => (
             <button
               key={tab}
               type="button"
@@ -419,11 +397,12 @@ export function Queue({ units, initialTab = "all" }) {
             </button>
           ))}
         </div>
-        {onOverdueTab && (
+        {(onOverdueTab || onCriticalTab) && (
           <div className="sa-card-body" style={{ borderBottom: "1px solid var(--sa-border)", paddingTop: 4 }}>
             <span className="sa-text-muted sa-text-sm">
-              Overdue is not a status — records stay New or In Progress and appear here once past the threshold (Settings).
-              Sorted by days beyond threshold, highest first.
+              {onCriticalTab
+                ? "Critical applications have exceeded the critical overdue threshold (Settings). They remain New or In Progress until a leader acts."
+                : "Overdue is not a status — records stay New or In Progress and appear here once past the threshold (Settings). Sorted by days beyond threshold, highest first."}
             </span>
           </div>
         )}
@@ -517,7 +496,9 @@ export function Queue({ units, initialTab = "all" }) {
             <span className="sa-text-muted sa-text-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
               {onOverdueTab
                 ? `${pag.total} overdue`
-                : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
+                : onCriticalTab
+                  ? `${pag.total} critical`
+                  : `${pag.total} result${pag.total !== 1 ? "s" : ""}`}
             </span>
           </div>
         )}
@@ -529,7 +510,11 @@ export function Queue({ units, initialTab = "all" }) {
             <div className="sa-empty">
               <div className="sa-empty-icon">{onOverdueTab ? "✓" : "📋"}</div>
               <div className="sa-empty-text">
-                {onOverdueTab ? "No overdue applications in your scope." : "No registrations found."}
+                {onOverdueTab
+                  ? "No overdue applications in your scope."
+                  : onCriticalTab
+                    ? "No critical applications in your scope."
+                    : "No registrations found."}
               </div>
             </div>
           ) : (
@@ -548,7 +533,7 @@ export function Queue({ units, initialTab = "all" }) {
                   )}
                   <th>Status</th>
                   <th>Submitted</th>
-                  {onOverdueTab ? <th>Days overdue</th> : null}
+                  {onSlaTab ? <th>Days overdue</th> : null}
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -557,7 +542,7 @@ export function Queue({ units, initialTab = "all" }) {
                   <Fragment key={r.id}>
                     <tr
                       className={[
-                        onOverdueTab ? "sa-row-overdue" : "",
+                        onSlaTab ? (onCriticalTab ? "sa-row-critical" : "sa-row-overdue") : "",
                         leaderNewQueueTab && rowIdx > 0 ? "sa-queue-row-muted" : "",
                         leaderNewQueueTab && rowIdx === 0 ? "sa-queue-row-focus" : "",
                       ].filter(Boolean).join(" ") || undefined}
@@ -592,10 +577,10 @@ export function Queue({ units, initialTab = "all" }) {
                         </>
                       )}
                       <td>
-                        <span className={`sa-badge ${r.status}`}>{pipelineStatusLabel(r.status)}</span>
+                        <ApplicationStatusBadge row={r} />
                       </td>
                       <td className="sa-text-muted">{fmtDate(r.submitted_at)}</td>
-                      {onOverdueTab ? (
+                      {onSlaTab ? (
                         <td className="sa-fw-600">{Number(r.days_overdue ?? 0)}</td>
                       ) : null}
                       <td>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { DeleteConfirmWithMath } from "../components/DeleteConfirmWithMath.jsx";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { AdminInviteBanner } from "../components/AdminInviteBanner.jsx";
 import { toastAfterAdminCreate } from "../adminInviteUi.js";
@@ -595,7 +596,7 @@ function UnitAdminsPanel({
                 <tr key={a.id}>
                   <td>
                     <div>{a.full_name}</div>
-                    <div className="sa-text-muted sa-text-sm">{a.username}</div>
+                    <AdminLoginMeta username={a.username} email={a.email} />
                   </td>
                   <td>{roleLabel(a.role)}</td>
                   <td>

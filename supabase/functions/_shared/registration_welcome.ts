@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getResendFromAddress } from "./admin_invite.ts";
+import { formatOrgSubject, getOrgName, sendEmail, wrapEmailHtml } from "./email_delivery.ts";
 
 function norm(s: unknown): string {
   return String(s ?? "").trim();
@@ -19,11 +19,10 @@ function displayName(first: string, surname: string): string {
   return [first, surname].filter(Boolean).join(" ").trim() || "there";
 }
 
-function unitLine(unitName: string, subUnit: string): string {
-  const unit = unitName || "your service unit";
+function departmentLabel(unitName: string, subUnit: string): string {
+  const unit = unitName || "Service Unit";
   const sub = norm(subUnit);
-  if (sub) return `<strong>${unit}</strong> (${sub})`;
-  return `<strong>${unit}</strong>`;
+  return sub ? `${unit} (${sub})` : unit;
 }
 
 async function resolveUnitName(
@@ -38,7 +37,7 @@ async function resolveUnitName(
   return norm((data as { name?: string } | null)?.name);
 }
 
-/** Best-effort welcome email after a public registration is saved. */
+/** Confirmation email after a public registration is saved. */
 export async function sendRegistrationWelcomeEmail(
   supabase: SupabaseClient,
   payload: RegistrationWelcomePayload,
@@ -46,50 +45,40 @@ export async function sendRegistrationWelcomeEmail(
   const email = norm(payload.email).toLowerCase();
   if (!email) return false;
 
-  const key = Deno.env.get("RESEND_API_KEY") || "";
-  const from = getResendFromAddress();
-  if (!key || !from) return false;
-
   const firstName = norm(payload.first_name);
   const surname = norm(payload.surname);
   const name = displayName(firstName, surname);
   const unitName = await resolveUnitName(supabase, payload.unit_id, norm(payload.unit_name));
   const subUnit = norm(payload.sub_unit);
   const satellite = norm(payload.satellite_site);
-  const unitHtml = unitLine(unitName, subUnit);
+  const department = departmentLabel(unitName, subUnit);
 
-  const subject = unitName
-    ? `Welcome to ${unitName} — Salvation Ministries`
-    : "Welcome — your service unit registration was received";
+  const subject = `Application received — ${department} Department`;
+  const preview = `Your application was received successfully. The ${department} department will contact you shortly.`;
 
   const churchLine = satellite
-    ? `<p>Branch: <strong>${satellite}</strong></p>`
+    ? `<p>Church / branch: <strong>${satellite}</strong></p>`
     : "";
 
-  const html = `
+  const bodyHtml = `
     <p>Hello ${name},</p>
-    <p>Thank you for registering to serve with Salvation Ministries. We have received your application to join ${unitHtml}.</p>
+    <p><strong>Application received successfully.</strong></p>
+    <p>Thank you for registering to serve with ${getOrgName()}. We have received your application for the <strong>${department}</strong> department.</p>
     ${churchLine}
-    <p>A unit coordinator will review your application and be in touch within a week.</p>
-    <p style="color:#666;font-size:13px;">If you did not submit this registration, you can ignore this email.</p>
+    <p>You will be contacted shortly by the <strong>${department}</strong> department regarding the next steps.</p>
+    <p style="color:#64748b;font-size:14px;">If you did not submit this registration, you can ignore this email.</p>
   `;
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ from, to: [email], subject, html }),
-    });
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      console.error("Registration welcome email failed:", res.status, errBody);
-    }
-    return res.ok;
-  } catch (err) {
-    console.error("Registration welcome email error:", err);
-    return false;
-  }
+  const html = wrapEmailHtml({
+    title: "Application received",
+    previewText: preview,
+    bodyHtml,
+  });
+
+  return sendEmail({
+    to: email,
+    subject: formatOrgSubject(subject),
+    html,
+    tags: ["registration_received"],
+  });
 }

@@ -16,6 +16,7 @@ export function ContactSection({ form, set, errors }) {
           <TextArea
             value={form.address}
             onChange={(v) => set("address", v)}
+            filter="address"
             placeholder="Street, area, city, state"
             state={errors.address ? "error" : form.address ? "valid" : undefined}
           />
@@ -24,6 +25,7 @@ export function ContactSection({ form, set, errors }) {
           <TextInput
             value={form.busStop}
             onChange={(v) => set("busStop", v)}
+            filter="alphanumeric"
             placeholder="e.g. Rumuokoro Junction"
             state={errors.busStop ? "error" : form.busStop ? "valid" : undefined}
           />
@@ -33,13 +35,15 @@ export function ContactSection({ form, set, errors }) {
           label="Primary phone"
           required
           error={errors.phone1}
-          hint="Primary identifier — one registration per phone. Include country code if abroad."
+          hint="Digits only. Include country code if abroad (e.g. 2348030000000)."
         >
           <TextInput
             type="tel"
+            filter="numeric"
             value={form.phone1}
             onChange={(v) => set("phone1", v)}
-            placeholder="+234 803 000 0000"
+            placeholder="8030000000"
+            maxLength={15}
             autoComplete="tel"
             state={
               errors.phone1
@@ -53,9 +57,11 @@ export function ContactSection({ form, set, errors }) {
         <Field label="Second phone" optional error={errors.phone2}>
           <TextInput
             type="tel"
+            filter="numeric"
             value={form.phone2}
             onChange={(v) => set("phone2", v)}
             placeholder="Alternate number"
+            maxLength={15}
             state={
               errors.phone2
                 ? "error"

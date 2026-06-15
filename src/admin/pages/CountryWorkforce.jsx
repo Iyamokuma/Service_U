@@ -4,6 +4,7 @@ import { SmhLoader } from "../../components/SmhLoader.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
 import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
@@ -301,7 +302,7 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
                 <tr key={r.id}>
                   <td>
                     <div className="sa-fw-600">{r.full_name}</div>
-                    <div className="sa-text-sm sa-text-muted">{r.email || r.username}</div>
+                    <AdminLoginMeta username={r.username} email={r.email} />
                   </td>
                   <td className="sa-text-sm">{r.roleLabel}</td>
                   <td className="sa-text-sm">{r.unitName}</td>

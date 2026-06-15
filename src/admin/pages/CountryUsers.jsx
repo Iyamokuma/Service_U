@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { StateBranchAdminModal } from "../components/StateBranchAdminModal.jsx";
 import { SatellitePastorAdminModal } from "../components/SatellitePastorAdminModal.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
@@ -521,7 +522,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
                     <tr key={a.id}>
                       <td>
                         <div className="sa-fw-600">{a.full_name}</div>
-                        <div className="sa-text-sm sa-text-muted">{a.email}</div>
+                        <AdminLoginMeta username={a.username} email={a.email} />
                       </td>
                       <td className="sa-text-sm">{adminLocationLabel(a, countryCode)}</td>
                       <td className="sa-text-sm">{adminRoleLabel(a)}</td>

@@ -14,6 +14,7 @@ import {
   occupiedCountryCodes,
   ROLES_WITH_COUNTRY,
   ROLES_WITH_STATE,
+  ROLES_WITH_SATELLITE,
   validateAdminReassignForm,
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
@@ -34,7 +35,7 @@ function emptyScopeForRole(role, prev = {}) {
     role: r,
     branch_country: ROLES_WITH_COUNTRY.includes(r) ? prev.branch_country || "" : "",
     branch_state: ROLES_WITH_STATE.includes(r) ? prev.branch_state || "" : "",
-    satellite_site: r === "satellite_church_admin" ? prev.satellite_site || "" : "",
+    satellite_site: ROLES_WITH_SATELLITE.includes(r) ? prev.satellite_site || "" : "",
     service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(r) ? prev.service_unit_id || "" : "",
     sub_unit_name: r === "sub_unit_leader" ? prev.sub_unit_name || "" : "",
   };
@@ -136,7 +137,7 @@ export function AdminReassignModal({
       role: form.role,
       branch_country: ROLES_WITH_COUNTRY.includes(form.role) ? form.branch_country : "",
       branch_state: ROLES_WITH_STATE.includes(form.role) ? form.branch_state : "",
-      satellite_site: form.role === "satellite_church_admin" ? form.satellite_site : "",
+      satellite_site: ROLES_WITH_SATELLITE.includes(form.role) ? form.satellite_site : "",
       service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(form.role)
         ? form.service_unit_id
         : "",
@@ -259,7 +260,7 @@ export function AdminReassignModal({
         </>
       ) : null}
 
-      {form.role === "satellite_church_admin" ? (
+      {ROLES_WITH_SATELLITE.includes(form.role) ? (
         <div className="sa-field">
           <label className="sa-label">
             Satellite church <span className="sa-required">*</span>

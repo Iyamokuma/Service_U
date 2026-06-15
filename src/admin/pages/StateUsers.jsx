@@ -3,6 +3,7 @@ import { readUsersSectionTab, writeUsersSectionTab } from "../usersSectionTab.js
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { SatellitePastorAdminModal } from "../components/SatellitePastorAdminModal.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../components/adminRowMenuItems.js";
@@ -498,7 +499,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
                     <tr key={a.id}>
                       <td>
                         <div className="sa-fw-600">{a.full_name}</div>
-                        <div className="sa-text-sm sa-text-muted">{a.email}</div>
+                        <AdminLoginMeta username={a.username} email={a.email} />
                       </td>
                       <td className="sa-text-sm">
                         {String(a.satellite_site || "").trim() || "—"}

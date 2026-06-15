@@ -34,13 +34,16 @@ export function ChurchMembershipSection({ form, set, errors }) {
           <TextInput
             value={form.titheCard}
             onChange={(v) => set("titheCard", v)}
-            placeholder="e.g. TC-04821"
+            filter="numeric"
+            placeholder="e.g. 04821"
+            maxLength={20}
           />
         </Field>
         <Field label="Homecell name" optional>
           <TextInput
             value={form.homecell}
             onChange={(v) => set("homecell", v)}
+            filter="alphanumeric"
             placeholder="Homecell you attend"
           />
         </Field>

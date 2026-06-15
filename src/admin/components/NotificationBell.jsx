@@ -1,32 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api.js";
+import { useEffect, useRef, useState } from "react";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
+import { useAdminNotifications } from "../useAdminNotifications.js";
+import { formatInboxTime } from "../notificationInbox.js";
 
-export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements }) {
+export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements, onOpenInbox, onNavigateRequests }) {
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState([]);
-  const [unread, setUnread] = useState(0);
-  const [loading, setLoading] = useState(false);
   const wrapRef = useRef(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await api.notifications();
-      setItems(r.data || []);
-      setUnread(r.unread_count ?? 0);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
-  }, [load]);
+  const { items, unread, loading, load, markRead, markAllRead } = useAdminNotifications({ perPage: 12 });
 
   useEffect(() => {
     if (!open) return;
@@ -37,21 +17,31 @@ export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements }) {
     return () => document.removeEventListener("click", onDoc);
   }, [open]);
 
-  async function markRead(id) {
-    try {
-      await api.markNotificationRead(id);
-      load();
-    } catch {
-      /* ignore */
+  function handleItemClick(n) {
+    if (!n.read_at) markRead(n.id);
+    if (n.type === "overdue_application" && onNavigateQueue) {
+      onNavigateQueue("overdue");
+      setOpen(false);
+      return;
     }
-  }
-
-  async function markAll() {
-    try {
-      await api.markAllNotificationsRead();
-      load();
-    } catch {
-      /* ignore */
+    if (n.type === "new_registration" && onNavigateQueue) {
+      onNavigateQueue("new");
+      setOpen(false);
+      return;
+    }
+    if (n.type === "announcement" && onNavigateAnnouncements) {
+      onNavigateAnnouncements();
+      setOpen(false);
+      return;
+    }
+    if ((n.type === "admin_request" || n.type === "request_update") && onNavigateRequests) {
+      onNavigateRequests();
+      setOpen(false);
+      return;
+    }
+    if ((n.type === "admin_request" || n.type === "request_update") && onOpenInbox) {
+      onOpenInbox();
+      setOpen(false);
     }
   }
 
@@ -75,11 +65,18 @@ export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements }) {
         <div className="sa-notify-panel">
           <div className="sa-notify-head">
             <span className="sa-notify-title">Notifications</span>
-            {unread > 0 ? (
-              <button type="button" className="sa-notify-markall" onClick={markAll}>
-                Mark all read
-              </button>
-            ) : null}
+            <div className="sa-notify-head-actions">
+              {unread > 0 ? (
+                <button type="button" className="sa-notify-markall" onClick={markAllRead}>
+                  Mark all read
+                </button>
+              ) : null}
+              {onOpenInbox ? (
+                <button type="button" className="sa-notify-markall" onClick={() => { onOpenInbox(); setOpen(false); }}>
+                  View all
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="sa-notify-list">
             {loading && items.length === 0 ? (
@@ -95,33 +92,17 @@ export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements }) {
                   className={`sa-notify-item${n.read_at ? "" : " is-unread"}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => {
-                    if (!n.read_at) markRead(n.id);
-                    if (n.type === "overdue_application" && onNavigateQueue) {
-                      onNavigateQueue();
-                      setOpen(false);
-                    } else if (n.type === "announcement" && onNavigateAnnouncements) {
-                      onNavigateAnnouncements();
-                      setOpen(false);
-                    }
-                  }}
+                  onClick={() => handleItemClick(n)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      if (!n.read_at) markRead(n.id);
-                      if (n.type === "overdue_application" && onNavigateQueue) {
-                        onNavigateQueue();
-                        setOpen(false);
-                      } else if (n.type === "announcement" && onNavigateAnnouncements) {
-                        onNavigateAnnouncements();
-                        setOpen(false);
-                      }
+                      handleItemClick(n);
                     }
                   }}
                 >
                   <div className="sa-notify-item-title">{n.title}</div>
                   <div className="sa-notify-item-body">{n.body}</div>
-                  <div className="sa-notify-item-meta">{new Date(n.created_at).toLocaleString()}</div>
+                  <div className="sa-notify-item-meta">{formatInboxTime(n.created_at)}</div>
                 </div>
               ))
             )}

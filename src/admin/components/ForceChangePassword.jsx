@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { PasswordField } from "./PasswordField.jsx";
 import { useToast } from "./Toast.jsx";
 
 export function ForceChangePassword() {
@@ -34,15 +35,20 @@ export function ForceChangePassword() {
 
   return (
     <div className="sa-login-page">
+      <div className="sa-login-backdrop" aria-hidden="true">
+        <span className="sa-login-orb sa-login-orb-1" />
+        <span className="sa-login-orb sa-login-orb-2" />
+        <span className="sa-login-orb sa-login-orb-3" />
+        <span className="sa-login-orb sa-login-orb-4" />
+      </div>
       <form className="sa-login-card" onSubmit={onSubmit}>
         <div className="sa-login-title" style={{ marginBottom: 8 }}>
           Set a new password
         </div>
         <div className="sa-login-group">
           <label className="sa-login-label">New password</label>
-          <input
-            className="sa-login-input"
-            type="password"
+          <PasswordField
+            inputClassName="sa-login-input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -51,9 +57,8 @@ export function ForceChangePassword() {
         </div>
         <div className="sa-login-group">
           <label className="sa-login-label">Confirm password</label>
-          <input
-            className="sa-login-input"
-            type="password"
+          <PasswordField
+            inputClassName="sa-login-input"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required

@@ -16,6 +16,12 @@ export const ROLES_WITH_STATE = [
   "sub_unit_leader",
 ];
 
+export const ROLES_WITH_SATELLITE = [
+  "satellite_church_admin",
+  "service_unit_leader",
+  "sub_unit_leader",
+];
+
 const PENDING_ADMIN_REQUEST_STATUSES = new Set(["open", "in_review"]);
 
 function adminFromRequestPayload(req) {
@@ -76,8 +82,11 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
     if (!form.service_unit_id) return "Service unit is required.";
     if (!form.sub_unit_name) return "Sub-unit is required.";
   }
-  if (form.role === "satellite_church_admin" && !String(form.satellite_site || "").trim()) {
-    return "Select a satellite church for this pastor admin.";
+  if (ROLES_WITH_SATELLITE.includes(form.role) && !String(form.satellite_site || "").trim()) {
+    if (form.role === "satellite_church_admin") {
+      return "Select a satellite church for this pastor admin.";
+    }
+    return "Select a satellite church for this leader.";
   }
   if (!isEdit && !inviteCreate) {
     const pw = String(form.password || "").trim();

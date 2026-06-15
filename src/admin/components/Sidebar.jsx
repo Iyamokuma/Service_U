@@ -1,7 +1,19 @@
 import { useAdminAuth } from "../AdminContext.jsx";
 import { leaderScopeLabel } from "../leaderScope.js";
 import { AdminBrandLogo } from "./AdminBrandLogo.jsx";
+import { AdminLoginMeta } from "./AdminLoginMeta.jsx";
 import { effectiveUiRole, isActingAsStateAdmin } from "../adminViewMode.js";
+
+function BellNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+const NAV_ITEM_NOTIFICATIONS = { id: "notifications", label: "Notifications", icon: <BellNavIcon /> };
 
 const NAV_SUPER = [
   {
@@ -28,6 +40,7 @@ const NAV_SUPER = [
     items: [
       { id: "admins", label: "Admin Accounts", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "requests", label: "Requests", icon: <RequestIcon /> },
       { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
       { id: "settings", label: "Settings", icon: <SettingsIcon /> },
@@ -44,6 +57,7 @@ const NAV_LEADER = [
       { id: "queue", label: "Application Queue", icon: <ListIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
@@ -58,6 +72,7 @@ const NAV_SUB_UNIT = [
       { id: "queue", label: "Application Queue", icon: <ListIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
   },
@@ -75,6 +90,7 @@ const NAV_COUNTRY_ADMIN = [
       { id: "locations", label: "Locations", icon: <MapPinIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
   },
@@ -90,6 +106,7 @@ const NAV_STATE_ADMIN = [
       { id: "requests", label: "My requests", icon: <RequestIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
   },
@@ -102,6 +119,7 @@ const NAV_DATA_ENTRY = [
       { id: "role-dashboard", label: "Home", icon: <HomeIcon /> },
       { id: "data-locations", label: "New locations", icon: <LayersIcon /> },
       { id: "locations", label: "Locations", icon: <MapPinIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "activity", label: "Activity Log", icon: <ActivityIcon /> },
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
@@ -117,6 +135,7 @@ const NAV_SATELLITE = [
       { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "requests", label: "My Requests", icon: <RequestIcon /> },
       { id: "announcements", label: "Announcements", icon: <ActivityIcon /> },
+      NAV_ITEM_NOTIFICATIONS,
       { id: "profile", label: "Profile / Settings", icon: <SettingsIcon /> },
     ],
   },
@@ -133,7 +152,7 @@ const ROLE_LABELS = {
   sub_unit_leader: "Sub-Unit Leader",
 };
 
-export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
+export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0, notificationUnreadCount = 0 }) {
   const { admin, logout, viewMode } = useAdminAuth();
   const initials = admin?.full_name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "SA";
   const scope = leaderScopeLabel(admin, viewMode);
@@ -190,6 +209,9 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
                 {item.id === "requests" && requestOpenCount > 0 && (
                   <span className="sa-nav-badge">{requestOpenCount > 99 ? "99+" : requestOpenCount}</span>
                 )}
+                {item.id === "notifications" && notificationUnreadCount > 0 && (
+                  <span className="sa-nav-badge">{notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}</span>
+                )}
               </button>
             ))}
           </div>
@@ -201,6 +223,7 @@ export function Sidebar({ page, setPage, pendingCount, requestOpenCount = 0 }) {
           <div className="sa-avatar">{initials}</div>
           <div>
             <div className="sa-user-name">{admin?.full_name}</div>
+            <AdminLoginMeta username={admin?.username} email={admin?.email} />
             <div className="sa-user-role">{displayRole}</div>
             {scope ? <div className="sa-user-unit">{scope}</div> : null}
           </div>

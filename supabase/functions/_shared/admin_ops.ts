@@ -19,6 +19,14 @@ import {
 } from "./overdue.ts";
 import { processRegistrationLeaderDigests } from "./registration_leader_notify.ts";
 import { sendRegistrationStatusEmail } from "./registration_status_email.ts";
+import { formatOrgSubject, sendEmail, wrapEmailHtml } from "./email_delivery.ts";
+import { sendHtmlEmail } from "./resend_mail.ts";
+import {
+  geoFetchContinents,
+  geoFetchCountriesForContinent,
+  geoFetchLgasOrCities,
+  geoFetchStatesForCountryName,
+} from "./geo_catalog.ts";
 import { ADMIN_LIST_COLUMNS, REGISTRATION_QUEUE_COLUMNS } from "./registration_columns.ts";
 import {
   generateInviteToken,
@@ -335,23 +343,15 @@ async function notifyGlobalAdminsOfRequest(
   }
 }
 
-async function trySendAdminEmail(to: string, subject: string, html: string): Promise<void> {
-  const denoEnv = (globalThis as { Deno?: { env?: { get?: (key: string) => string | undefined } } }).Deno?.env;
-  const key = denoEnv?.get?.("RESEND_API_KEY") || "";
-  const from = getResendFromAddress();
-  if (!key || !from || !to) return;
-  try {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ from, to: [to], subject, html }),
-    });
-  } catch {
-    /* email is best-effort and should not break request flow */
-  }
+async function trySendAdminEmail(
+  to: string,
+  subject: string,
+  html: string,
+  tags: string[] = ["admin"],
+): Promise<void> {
+  const email = norm(to).toLowerCase();
+  if (!email) return;
+  await sendHtmlEmail(email, subject, html, { tags, previewText: subject });
 }
 
 async function validateAdminAccountProposal(
@@ -449,6 +449,12 @@ async function insertAdminFromBody(
     throw new Error("Headquarters state is required for Country Admin accounts.");
   }
   assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+  if (["service_unit_leader", "sub_unit_leader"].includes(String(row.role)) && !row.satellite_site) {
+    throw new Error("Satellite church is required for workforce leaders.");
+  }
+  if (row.role === "satellite_church_admin" && !row.satellite_site) {
+    throw new Error("Satellite church is required for Satellite Pastor Admin.");
+  }
   if (row.role === "super_admin") {
     await assertUniqueSuperAdmin(supabase);
   }
@@ -488,10 +494,12 @@ async function insertAdminFromBody(
       );
     }
     const inviteUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(String(row.invite_token))}`;
-    invite_email_sent = await sendAdminInviteEmail(email, String(row.full_name), inviteUrl, String(row.role));
+    const inviteResult = await sendAdminInviteEmail(email, String(row.full_name), inviteUrl, String(row.role));
+    invite_email_sent = inviteResult.ok;
     if (!invite_email_sent) {
       throw new Error(
-        "Account was created but the invite email could not be sent. Check Resend configuration, then use Resend invite.",
+        inviteResult.error ||
+          "Account was created but the invite email could not be sent. Check Resend configuration, then use Resend invite.",
       );
     }
   }
@@ -934,7 +942,7 @@ export async function dispatchAdminOp(
     case "overdueAlerts":
       return handleOverdueAlerts(supabase, params, admin);
     case "notifications":
-      return handleNotifications(supabase, admin);
+      return handleNotifications(supabase, params, admin);
     case "markNotificationRead":
       return handleMarkNotificationRead(supabase, params, admin);
     case "markAllNotificationsRead":
@@ -961,6 +969,8 @@ export async function dispatchAdminOp(
       return handleCatalogDeleteChurch(supabase, params, admin, ip);
     case "catalogCreateLocation":
       return handleCatalogCreateLocation(supabase, params, admin, ip);
+    case "geoCatalog":
+      return handleGeoCatalog(params, admin);
     case "startTotpEnrollment":
       return handleStartTotpEnrollment(supabase, admin, ip);
     case "confirmTotpEnrollment":
@@ -968,6 +978,34 @@ export async function dispatchAdminOp(
     default:
       throw new Error(`Unsupported op: ${op}`);
   }
+}
+
+async function handleGeoCatalog(params: Record<string, unknown>, admin: AdminRow) {
+  const role = norm(admin.role);
+  if (!["super_admin", "general_admin", "data_entry_admin"].includes(role)) {
+    throw new Error("Not allowed to load geography catalog.");
+  }
+  const step = norm(params.step);
+  if (step === "continents") {
+    return { data: await geoFetchContinents() };
+  }
+  if (step === "countries") {
+    const continent = norm(params.continent);
+    if (!continent) throw new Error("Continent is required.");
+    return { data: await geoFetchCountriesForContinent(continent) };
+  }
+  if (step === "states") {
+    const countryName = norm(params.countryName);
+    if (!countryName) throw new Error("Country is required.");
+    return { data: await geoFetchStatesForCountryName(countryName) };
+  }
+  if (step === "lgas") {
+    const countryName = norm(params.countryName);
+    const stateName = norm(params.stateName);
+    if (!countryName || !stateName) throw new Error("Country and state are required.");
+    return { data: await geoFetchLgasOrCities(countryName, stateName) };
+  }
+  throw new Error("Unknown geography step.");
 }
 
 async function handleQueue(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
@@ -1015,7 +1053,7 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
     }
   }
 
-  if (params.overdue_only) {
+  if (params.overdue_only || params.critical_only) {
     let oq = supabase.from("registrations").select(REGISTRATION_QUEUE_COLUMNS).in("status", ["new", "in_progress"]);
     oq = applyRegistrationScopeQuery(oq, admin, params.scope_mode);
     if (params.unit_id) oq = oq.eq("unit_id", Number(params.unit_id));
@@ -1036,8 +1074,12 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
     const { globalDays, unitThresholds, criticalDays } = await loadOverdueConfig(supabase);
     const now = Date.now();
     let rows = (rawOverdue || [])
-      .map((r: Record<string, unknown>) => enrichRowOverdue(r, globalDays, unitThresholds, criticalDays, now))
-      .filter((r) => r.is_overdue);
+      .map((r: Record<string, unknown>) => enrichRowOverdue(r, globalDays, unitThresholds, criticalDays, now));
+    if (params.critical_only) {
+      rows = rows.filter((r) => r.is_critical);
+    } else {
+      rows = rows.filter((r) => r.is_overdue);
+    }
     rows.sort((a, b) => Number(b.days_overdue) - Number(a.days_overdue));
     const total = rows.length;
     const slice = rows.slice(from, Math.min(rows.length, from + perPage));
@@ -1048,6 +1090,9 @@ async function handleQueue(supabase: SupabaseClient, params: Record<string, unkn
   const { data, error, count } = await q.range(from, to);
   if (error) throw new Error(error.message);
   let rows = (data || []) as Record<string, unknown>[];
+  const { globalDays, unitThresholds, criticalDays } = await loadOverdueConfig(supabase);
+  const now = Date.now();
+  rows = rows.map((r) => enrichRowOverdue(r, globalDays, unitThresholds, criticalDays, now));
   const total = typeof count === "number" ? count : rows.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
   return { data: rows, pagination: { page, per_page: perPage, total, pages } };
@@ -1769,15 +1814,16 @@ async function handleResendAdminInvite(
     throw new Error("ADMIN_APP_URL is not configured on the server.");
   }
   const inviteUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token)}`;
-  const invite_email_sent = await sendAdminInviteEmail(
+  const inviteResult = await sendAdminInviteEmail(
     email,
     String(target.full_name),
     inviteUrl,
     String(target.role),
   );
-  if (!invite_email_sent) {
+  if (!inviteResult.ok) {
     throw new Error(
-      "Invitation was reset but email could not be sent. Check RESEND_API_KEY and RESEND_FROM_EMAIL in Supabase secrets.",
+      inviteResult.error ||
+        "Invitation was reset but email could not be sent. Check RESEND_API_KEY and RESEND_FROM_EMAIL in Supabase secrets.",
     );
   }
 
@@ -1989,6 +2035,65 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
       Number(data.id),
       "New admin account request",
       `${admin.full_name} requested a new ${roleLabel} account (${adminBody.full_name}).`,
+    );
+    return { data };
+  }
+
+  if (requestType === "location_catalog") {
+    if (actorRole !== "data_entry_admin") {
+      throw new Error("Only Data Entry Admins can propose new church locations.");
+    }
+    const payload = (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>;
+    const continent = norm(payload.continent);
+    const countryIso2 = normUp(payload.countryIso2);
+    const countryName = norm(payload.countryName);
+    const stateName = norm(payload.stateName);
+    const lgaName = norm(payload.lgaName);
+    const satelliteChurches = Array.isArray(payload.satelliteChurches)
+      ? (payload.satelliteChurches as unknown[]).map((s) => String(s || "").trim()).filter(Boolean)
+      : [];
+    if (!continent || !countryIso2 || !countryName || !stateName || !lgaName) {
+      throw new Error("Continent, country, state, and LGA are required.");
+    }
+    if (!satelliteChurches.length) {
+      throw new Error("At least one satellite church name is required.");
+    }
+    const message = norm(body.message) ||
+      `Location: ${lgaName}, ${stateName}, ${countryName} (${countryIso2}) — ${satelliteChurches.length} satellite church${
+        satelliteChurches.length === 1 ? "" : "es"
+      }`;
+    const row = {
+      from_admin_id: Number(admin.id),
+      from_name: String(admin.full_name || ""),
+      from_role: String(admin.role || ""),
+      message,
+      request_type: "location_catalog",
+      payload: {
+        continent,
+        countryIso2,
+        countryName,
+        stateName,
+        lgaName,
+        satelliteChurches,
+      },
+      status: "open",
+    };
+    const { data, error } = await supabase.from("admin_requests").insert(row).select("*").single();
+    if (error) throw new Error(error.message);
+    await logActivity(
+      supabase,
+      admin,
+      "request.create",
+      "request",
+      String(data.id),
+      "Submitted location catalog proposal",
+      ip,
+    );
+    await notifyGlobalAdminsOfRequest(
+      supabase,
+      Number(data.id),
+      "New location proposal",
+      `${admin.full_name} proposed churches in ${lgaName}, ${stateName}, ${countryName}.`,
     );
     return { data };
   }
@@ -2344,15 +2449,16 @@ async function handleOverdueAlerts(supabase: SupabaseClient, params: Record<stri
   return handleQueue(supabase, { overdue_only: true, page: 1, per_page: 500, scope_mode: params.scope_mode }, admin);
 }
 
-async function handleNotifications(supabase: SupabaseClient, admin: AdminRow) {
+async function handleNotifications(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow) {
   const adminId = admin.id;
+  const perPage = Math.min(200, Math.max(1, Number(params.per_page) || 50));
   const [{ data, error }, { count: unreadCount, error: unreadErr }] = await Promise.all([
     supabase
       .from("admin_notifications")
       .select("id,type,title,body,entity_type,entity_id,metadata,read_at,created_at")
       .eq("admin_id", adminId)
       .order("created_at", { ascending: false })
-      .limit(50),
+      .limit(perPage),
     supabase
       .from("admin_notifications")
       .select("id", { count: "exact", head: true })
@@ -2715,7 +2821,8 @@ async function deliverAnnouncement(
   const title = String(announcement.title || "Announcement");
   const body = String(announcement.body || "");
   const annId = String(announcement.id || "");
-  const htmlBody = `<p>${body.replace(/\n/g, "<br>")}</p>`;
+  const preview = body.length > 140 ? `${body.slice(0, 137)}…` : body;
+  const bodyInner = `<p style="margin:0 0 8px;font-size:17px;font-weight:600;">${title}</p><div>${body.replace(/\n/g, "<br>")}</div>`;
 
   const { data: allAdmins } = await supabase.from("admins").select("*").eq("is_active", 1);
   const admins = (allAdmins || []) as Record<string, unknown>[];
@@ -2741,7 +2848,17 @@ async function deliverAnnouncement(
     if (mediumEmail && destType !== "members") {
       const email = norm(a.email).toLowerCase();
       if (email) {
-        await trySendAdminEmail(email, title, htmlBody);
+        const html = wrapEmailHtml({
+          title,
+          previewText: preview || title,
+          bodyHtml: bodyInner,
+        });
+        await sendEmail({
+          to: email,
+          subject: formatOrgSubject(title, "announcement"),
+          html,
+          tags: ["announcement"],
+        });
       }
     }
   }
@@ -2751,7 +2868,17 @@ async function deliverAnnouncement(
     for (const m of members) {
       if (!m.email) continue;
       const greeting = m.name ? `Hello ${m.name},` : "Hello,";
-      await trySendAdminEmail(m.email, title, `<p>${greeting}</p>${htmlBody}`);
+      const html = wrapEmailHtml({
+        title,
+        previewText: preview || title,
+        bodyHtml: `<p>${greeting}</p>${bodyInner}`,
+      });
+      await sendEmail({
+        to: m.email,
+        subject: formatOrgSubject(title, "announcement"),
+        html,
+        tags: ["announcement"],
+      });
     }
   }
 }

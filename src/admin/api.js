@@ -355,6 +355,10 @@ export const api = {
     return adminFetch("activity", params);
   },
 
+  async geoCatalog(params = {}) {
+    return adminFetch("geoCatalog", params);
+  },
+
   async subUnitQueuesByUnit(_viewer) {
     return adminFetch("subUnitQueuesByUnit", {});
   },
@@ -363,8 +367,8 @@ export const api = {
     return adminFetch("overdueAlerts", withScopeParams({}));
   },
 
-  async notifications() {
-    return adminFetch("notifications", {});
+  async notifications(params = {}) {
+    return adminFetch("notifications", params);
   },
 
   async markNotificationRead(id) {

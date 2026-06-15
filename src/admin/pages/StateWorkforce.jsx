@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAdminAuth } from "../AdminContext.jsx";
+import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
@@ -233,7 +234,7 @@ export function StateWorkforce({
                   <tr key={r.id}>
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
-                      <div className="sa-text-sm sa-text-muted">{r.email || r.username}</div>
+                      <AdminLoginMeta username={r.username} email={r.email} />
                     </td>
                     <td className="sa-text-sm">{r.roleLabel}</td>
                     <td className="sa-text-sm">{r.unitName}</td>
