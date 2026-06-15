@@ -37,7 +37,10 @@ import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/Admin
 import {
   buildAdminRowMenuItems,
   canShowGlobalAdminActionMenu,
+  adminStatusBadgeClass,
+  adminStatusLabel,
   isAdminActive,
+  isAdminPendingSignup,
   nextAdminActiveValue,
 } from "../components/adminRowMenuItems.js";
 import { AdminReassignModal } from "../components/AdminReassignModal.jsx";
@@ -334,11 +337,14 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
 
   const adminStats = useMemo(() => {
     if (!isGlobalAdmin) return null;
-    const active = scopedAdmins.filter((a) => Number(a.is_active) === 1);
+    const inProgress = scopedAdmins.filter((a) => isAdminPendingSignup(a));
+    const active = scopedAdmins.filter((a) => isAdminActive(a) && !isAdminPendingSignup(a));
+    const inactive = scopedAdmins.filter((a) => !isAdminActive(a));
     return {
       total: scopedAdmins.length,
       active: active.length,
-      inactive: scopedAdmins.length - active.length,
+      inProgress: inProgress.length,
+      inactive: inactive.length,
       country: active.filter((a) => a.role === "country_super_admin").length,
       state: active.filter((a) => a.role === "state_super_admin").length,
       pending: pendingAdminRequests.length,
@@ -451,7 +457,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         { key: "email", label: "Email" },
         { key: "role", label: "Role", format: (v) => roleDisplayLabel(v) },
         { key: "id", label: "Scope/Service Unit", format: (_, row) => formatAdminScope(row) },
-        { key: "is_active", label: "Status", format: (v) => Number(v) === 1 ? "Active" : "Inactive" },
+        { key: "is_active", label: "Status", format: (_, row) => adminStatusLabel(row) },
         { key: "last_login", label: "Last Login", format: (v) => v ? new Date(v).toLocaleDateString() : "Never" },
       ],
     });
@@ -573,6 +579,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       ADMIN_EMAIL_INVITES_ENABLED &&
       canModifyOthers &&
       isGlobalAdmin &&
+      isAdminPendingSignup(actionTarget) &&
       !["super_admin", "general_admin"].includes(actionTarget.role) &&
       String(actionTarget.email || "").trim();
 
@@ -686,6 +693,12 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
                 <div className="sa-admins-stat-value">{adminStats.active}</div>
                 <div className="sa-admins-stat-label">Active</div>
               </div>
+              {adminStats.inProgress > 0 ? (
+                <div className="sa-admins-stat">
+                  <div className="sa-admins-stat-value">{adminStats.inProgress}</div>
+                  <div className="sa-admins-stat-label">In progress</div>
+                </div>
+              ) : null}
               <div className="sa-admins-stat">
                 <div className="sa-admins-stat-value">{adminStats.inactive}</div>
                 <div className="sa-admins-stat-label">Inactive</div>
@@ -1061,8 +1074,8 @@ function AdminAccountsTable({
                 </td>
                 <td className="sa-text-muted sa-text-sm sa-admins-scope-cell">{formatAdminScope(a)}</td>
                 <td>
-                  <span className={`sa-badge ${a.is_active ? "active" : "inactive"}`}>
-                    {a.is_active ? "Active" : "Inactive"}
+                  <span className={`sa-badge ${adminStatusBadgeClass(a)}`}>
+                    {adminStatusLabel(a)}
                   </span>
                 </td>
                 <td className="sa-text-muted sa-text-sm">{fmtDate(a.last_login)}</td>

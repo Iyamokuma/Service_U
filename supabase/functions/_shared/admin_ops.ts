@@ -78,6 +78,11 @@ function stripAdminSecrets(row: Record<string, unknown>): Record<string, unknown
   return safe;
 }
 
+function shapeAdminListRow(row: Record<string, unknown>): Record<string, unknown> {
+  const pendingInvite = !!norm(row.invite_token) && Number(row.must_change_password ?? 0) === 1;
+  return { ...stripAdminSecrets(row), pending_invite: pendingInvite };
+}
+
 function assertAdminPasswordFormat(password: string): void {
   if (!password) throw new Error("Password is required.");
   if (password.length < 8) {
@@ -1572,7 +1577,7 @@ async function handleAdmins(supabase: SupabaseClient, params: Record<string, unk
   }
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  return { data: (data || []).map((row) => stripAdminSecrets(row as Record<string, unknown>)) };
+  return { data: (data || []).map((row) => shapeAdminListRow(row as Record<string, unknown>)) };
 }
 
 async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {

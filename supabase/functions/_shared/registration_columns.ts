@@ -62,4 +62,5 @@ export const ADMIN_LIST_COLUMNS = [
   "is_active",
   "last_login",
   "must_change_password",
+  "invite_token",
 ].join(",");
