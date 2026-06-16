@@ -11,7 +11,7 @@ import { WorkforceLeadersPanel } from "../components/WorkforceLeadersPanel.jsx";
 import { UnitMembers } from "./UnitMembers.jsx";
 import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { toastAfterAdminCreate } from "../adminInviteUi.js";
 
 function initialSatelliteTab() {
@@ -61,7 +61,7 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
   }, [loadPending, adminsPayload]);
 
   useEffect(() => {
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, []);
 
   const actionTarget = useMemo(

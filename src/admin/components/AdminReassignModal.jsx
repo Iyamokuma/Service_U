@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
 import { SearchableSelect } from "./SearchableSelect.jsx";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   BRANCH_COUNTRIES,
   branchCountryLabel,
@@ -63,7 +63,7 @@ export function AdminReassignModal({
 
   useEffect(() => {
     if (!open) return;
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, [open]);
 
   useEffect(() => {

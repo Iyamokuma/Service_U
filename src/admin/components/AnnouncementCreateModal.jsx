@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
 import { BRANCH_COUNTRIES, branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import {
   announcementCountryOptions,
@@ -166,7 +166,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       base.admins = { ...base.admins, ...geo, roles: [...policy.defaultAdminRoles] };
     }
     setForm(base);
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, [open, admin, policy]);
 
   const countryOptions = useMemo(

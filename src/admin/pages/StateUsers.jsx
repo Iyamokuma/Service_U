@@ -16,7 +16,7 @@ import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { countryAdminHomeState, isCountrySuperAdmin } from "../roles.js";
 import { adminApiScopeParams, isActingAsStateAdmin } from "../adminViewMode.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { availableSatellitesForState } from "../stateSatelliteForm.js";
 import { exportCsv } from "../exportCsv.js";
@@ -107,7 +107,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   }, [loadPending, adminsPayload]);
 
   useEffect(() => {
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, []);
 
   const satellitesInDataset = useMemo(

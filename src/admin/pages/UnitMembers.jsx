@@ -6,7 +6,7 @@ import { isCountrySuperAdmin, isStateSuperAdmin, isGlobalAdminRole } from "../ro
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
@@ -65,7 +65,7 @@ export function UnitMembers({
 
   useEffect(() => {
     if (!isCountryGeo) return;
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, [isCountryGeo]);
 
   useEffect(() => {

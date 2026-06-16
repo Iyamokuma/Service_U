@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { api } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { SearchableSelect } from "../components/SearchableSelect.jsx";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -211,7 +211,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
 
   useEffect(() => {
     if (!isGlobalAdmin) return;
-    fetchChurchesCatalog().then(setChurchesCatalog).catch(() => setChurchesCatalog([]));
+    fetchAdminChurchesCatalog().then(setChurchesCatalog).catch(() => setChurchesCatalog([]));
   }, [isGlobalAdmin]);
 
   const scopedAdmins = (data?.data ?? []).filter((a) => {
@@ -1239,7 +1239,7 @@ function AdminModal({
       setChurches([]);
       return;
     }
-    fetchChurchesCatalog()
+    fetchAdminChurchesCatalog()
       .then(setChurches)
       .catch(() => setChurches([]));
   }, [open]);

@@ -14,7 +14,7 @@ import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
 import { CountryWorkforce } from "./CountryWorkforce.jsx";
 import { UnitMembers } from "./UnitMembers.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import {
   availableStatesForCountryAdmin,
@@ -128,7 +128,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   );
 
   useEffect(() => {
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, []);
 
   useEffect(() => {

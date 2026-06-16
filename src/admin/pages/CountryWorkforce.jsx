@@ -6,7 +6,7 @@ import { useToast } from "../components/Toast.jsx";
 import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
-import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 
@@ -70,7 +70,7 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
   }, [loadUnits]);
 
   useEffect(() => {
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, []);
 
   const stateOptions = useMemo(() => branchStatesForCountry(countryCode), [countryCode]);

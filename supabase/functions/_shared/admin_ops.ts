@@ -1055,6 +1055,8 @@ export async function dispatchAdminOp(
       return handleDeleteAnnouncement(supabase, params, admin, ip);
     case "catalogList":
       return handleCatalogList(supabase, admin);
+    case "churchCatalog":
+      return handleChurchCatalog(supabase, admin);
     case "catalogAddCountry":
       return handleCatalogAddCountry(supabase, params, admin, ip);
     case "catalogAddState":
@@ -3218,8 +3220,54 @@ function buildCatalogStats(regs: Array<Record<string, unknown>>) {
   return { membersByCountry, membersByState, membersBySatellite };
 }
 
-async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
-  requireCatalogEditor(admin);
+function buildMergedChurchRows(
+  churches: Record<string, unknown>[],
+  satellites: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const ch of churches) {
+    const cc = normUp(ch.branch_country);
+    const st = normUp(ch.branch_state);
+    const name = norm(ch.name);
+    if (!cc || !st || !name) continue;
+    byKey.set(`${cc}:${st}:${name.toLowerCase()}`, {
+      id: ch.id ?? null,
+      name,
+      address: norm(ch.address),
+      branch_country: cc,
+      branch_state: st,
+      directory_branch_id: ch.directory_branch_id ?? null,
+      is_active: ch.is_active ?? 1,
+    });
+  }
+  for (const s of satellites) {
+    const cc = normUp(s.branch_country);
+    const st = normUp(s.branch_state);
+    const name = norm(s.site_name);
+    if (!cc || !st || !name) continue;
+    const key = `${cc}:${st}:${name.toLowerCase()}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        id: null,
+        name,
+        address: "",
+        branch_country: cc,
+        branch_state: st,
+        directory_branch_id: null,
+        is_active: s.is_active ?? 1,
+      });
+    }
+  }
+  return [...byKey.values()].sort((a, b) => {
+    const ac = normUp(a.branch_country).localeCompare(normUp(b.branch_country));
+    if (ac !== 0) return ac;
+    const st = normUp(a.branch_state).localeCompare(normUp(b.branch_state));
+    if (st !== 0) return st;
+    return norm(a.name).localeCompare(norm(b.name));
+  });
+}
+
+async function loadScopedCatalog(supabase: SupabaseClient, admin: AdminRow) {
   const role = norm(admin.role);
   const scopedCountry = normUp(admin.branch_country);
   const scopedState = normUp(admin.branch_state);
@@ -3330,6 +3378,22 @@ async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
     satellites: scopedSatellites,
     admins: scopedAdmins,
     stats: buildCatalogStats(scopedRegs),
+  };
+}
+
+async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
+  requireCatalogEditor(admin);
+  return loadScopedCatalog(supabase, admin);
+}
+
+/** Church/satellite site list for admin dropdowns — same DB sources as catalogList, scoped to role. */
+async function handleChurchCatalog(supabase: SupabaseClient, admin: AdminRow) {
+  const catalog = await loadScopedCatalog(supabase, admin);
+  return {
+    churches: buildMergedChurchRows(
+      catalog.churches as Record<string, unknown>[],
+      catalog.satellites as Record<string, unknown>[],
+    ),
   };
 }
 

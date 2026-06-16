@@ -399,6 +399,10 @@ export const api = {
     return adminFetch("catalogList", {});
   },
 
+  async churchCatalog() {
+    return adminFetch("churchCatalog", {});
+  },
+
   async catalogAddCountry(fields) {
     return adminFetch("catalogAddCountry", fields);
   },

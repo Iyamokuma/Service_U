@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { fetchChurchesCatalog } from "../lib/churchesCatalog.js";
+import { fetchAdminChurchesCatalog } from "./churchesCatalog.js";
 import { geoFilterApiParams, hasGeoFilters, satelliteOptionsForGeoFilter, stateOptionsForGeoFilter } from "./geoFilterUtils.js";
 import { isGlobalAdminRole } from "./roles.js";
 
@@ -32,7 +32,7 @@ export function AdminGeoFilterProvider({ admin, children }) {
 
   useEffect(() => {
     if (!enabled) return;
-    fetchChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
   }, [enabled]);
 
   const clear = useCallback(() => {
