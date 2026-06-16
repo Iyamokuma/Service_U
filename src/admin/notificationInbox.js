@@ -2,6 +2,7 @@
 
 const TYPE_LABELS = {
   overdue_application: "Overdue",
+  overdue_critical: "Critical overdue",
   new_registration: "New application",
   admin_request: "Admin request",
   request_update: "Request update",
@@ -10,11 +11,50 @@ const TYPE_LABELS = {
 
 const TYPE_ICONS = {
   overdue_application: "⏰",
+  overdue_critical: "🚨",
   new_registration: "📋",
   admin_request: "👤",
   request_update: "✉️",
   announcement: "📢",
 };
+
+const SENDER_ROLE_LABELS = {
+  super_admin: "Super Admin",
+  general_admin: "General Admin",
+  country_super_admin: "Country Admin",
+  state_super_admin: "State Branch Admin",
+  satellite_church_admin: "Satellite Pastor Admin",
+  service_unit_leader: "Service Unit Leader",
+  sub_unit_leader: "Sub-Unit Leader",
+  data_entry_admin: "Data Entry Admin",
+};
+
+function senderRoleLabel(role) {
+  const r = String(role || "").trim();
+  return SENDER_ROLE_LABELS[r] || r.replace(/_/g, " ") || "";
+}
+
+export function notificationSenderLabel(notification) {
+  const meta = notification?.metadata && typeof notification.metadata === "object"
+    ? notification.metadata
+    : {};
+  const name = String(meta.sender_name || "").trim();
+  const role = senderRoleLabel(meta.sender_role);
+  if (name && role) return `${name} · ${role}`;
+  if (name) return name;
+
+  const type = String(notification?.type || "");
+  if (type === "announcement") return "Announcements";
+  if (type === "admin_request") return "Admin request";
+  if (type === "request_update") return "Request workflow";
+  if (type === "new_registration") return "Public registration";
+  if (type === "overdue_application" || type === "overdue_critical") return "Intake queue";
+  return "Salvation Ministries";
+}
+
+export function notificationSenderInitials(notification) {
+  return notificationInitials(notificationSenderLabel(notification));
+}
 
 export function notificationTypeLabel(type) {
   return TYPE_LABELS[String(type || "")] || "Update";

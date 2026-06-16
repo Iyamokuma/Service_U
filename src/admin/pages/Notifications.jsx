@@ -8,6 +8,8 @@ import {
   notificationActionLabel,
   notificationBadgeClass,
   notificationInitials,
+  notificationSenderInitials,
+  notificationSenderLabel,
   notificationTypeLabel,
   resolveNotificationTarget,
 } from "../notificationInbox.js";
@@ -58,7 +60,9 @@ export function Notifications({ setPage, navigateToQueue }) {
     return items.filter((n) => {
       if (!matchesFilter(n, filterTab)) return false;
       if (!q) return true;
-      const hay = [n.title, n.body, n.type, notificationTypeLabel(n.type)].join(" ").toLowerCase();
+      const hay = [n.title, n.body, n.type, notificationTypeLabel(n.type), notificationSenderLabel(n)]
+        .join(" ")
+        .toLowerCase();
       return hay.includes(q);
     });
   }, [items, filterTab, search]);
@@ -192,15 +196,16 @@ export function Notifications({ setPage, navigateToQueue }) {
                       className={`sa-notify-stack-item${isActive ? " is-active" : ""}${unreadItem ? " is-unread" : ""}`}
                       onClick={() => selectNotification(n)}
                     >
-                      <div className="sa-notify-stack-avatar">{notificationInitials(n.title)}</div>
+                      <div className="sa-notify-stack-avatar">{notificationSenderInitials(n)}</div>
                       <div className="sa-notify-stack-body">
                         <div className="sa-notify-stack-top">
-                          <span className="sa-notify-stack-title">{n.title}</span>
+                          <span className="sa-notify-stack-title">{notificationSenderLabel(n)}</span>
                           <span className={`sa-notify-type-badge is-${notificationBadgeClass(n.type)}`}>
                             {notificationTypeLabel(n.type).toUpperCase()}
                           </span>
                         </div>
-                        <div className="sa-notify-stack-preview">{n.body}</div>
+                        <div className="sa-notify-stack-preview">{n.title}</div>
+                        <div className="sa-notify-stack-preview sa-notify-stack-subpreview">{n.body}</div>
                         <div className="sa-notify-stack-meta">
                           <span>{formatRelativeTime(n.created_at)}</span>
                           {unreadItem ? <span className="sa-notify-stack-unread">Unread</span> : null}
@@ -223,9 +228,10 @@ export function Notifications({ setPage, navigateToQueue }) {
                 <div className="sa-notify-detail-head">
                   <div className="sa-notify-detail-head-main">
                     <div className="sa-notify-stack-avatar sa-notify-detail-avatar">
-                      {notificationInitials(selected.title)}
+                      {notificationSenderInitials(selected)}
                     </div>
                     <div>
+                      <p className="sa-notify-detail-from">From {notificationSenderLabel(selected)}</p>
                       <h2 className="sa-notify-detail-title">{selected.title}</h2>
                       <div className="sa-notify-detail-sub">
                         <span className={`sa-notify-type-badge is-${notificationBadgeClass(selected.type)}`}>
@@ -238,6 +244,14 @@ export function Notifications({ setPage, navigateToQueue }) {
                 </div>
 
                 <div className="sa-notify-detail-grid">
+                  <div className="sa-detail-field">
+                    <div className="sa-detail-label">From</div>
+                    <div className="sa-detail-value">{notificationSenderLabel(selected)}</div>
+                  </div>
+                  <div className="sa-detail-field">
+                    <div className="sa-detail-label">Subject</div>
+                    <div className="sa-detail-value">{selected.title}</div>
+                  </div>
                   <div className="sa-detail-field">
                     <div className="sa-detail-label">Message</div>
                     <div className="sa-detail-value">{selected.body}</div>

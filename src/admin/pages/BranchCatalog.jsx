@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useAdminAuth } from "../AdminContext.jsx";
-import { isGlobalAdminRole, isCountrySuperAdmin } from "../roles.js";
+import { canPublishLocations, canProposeLocations } from "../roles.js";
 import { useToast } from "../components/Toast.jsx";
 import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
+import { AddSatellitesModal } from "../components/AddSatellitesModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
 import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
@@ -100,7 +101,9 @@ export function BranchCatalog({ variant = "catalog" }) {
   const copy = PAGE_COPY[variant] || PAGE_COPY.catalog;
   const isBranchDirectory = variant === "catalog";
   const { admin } = useAdminAuth();
-  const canCreateLocation = isGlobalAdminRole(admin?.role) || isCountrySuperAdmin(admin?.role);
+  const canCreateLocation = canPublishLocations(admin?.role) || canProposeLocations(admin?.role);
+  const canManageChurches = canPublishLocations(admin?.role);
+  const locationSubmitMode = canPublishLocations(admin?.role) ? "publish" : "propose";
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState(null);
@@ -108,6 +111,7 @@ export function BranchCatalog({ variant = "catalog" }) {
   const [filters, setFilters] = useState(() => emptyFilters());
   const [detail, setDetail] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [addSatellitesPreset, setAddSatellitesPreset] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
   const viewTabs = isBranchDirectory ? BRANCH_DIRECTORY_TABS : TABS;
@@ -310,9 +314,9 @@ export function BranchCatalog({ variant = "catalog" }) {
     toast(`Exported ${cfg.rows.length} record${cfg.rows.length !== 1 ? "s" : ""}.`, "success");
   }
 
-  async function createLocation(payload) {
-    if (!payload.continent || !payload.countryIso2 || !payload.stateName || !payload.lgaName) {
-      toast("Select continent through LGA.", "error");
+  async function publishLocationPayload(payload) {
+    if (!payload.countryIso2 || !payload.stateName || !payload.lgaName) {
+      toast("Country, state, and LGA are required.", "error");
       return;
     }
     if (!payload.satelliteChurches?.length) {
@@ -321,15 +325,35 @@ export function BranchCatalog({ variant = "catalog" }) {
     }
     setBusy(true);
     try {
-      await api.catalogCreateLocation(payload);
-      toast("Location created and published to the registration form.", "success");
+      if (locationSubmitMode === "propose") {
+        await api.createRequest({
+          request_type: "location_catalog",
+          payload: {
+            continent: payload.continent,
+            countryIso2: payload.countryIso2,
+            countryName: payload.countryName,
+            stateName: payload.stateName,
+            lgaName: payload.lgaName,
+            satelliteChurches: payload.satelliteChurches,
+          },
+        });
+        toast("Proposal sent for Super / General Admin approval.", "success");
+      } else {
+        await api.catalogCreateLocation(payload);
+        toast("Location created and published to the registration form.", "success");
+      }
       setShowCreate(false);
+      setAddSatellitesPreset(null);
       await load();
     } catch (e) {
-      toast(e.message || "Could not create location.", "error");
+      toast(e.message || "Could not save location.", "error");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function createLocation(payload) {
+    await publishLocationPayload(payload);
   }
 
   async function toggleChurch(row, nextActive) {
@@ -388,14 +412,28 @@ export function BranchCatalog({ variant = "catalog" }) {
 
   if (detail && catalog) {
     return (
-      <BranchLocationDetail
-        detail={detail}
-        catalog={catalog}
-        onBack={() => setDetail(null)}
-        onToggleChurch={toggleChurch}
-        onDeleteChurch={deleteChurch}
-        busy={busy}
-      />
+      <>
+        <BranchLocationDetail
+          detail={detail}
+          catalog={catalog}
+          onBack={() => setDetail(null)}
+          onToggleChurch={toggleChurch}
+          onDeleteChurch={deleteChurch}
+          canAddSatellites={canCreateLocation}
+          canManageChurches={canManageChurches}
+          onAddSatellites={(preset) => setAddSatellitesPreset(preset)}
+          busy={busy}
+        />
+        <AddSatellitesModal
+          open={!!addSatellitesPreset}
+          onClose={() => setAddSatellitesPreset(null)}
+          onSubmit={publishLocationPayload}
+          saving={busy}
+          catalog={catalog}
+          preset={addSatellitesPreset}
+          mode={locationSubmitMode}
+        />
+      </>
     );
   }
 
@@ -414,7 +452,7 @@ export function BranchCatalog({ variant = "catalog" }) {
               onRefresh={() => load()}
               onNewLocation={() => setShowCreate(true)}
               refreshLabel="Refresh table"
-              createLabel="Create location"
+              createLabel={locationSubmitMode === "propose" ? "Propose location" : "Create location"}
             />
           </div>
         ) : null}
@@ -638,19 +676,21 @@ export function BranchCatalog({ variant = "catalog" }) {
                           >
                             Manage
                           </button>
-                          <button
-                            type="button"
-                            className="sa-btn sa-btn-ghost sa-btn-sm"
-                            disabled={busy}
-                            onClick={() =>
-                              toggleChurch(
-                                { id: r.id, name: r.name },
-                                r.is_active ? 0 : 1,
-                              )
-                            }
-                          >
-                            {r.is_active ? "Hide" : "Show"}
-                          </button>
+                          {canManageChurches ? (
+                            <button
+                              type="button"
+                              className="sa-btn sa-btn-ghost sa-btn-sm"
+                              disabled={busy}
+                              onClick={() =>
+                                toggleChurch(
+                                  { id: r.id, name: r.name },
+                                  r.is_active ? 0 : 1,
+                                )
+                              }
+                            >
+                              {r.is_active ? "Hide" : "Show"}
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -839,6 +879,12 @@ export function BranchCatalog({ variant = "catalog" }) {
         onClose={() => setShowCreate(false)}
         onSubmit={createLocation}
         saving={busy}
+        submitLabel={locationSubmitMode === "propose" ? "Submit for approval" : "Create location"}
+        introText={
+          locationSubmitMode === "propose"
+            ? "Select continent through LGA, then type satellite church name(s). Nothing goes live until a Super Admin or General Admin approves the request."
+            : "Select continent through LGA from the geography directory, then type satellite church name(s). Locations go live on the registration form immediately."
+        }
       />
     </div>
   );

@@ -3,7 +3,7 @@ import { Select } from "../components/Inputs.jsx";
 import { RadioGroup } from "../components/RadioGroup.jsx";
 import { Collapse } from "../components/Collapse.jsx";
 import { SectionHead } from "./SectionHead.jsx";
-import { YEARS_SINCE_1950, WOLBI_LEVELS } from "../data.js";
+import { YEARS_SINCE_1997, WOLBI_LEVELS } from "../data.js";
 
 export function FaithSection({ form, set, errors }) {
   const bornAgain = form.bornAgain === "Yes";
@@ -33,10 +33,10 @@ export function FaithSection({ form, set, errors }) {
             required
             error={errors.bornAgainYear}
           >
-            <Select
+              <Select
               value={form.bornAgainYear}
               onChange={(v) => set("bornAgainYear", v)}
-              options={YEARS_SINCE_1950}
+              options={YEARS_SINCE_1997}
               placeholder="Select year"
               state={
                 errors.bornAgainYear
@@ -78,7 +78,7 @@ export function FaithSection({ form, set, errors }) {
                       onChange={(v) =>
                         set("wolbiDate", { ...form.wolbiDate, year: v })
                       }
-                      options={YEARS_SINCE_1950}
+                      options={YEARS_SINCE_1997}
                       placeholder="Year"
                       state={errors.wolbiDate ? "error" : undefined}
                     />

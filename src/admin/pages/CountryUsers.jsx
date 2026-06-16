@@ -18,7 +18,10 @@ import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import {
   availableStatesForCountryAdmin,
+  countStateBranchLeaders,
+  isStateBranchLeader,
   occupiedStateCodes,
+  stateLeaderLabel,
 } from "../stateAdminForm.js";
 import { readUsersSectionTab, writeUsersSectionTab } from "../usersSectionTab.js";
 import { exportCsv } from "../exportCsv.js";
@@ -39,6 +42,9 @@ function adminLocationLabel(admin, countryCode) {
 
 function adminRoleLabel(admin) {
   if (admin.role === "state_super_admin") return "State Branch Admin";
+  if (admin.role === "country_super_admin" && admin.branch_state) {
+    return stateLeaderLabel({ kind: "country_hq", admin });
+  }
   if (admin.role === "satellite_church_admin") return "Satellite Pastor Admin";
   return String(admin.role || "—");
 }
@@ -92,7 +98,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   );
 
   const stateBranchAdmins = useMemo(
-    () => countryAdmins.filter((a) => a.role === "state_super_admin"),
+    () => countryAdmins.filter((a) => isStateBranchLeader(a)),
     [countryAdmins],
   );
 
@@ -104,7 +110,11 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   /** State branch pastors + satellite pastors in this country (alphabetical list source). */
   const pastorAdmins = useMemo(() => {
     return countryAdmins
-      .filter((a) => a.role === "state_super_admin" || a.role === "satellite_church_admin")
+      .filter(
+        (a) =>
+          isStateBranchLeader(a) ||
+          a.role === "satellite_church_admin",
+      )
       .sort(compareAdminsAlphabetical);
   }, [countryAdmins]);
 
@@ -152,7 +162,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
     const q = search.trim().toLowerCase();
     return pastorAdmins.filter((a) => {
       if (!showInactive && Number(a.is_active) !== 1) return false;
-      if (roleFilter === "state_super_admin" && a.role !== "state_super_admin") return false;
+      if (roleFilter === "state_super_admin" && !isStateBranchLeader(a)) return false;
       if (roleFilter === "satellite_church_admin" && a.role !== "satellite_church_admin") return false;
       if (filterState && String(a.branch_state || "").toUpperCase() !== filterState) return false;
       if (filterSatellite && String(a.satellite_site || "").trim() !== filterSatellite) return false;

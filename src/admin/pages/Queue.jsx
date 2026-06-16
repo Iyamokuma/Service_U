@@ -328,6 +328,7 @@ export function Queue({ units, initialTab = "all" }) {
     const unit = unitOpts.find((u) => String(u.id) === String(filters.unit_id));
     return (unit?.sub_units || []).map((s) => s.name).filter(Boolean);
   }, [isLeader, unitOpts, filters.unit_id]);
+  const showGlobalSubUnitFilter = !isLeader && filters.unit_id && globalSubUnitOptions.length > 0;
 
   const showIntakeFilters = true;
   const onOverdueTab = statusTab === "overdue";
@@ -426,7 +427,7 @@ export function Queue({ units, initialTab = "all" }) {
                 {unitOpts.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             )}
-            {!isLeader && filters.unit_id && (
+            {!isLeader && showGlobalSubUnitFilter && (
               <select className="sa-select" value={filters.sub_unit} onChange={setFilter("sub_unit")}>
                 <option value="">All sub-units</option>
                 {globalSubUnitOptions.map((name) => (

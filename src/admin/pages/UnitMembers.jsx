@@ -10,6 +10,7 @@ import { fetchChurchesCatalog } from "../../lib/churchesCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
+import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 
 export function UnitMembers({
   units,
@@ -78,6 +79,13 @@ export function UnitMembers({
     const u = (units?.data || []).find((x) => Number(x.id) === Number(admin?.service_unit_id));
     return (u?.sub_units || []).map((s) => s.name).filter(Boolean);
   }, [units?.data, admin?.service_unit_id]);
+
+  const filterUnit = useMemo(
+    () => (units?.data || []).find((u) => Number(u.id) === Number(filters.unit_id)),
+    [units?.data, filters.unit_id],
+  );
+  const filterUnitHasSubUnits = unitHasSubUnits(filterUnit);
+  const serviceLeaderUnitHasSubUnits = subUnitChoices.length > 0;
 
   const buildRequestBody = useCallback(
     (page, perPage) => {
@@ -343,7 +351,7 @@ export function UnitMembers({
           ))}
         </select>
       )}
-      {(isCountryAdmin || isServiceUnitLeader) && filters.unit_id && (
+      {(isCountryAdmin || isServiceUnitLeader) && filters.unit_id && filterUnitHasSubUnits && (
         <select
           className="sa-select"
           value={filters.sub_unit}
@@ -359,7 +367,7 @@ export function UnitMembers({
           )}
         </select>
       )}
-      {isServiceUnitLeader && (
+      {isServiceUnitLeader && serviceLeaderUnitHasSubUnits && (
         <select
           className="sa-select"
           value={filters.sub_unit}

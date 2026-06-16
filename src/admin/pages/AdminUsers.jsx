@@ -53,7 +53,8 @@ import {
   ADMIN_EMAIL_INVITES_ENABLED,
   validateAdminForm,
 } from "../adminAccountForm.js";
-import { occupiedStateCodes } from "../stateAdminForm.js";
+import { occupiedStateCodes, isStateBranchLeader, listStateBranchesForCountry, stateBranchKindLabel } from "../stateAdminForm.js";
+import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 import { AdminInviteBanner } from "../components/AdminInviteBanner.jsx";
 import { adminCreateButtonLabel, toastAfterAdminCreate } from "../adminInviteUi.js";
 
@@ -253,7 +254,11 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
     const satelliteName = satelliteFilter === "all" ? "" : satelliteFilter;
     const filtered = visibilityFiltered.filter((a) => {
       if (!matchesAdminGeo(a, geo.filters)) return false;
-      if (roleFilter !== "all" && a.role !== roleFilter) return false;
+      if (roleFilter !== "all" && roleFilter === "state_super_admin") {
+        if (!isStateBranchLeader(a)) return false;
+      } else if (roleFilter !== "all" && a.role !== roleFilter) {
+        return false;
+      }
       if (countryCode && String(a.branch_country || "").toUpperCase() !== countryCode) return false;
       if (stateCode && String(a.branch_state || "").toUpperCase() !== stateCode) return false;
       if (satelliteName && String(a.satellite_site || "").trim() !== satelliteName) return false;
@@ -346,10 +351,16 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       inProgress: inProgress.length,
       inactive: inactive.length,
       country: active.filter((a) => a.role === "country_super_admin").length,
-      state: active.filter((a) => a.role === "state_super_admin").length,
+      state: active.filter((a) => isStateBranchLeader(a)).length,
       pending: pendingAdminRequests.length,
     };
   }, [isGlobalAdmin, scopedAdmins, pendingAdminRequests]);
+
+  const filteredCountryStateBranches = useMemo(() => {
+    if (!isGlobalAdmin || countryFilter === "all") return [];
+    return listStateBranchesForCountry(countryFilter, scopedAdmins, []).filter((row) => row.admin);
+  }, [isGlobalAdmin, countryFilter, scopedAdmins]);
+
   const fallbackUnits = SERVICE_UNITS.map((u, idx) => ({
     id: u.id,
     name: u.name,
@@ -381,6 +392,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       takenStates,
       isEdit: !!form.id,
       inviteCreate,
+      units: unitList,
     });
     if (validationMsg) {
       toast(validationMsg, "error");
@@ -745,6 +757,42 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
               </div>
             </div>
           )}
+
+          {filteredCountryStateBranches.length > 0 ? (
+            <div className="sa-card sa-admins-card" style={{ marginBottom: 16 }}>
+              <div className="sa-card-head">
+                <div className="sa-card-title">
+                  State branches · {branchCountryLabel(countryFilter)}
+                </div>
+              </div>
+              <div className="sa-card-body" style={{ paddingTop: 0 }}>
+                <div className="sa-table-wrap">
+                  <table className="sa-table sa-table-admins-simple">
+                    <thead>
+                      <tr>
+                        <th>State / branch</th>
+                        <th>Admin</th>
+                        <th>Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCountryStateBranches.map((row) => (
+                        <tr key={row.stateCode}>
+                          <td>{row.stateLabel}</td>
+                          <td className="sa-text-sm">{row.admin?.full_name || "—"}</td>
+                          <td>
+                            <span className={`sa-badge ${row.kind === "country_hq" ? "country_super_admin" : "state_super_admin"}`}>
+                              {stateBranchKindLabel(row.kind)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="sa-card sa-admins-card">
             <div className="sa-card-head sa-admins-card-head">
@@ -1244,6 +1292,7 @@ function AdminModal({
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const selectedUnit = unitList.find((u) => Number(u.id) === Number(form.service_unit_id));
+  const selectedUnitHasSubs = unitHasSubUnits(selectedUnit);
 
   const takenCountries = occupiedCountryCodes(existingAdmins, pendingAdminRequests, isEdit ? form.id : null);
   const countryOptions = BRANCH_COUNTRIES.filter((c) => {
@@ -1562,10 +1611,24 @@ function AdminModal({
           {form.role === "sub_unit_leader" && (
             <div className="sa-field">
               <label className="sa-label">Sub-unit <span className="sa-required">*</span></label>
-              <select className="sa-field-select" value={form.sub_unit_name} onChange={(e) => setForm((f) => ({ ...f, sub_unit_name: e.target.value }))}>
-                <option value="">Select sub-unit</option>
+              <select
+                className="sa-field-select"
+                value={form.sub_unit_name}
+                onChange={(e) => setForm((f) => ({ ...f, sub_unit_name: e.target.value }))}
+                disabled={!form.service_unit_id || !selectedUnitHasSubs}
+              >
+                <option value="">
+                  {!form.service_unit_id
+                    ? "Select service unit first"
+                    : selectedUnitHasSubs
+                      ? "Select sub-unit"
+                      : "No sub-units on this unit"}
+                </option>
                 {(selectedUnit?.sub_units || []).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
+              {form.service_unit_id && !selectedUnitHasSubs ? (
+                <div className="sa-field-hint">This service unit has no sub-units.</div>
+              ) : null}
             </div>
           )}
         </div>

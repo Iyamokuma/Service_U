@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 import { useAdminNotifications } from "../useAdminNotifications.js";
-import { formatInboxTime } from "../notificationInbox.js";
+import { formatInboxTime, notificationSenderLabel } from "../notificationInbox.js";
 
 export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements, onOpenInbox, onNavigateRequests }) {
   const [open, setOpen] = useState(false);
@@ -100,6 +100,7 @@ export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements, onO
                     }
                   }}
                 >
+                  <div className="sa-notify-item-from">{notificationSenderLabel(n)}</div>
                   <div className="sa-notify-item-title">{n.title}</div>
                   <div className="sa-notify-item-body">{n.body}</div>
                   <div className="sa-notify-item-meta">{formatInboxTime(n.created_at)}</div>

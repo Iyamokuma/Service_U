@@ -87,7 +87,6 @@ const NAV_COUNTRY_ADMIN = [
       { id: "oversight", label: "Application queue", icon: <ListIcon /> },
       { id: "users", label: "Users", icon: <UsersIcon /> },
       { id: "requests", label: "Requests", icon: <RequestIcon /> },
-      { id: "locations", label: "Locations", icon: <MapPinIcon /> },
       { id: "activity", label: "Activity log", icon: <ActivityIcon /> },
       { id: "announcements", label: "Announcements", icon: <RequestIcon /> },
       NAV_ITEM_NOTIFICATIONS,

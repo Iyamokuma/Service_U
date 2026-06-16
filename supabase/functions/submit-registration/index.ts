@@ -117,6 +117,30 @@ Deno.serve(async (req) => {
       return json(400, { error: "Branch country and state are required." });
     }
 
+    if (!row.unit_id || !Number.isFinite(Number(row.unit_id))) {
+      return json(400, { error: "Service unit is required." });
+    }
+
+    const { data: unitSubs } = await supabase
+      .from("sub_units")
+      .select("name")
+      .eq("unit_id", Number(row.unit_id))
+      .eq("is_active", 1);
+    const activeSubNames = (unitSubs || [])
+      .map((s: { name?: unknown }) => norm(s.name))
+      .filter(Boolean);
+    if (activeSubNames.length > 0) {
+      const chosen = norm(row.sub_unit);
+      if (!chosen) {
+        return json(400, { error: "Select a sub-unit for this service unit." });
+      }
+      if (!activeSubNames.some((name) => name.toLowerCase() === chosen.toLowerCase())) {
+        return json(400, { error: "Invalid sub-unit for the selected service unit." });
+      }
+    } else {
+      row.sub_unit = "";
+    }
+
     const canonical = await canonicalizeRegistrationBranch(
       supabase,
       String(row.branch_country),

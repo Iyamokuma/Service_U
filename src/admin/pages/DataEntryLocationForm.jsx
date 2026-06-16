@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   fetchContinents,
   fetchCountriesForContinent,
   fetchLgasOrCities,
   fetchStatesForCountryName,
 } from "../../lib/geoApi.js";
-import { branchCountryCodeFromIso2 } from "../branchRegions.js";
+import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel } from "../branchRegions.js";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 
 export function DataEntryLocationForm() {
   const toast = useToast();
+  const [entryMode, setEntryMode] = useState("catalog");
+  const [catalog, setCatalog] = useState(null);
+  const [catalogCountryCode, setCatalogCountryCode] = useState("");
+  const [catalogStateCode, setCatalogStateCode] = useState("");
   const [continents, setContinents] = useState([]);
   const [countries, setCountries] = useState([]);
   const [states, setStates] = useState([]);
@@ -28,6 +32,39 @@ export function DataEntryLocationForm() {
   const [submitting, setSubmitting] = useState(false);
 
   const catalogCountry = branchCountryCodeFromIso2(countryIso2);
+
+  const catalogCountries = useMemo(
+    () =>
+      (catalog?.countries || [])
+        .map((c) => ({
+          code: String(c.branch_country_code || "").toUpperCase(),
+          name: c.name || branchCountryLabel(c.branch_country_code),
+          id: c.id,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [catalog?.countries],
+  );
+
+  const catalogStateOptions = useMemo(() => {
+    const country = catalogCountries.find((c) => c.code === catalogCountryCode);
+    if (!country) return [];
+    return (catalog?.states || [])
+      .filter((s) => Number(s.country_id) === Number(country.id))
+      .map((s) => ({
+        code: String(s.branch_state_code || "").toUpperCase(),
+        name: s.name || branchStateLabel(catalogCountryCode, s.branch_state_code),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [catalog?.states, catalogCountries, catalogCountryCode]);
+
+  const selectedCatalogState = catalogStateOptions.find((s) => s.code === catalogStateCode);
+
+  useEffect(() => {
+    api
+      .catalogList()
+      .then((r) => setCatalog(r))
+      .catch(() => setCatalog(null));
+  }, []);
 
   const filteredCountries = countries.filter((c) => {
     const q = countrySearch.trim().toLowerCase();
@@ -134,31 +171,56 @@ export function DataEntryLocationForm() {
 
   async function submit() {
     const cleanedSats = satellites.map((s) => s.trim()).filter(Boolean);
-    if (!continent || !countryIso2 || !countryName || !stateName || !lgaName) {
-      toast("Select continent through LGA, then add satellite churches.", "error");
-      return;
-    }
     if (!cleanedSats.length) {
       toast("Enter at least one satellite church name.", "error");
       return;
     }
+
+    let payload;
+    if (entryMode === "catalog") {
+      if (!catalogCountryCode || !catalogStateCode || !lgaName.trim()) {
+        toast("Select an existing country and state, then enter LGA and satellite churches.", "error");
+        return;
+      }
+      const countryRow = catalogCountries.find((c) => c.code === catalogCountryCode);
+      payload = {
+        continent: "",
+        countryIso2: /^[A-Z]{2}$/.test(catalogCountryCode) ? catalogCountryCode : catalogCountryCode,
+        countryName: countryRow?.name || branchCountryLabel(catalogCountryCode),
+        stateName: selectedCatalogState?.name || branchStateLabel(catalogCountryCode, catalogStateCode),
+        lgaName: lgaName.trim(),
+        satelliteChurches: cleanedSats,
+      };
+    } else {
+      if (!continent || !countryIso2 || !countryName || !stateName || !lgaName) {
+        toast("Select continent through LGA, then add satellite churches.", "error");
+        return;
+      }
+      payload = {
+        continent,
+        countryIso2,
+        countryName,
+        stateName,
+        lgaName,
+        satelliteChurches: cleanedSats,
+      };
+    }
+
     setSubmitting(true);
     try {
       await api.createRequest({
         request_type: "location_catalog",
-        payload: {
-          continent,
-          countryIso2,
-          countryName,
-          stateName,
-          lgaName,
-          satelliteChurches: cleanedSats,
-        },
+        payload,
       });
       toast("Proposal sent for Super / General Admin approval.", "success");
-      setStateName("");
-      setLgaName("");
-      setSatellites([""]);
+      if (entryMode === "catalog") {
+        setLgaName("");
+        setSatellites([""]);
+      } else {
+        setStateName("");
+        setLgaName("");
+        setSatellites([""]);
+      }
     } catch (e) {
       toast(e.message, "error");
     } finally {
@@ -173,11 +235,77 @@ export function DataEntryLocationForm() {
       </div>
       <div className="sa-card-body">
         <p className="sa-text-sm sa-text-muted" style={{ maxWidth: 720, lineHeight: 1.55, marginBottom: 20 }}>
-          Choose geography from the directory (continent → country → state → LGA / city). Type satellite church names
-          manually. Nothing goes live until a Super Admin or General Admin sets the request to{" "}
-          <strong>approved</strong> (churches then appear on the public registration form for that area).
+          Add satellite churches to an <strong>existing</strong> country/state in the directory, or propose a brand-new
+          geography path. Nothing goes live until a Super Admin or General Admin sets the request to{" "}
+          <strong>approved</strong>.
         </p>
 
+        <div className="sa-unit-tab-row" style={{ marginBottom: 20 }}>
+          <button
+            type="button"
+            className={`sa-unit-tab-btn${entryMode === "catalog" ? " is-active" : ""}`}
+            onClick={() => setEntryMode("catalog")}
+          >
+            Existing country / state
+          </button>
+          <button
+            type="button"
+            className={`sa-unit-tab-btn${entryMode === "geo" ? " is-active" : ""}`}
+            onClick={() => setEntryMode("geo")}
+          >
+            New geography
+          </button>
+        </div>
+
+        {entryMode === "catalog" ? (
+          <div className="sa-de-grid">
+            <div className="sa-field">
+              <label className="sa-label">Country (directory)</label>
+              <select
+                className="sa-field-select"
+                value={catalogCountryCode}
+                onChange={(e) => {
+                  setCatalogCountryCode(e.target.value);
+                  setCatalogStateCode("");
+                }}
+              >
+                <option value="">Select country</option>
+                {catalogCountries.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">State / region (directory)</label>
+              <select
+                className="sa-field-select"
+                value={catalogStateCode}
+                disabled={!catalogCountryCode}
+                onChange={(e) => setCatalogStateCode(e.target.value)}
+              >
+                <option value="">{catalogCountryCode ? "Select state" : "Select country first"}</option>
+                {catalogStateOptions.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sa-field">
+              <label className="sa-label">LGA / city</label>
+              <input
+                className="sa-input"
+                value={lgaName}
+                disabled={!catalogStateCode}
+                onChange={(e) => setLgaName(e.target.value)}
+                placeholder="LGA or city name"
+              />
+            </div>
+          </div>
+        ) : (
+          <>
         {!catalogCountry && countryIso2 ? (
           <div
             className="sa-field-hint"
@@ -307,6 +435,8 @@ export function DataEntryLocationForm() {
             ) : null}
           </div>
         </div>
+          </>
+        )}
 
         <div className="sa-field" style={{ marginTop: 20 }}>
           <label className="sa-label">Satellite churches (type each name)</label>

@@ -11,6 +11,7 @@ import {
 } from "./sections/ChurchLocationSection.jsx";
 import { ServiceUnitSection } from "./sections/ServiceUnitSection.jsx";
 import { SERVICE_UNITS, isEmail, isPhone, registrationSubmitFieldErrors } from "./data.js";
+import { unitHasSubUnits } from "./serviceUnitUtils.js";
 import { shrinkPhotoDataUrl } from "./photoCompress.js";
 import { isSupabaseSubmitConfigured, submitRegistration } from "./registrationSubmit.js";
 import { fetchServiceUnitsCatalog } from "./serviceUnitsCatalog.js";
@@ -97,7 +98,7 @@ function validate(form, units) {
   if (!form.unitId) e.unitId = "Select a service unit.";
   else {
     const unit = units.find((u) => u.id === form.unitId);
-    if (unit?.subs?.length && !form.subUnit) e.subUnit = "Select a sub-unit.";
+    if (unitHasSubUnits(unit) && !form.subUnit) e.subUnit = "Select a sub-unit.";
   }
 
   Object.assign(e, validateChurchLocation(form));
@@ -186,7 +187,7 @@ export default function App() {
     if (form.bornAgain) filled += 1;
     if (form.unitId) filled += 1;
     const unit = serviceUnits.find((u) => u.id === form.unitId);
-    if (!unit?.subs?.length || form.subUnit) filled += 1;
+    if (!unitHasSubUnits(unit) || form.subUnit) filled += 1;
     if (form.branchCountry && effectiveBranchStateForPayload(form)) filled += 1;
     if (form.churchId) filled += 1;
     return Math.round((filled / total) * 100);

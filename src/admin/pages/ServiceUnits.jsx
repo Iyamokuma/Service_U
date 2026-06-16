@@ -341,6 +341,7 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
   const isCreate = !form.id;
   const leaders = unitAdmins || [];
   const subs = subUnits || [];
+  const hasSubUnits = subs.length > 0;
   const hasUnitLeader = leaders.some((a) => a.role === "service_unit_leader");
 
   async function removeAdminAccount(admin) {
@@ -371,6 +372,10 @@ function UnitModal({ open, data, unitAdmins = [], subUnits = [], onClose, onSave
     }
     if (body.role === "service_unit_leader" && hasUnitLeader) {
       window.alert("This unit already has a service unit leader. Remove or reassign the existing one first.");
+      return;
+    }
+    if (body.role === "sub_unit_leader" && !hasSubUnits) {
+      window.alert("This service unit has no sub-units. Add sub-units first or assign a service unit leader.");
       return;
     }
     if (body.role === "sub_unit_leader" && !body.sub_unit_name) {
@@ -640,13 +645,15 @@ function UnitAdminsPanel({
               value={addLeaderForm.role}
               onChange={(e) => setAddLeaderForm((f) => ({ ...f, role: e.target.value }))}
             >
-              <option value="sub_unit_leader">Sub-unit leader</option>
+              <option value="sub_unit_leader" disabled={!hasSubUnits}>
+                Sub-unit leader{!hasSubUnits ? " (no sub-units)" : ""}
+              </option>
               <option value="service_unit_leader" disabled={hasUnitLeader}>
                 Service unit leader{hasUnitLeader ? " (already assigned)" : ""}
               </option>
             </select>
           </div>
-          {addLeaderForm.role === "sub_unit_leader" && (
+          {addLeaderForm.role === "sub_unit_leader" && hasSubUnits && (
             <div className="sa-field">
               <label className="sa-label">Sub-unit</label>
               <select
@@ -656,7 +663,7 @@ function UnitAdminsPanel({
                 required
               >
                 <option value="">Select sub-unit</option>
-                {subUnits.map((s) => (
+                {subs.map((s) => (
                   <option key={s.id} value={s.name}>
                     {s.name}
                   </option>
@@ -664,6 +671,11 @@ function UnitAdminsPanel({
               </select>
             </div>
           )}
+          {addLeaderForm.role === "sub_unit_leader" && !hasSubUnits ? (
+            <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 12px" }}>
+              Add sub-units to this service unit before inviting a sub-unit leader.
+            </p>
+          ) : null}
           <div className="sa-field">
             <label className="sa-label">Full name</label>
             <input

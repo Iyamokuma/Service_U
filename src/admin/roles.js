@@ -40,7 +40,17 @@ export function isDataEntryAdmin(role) {
 
 /** Countries / states / churches directory (admin-managed, public form lists). */
 export function canEditBranchCatalog(role) {
-  return role === "super_admin" || role === "general_admin" || role === "data_entry_admin" || role === "country_super_admin";
+  return role === "super_admin" || role === "general_admin" || role === "data_entry_admin";
+}
+
+/** Direct publish to registration form (no approval queue). */
+export function canPublishLocations(role) {
+  return isGlobalAdminRole(role);
+}
+
+/** Propose locations via approval request. */
+export function canProposeLocations(role) {
+  return isDataEntryAdmin(role);
 }
 
 export function isCountrySuperAdmin(role) {

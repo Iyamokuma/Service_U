@@ -78,12 +78,20 @@ const COUNTRY_PAGES = [
   "oversight",
   "users",
   "requests",
-  "locations",
   "activity",
   "announcements",
   "notifications",
   "profile",
 ];
+
+/** Country Admin nav — no branch catalog / locations (Data Entry + global admins only). */
+export function normalizeCountryAdminPage(page) {
+  if (page === "admins" || page === "workforce" || page === "members") return "users";
+  if (page === "queue") return "oversight";
+  if (page === "locations" || page === "branch-catalog" || page === "data-locations") return "overview";
+  if (COUNTRY_PAGES.includes(page)) return page;
+  return "overview";
+}
 
 export const STATE_LEVEL_PAGES = [
   "overview",
@@ -155,16 +163,17 @@ export function normalizeSubUnitLeaderPage(page) {
 
 /** Map sidebar page when switching Country ↔ State view (keep the closest equivalent). */
 export function normalizePageForViewMode(page, admin, viewMode) {
-  if (!canSwitchAdminView(admin)) return page;
+  if (!canSwitchAdminView(admin)) return normalizeCountryAdminPage(page);
   const allowed = viewMode === "state" ? STATE_PAGES : COUNTRY_PAGES;
   if (page === "admins" || page === "workforce") return "users";
   if (allowed.includes(page)) return page;
   if (viewMode === "state") {
-    if (page === "locations" || page === "units") return "users";
+    if (page === "locations" || page === "branch-catalog" || page === "data-locations" || page === "units") {
+      return "users";
+    }
     if (page === "queue") return "oversight";
   } else {
-    if (page === "members" || page === "units") return "users";
-    if (page === "queue") return "oversight";
+    return normalizeCountryAdminPage(page);
   }
   return "overview";
 }

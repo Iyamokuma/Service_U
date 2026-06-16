@@ -11,6 +11,7 @@ import {
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
 } from "../announcementScopePolicy.js";
+import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 
 function LockedGeoField({ label, value, hint }) {
   return (
@@ -194,6 +195,12 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     ];
   }, [scopedUnitList, form.members.service_unit_id, policy.lockedSubUnit]);
 
+  const memberSelectedUnit = useMemo(
+    () => scopedUnitList.find((u) => Number(u.id) === Number(form.members.service_unit_id)),
+    [scopedUnitList, form.members.service_unit_id],
+  );
+  const memberUnitHasSubUnits = unitHasSubUnits(memberSelectedUnit) || Boolean(policy.lockedSubUnit);
+
   const destLabels = policy.destinationLabels;
 
   const leaderModeOptions = useMemo(
@@ -216,6 +223,12 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       ...(unit?.sub_units || []).map((s) => ({ value: s.name, label: s.name })),
     ];
   }, [scopedUnitList, form.leaders.service_unit_id]);
+
+  const leaderSelectedUnit = useMemo(
+    () => scopedUnitList.find((u) => Number(u.id) === Number(form.leaders.service_unit_id)),
+    [scopedUnitList, form.leaders.service_unit_id],
+  );
+  const leaderUnitHasSubUnits = unitHasSubUnits(leaderSelectedUnit) || Boolean(policy.lockedSubUnit);
 
   function buildPayload(workflow_action) {
     const destination_type = form.destination_type;
@@ -268,6 +281,12 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       }
       if (form.leaders.mode === "sub_unit") {
         if (!form.leaders.service_unit_id && !policy.lockedServiceUnitId) return "Select a service unit.";
+        const leaderUnit = scopedUnitList.find(
+          (u) => Number(u.id) === Number(form.leaders.service_unit_id || policy.lockedServiceUnitId),
+        );
+        if (!unitHasSubUnits(leaderUnit) && !policy.lockedSubUnit) {
+          return "The selected service unit has no sub-units.";
+        }
         if (!form.leaders.sub_unit && !policy.lockedSubUnit) {
           if (policy.isServiceUnitLeader) return "Select a sub-unit for sub-unit leader targeting.";
           return destLabels.usesBranchAudienceLabels
@@ -491,7 +510,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
                   />
                 )}
               </div>
-              {policy.visibility.subunit && (form.members.service_unit_id || policy.lockedServiceUnitId) ? (
+              {policy.visibility.subunit && (form.members.service_unit_id || policy.lockedServiceUnitId) && memberUnitHasSubUnits ? (
                 <div className="sa-field" style={{ marginBottom: 0 }}>
                   <label className="sa-label">Sub-unit</label>
                   {policy.lockedSubUnit ? (
@@ -643,7 +662,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
                       )}
                     </div>
                   ) : null}
-                  {(policy.visibility.subunit || policy.isServiceUnitLeader) && form.leaders.mode === "sub_unit" && (
+                  {(policy.visibility.subunit || policy.isServiceUnitLeader) && form.leaders.mode === "sub_unit" && leaderUnitHasSubUnits && (
                     <div className="sa-field" style={{ marginBottom: 0 }}>
                       <label className="sa-label">
                         Sub-unit <span className="sa-required">*</span>

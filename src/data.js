@@ -65,8 +65,9 @@ export const YEARS_FULL = Array.from(
   (_, i) => String(CURRENT_YEAR - i)
 );
 
-export const YEARS_SINCE_1950 = Array.from(
-  { length: CURRENT_YEAR - 1950 + 1 },
+// Salvation Ministries started in 1997, so membership year options begin there.
+export const YEARS_SINCE_1997 = Array.from(
+  { length: CURRENT_YEAR - 1997 + 1 },
   (_, i) => String(CURRENT_YEAR - i)
 );
 

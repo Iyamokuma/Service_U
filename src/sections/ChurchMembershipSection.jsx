@@ -2,7 +2,7 @@ import { Field } from "../components/Field.jsx";
 import { TextInput } from "../components/Inputs.jsx";
 import { DateSplit } from "../components/DateSplit.jsx";
 import { SectionHead } from "./SectionHead.jsx";
-import { YEARS_SINCE_1950 } from "../data.js";
+import { YEARS_SINCE_1997 } from "../data.js";
 
 export function ChurchMembershipSection({ form, set, errors }) {
   return (
@@ -26,7 +26,7 @@ export function ChurchMembershipSection({ form, set, errors }) {
             onChange={(v) => set("joinedChurch", v)}
             includeDay={false}
             includeYear
-            yearRange={YEARS_SINCE_1950}
+            yearRange={YEARS_SINCE_1997}
             error={errors.joinedChurch}
           />
         </Field>

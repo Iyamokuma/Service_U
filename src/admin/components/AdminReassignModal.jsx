@@ -19,6 +19,7 @@ import {
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
 import { roleDisplayLabel } from "../roles.js";
+import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 
 const ROLE_OPTIONS = [
   { value: "country_super_admin", label: "Country Admin" },
@@ -108,6 +109,7 @@ export function AdminReassignModal({
     () => unitList.find((u) => Number(u.id) === Number(form?.service_unit_id)),
     [unitList, form?.service_unit_id],
   );
+  const selectedUnitHasSubs = unitHasSubUnits(selectedUnit);
 
   const locationScoped = form && ROLES_WITH_COUNTRY.includes(form.role);
 
@@ -125,7 +127,7 @@ export function AdminReassignModal({
 
   function submit() {
     if (!form) return;
-    const msg = validateAdminReassignForm(form, { takenCountries, takenStates });
+    const msg = validateAdminReassignForm(form, { takenCountries, takenStates, units: unitList });
     if (msg) {
       onSave(null, msg);
       return;
@@ -311,14 +313,24 @@ export function AdminReassignModal({
                 className="sa-field-select"
                 value={form.sub_unit_name}
                 onChange={(e) => setForm((f) => ({ ...f, sub_unit_name: e.target.value }))}
+                disabled={!form.service_unit_id || !selectedUnitHasSubs}
               >
-                <option value="">Select sub-unit</option>
+                <option value="">
+                  {!form.service_unit_id
+                    ? "Select service unit first"
+                    : selectedUnitHasSubs
+                      ? "Select sub-unit"
+                      : "No sub-units on this unit"}
+                </option>
                 {(selectedUnit?.sub_units || []).map((s) => (
                   <option key={s.id} value={s.name}>
                     {s.name}
                   </option>
                 ))}
               </select>
+              {form.service_unit_id && !selectedUnitHasSubs ? (
+                <div className="sa-field-hint">This service unit has no sub-units.</div>
+              ) : null}
             </div>
           ) : null}
         </div>

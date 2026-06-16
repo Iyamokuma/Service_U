@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { applicantNotificationSender, insertAdminNotification } from "./admin_notifications_helper.ts";
 import { buildAdminDeepLink } from "./admin_invite.ts";
 import { emailCtaButtonHtml } from "./email_delivery.ts";
 import { sendHtmlEmail } from "./resend_mail.ts";
@@ -115,13 +116,14 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
       title: "New application request",
     });
 
-    await supabase.from("admin_notifications").insert({
+    await insertAdminNotification(supabase, {
       admin_id: adminId,
       type: "new_registration",
       title,
       body: items.map((r) => regName(r)).join(", "),
       entity_type: "registration",
       entity_id: String(items[0]?.id || ""),
+      sender: applicantNotificationSender(regName(items[0] || {})),
     });
 
     await supabase.from("registration_notify_queue").update({ notified_at: new Date().toISOString() }).in(

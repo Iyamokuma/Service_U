@@ -1,5 +1,7 @@
 /** Shared admin account validation for create, edit, and reassign flows. */
 
+import { unitHasSubUnits } from "../serviceUnitUtils.js";
+
 export const ROLES_WITH_COUNTRY = [
   "country_super_admin",
   "state_super_admin",
@@ -47,7 +49,7 @@ export function occupiedCountryCodes(admins, pendingRequests, excludeId) {
   return set;
 }
 
-export function validateAdminForm(form, { takenCountries, takenStates, isEdit, inviteCreate } = {}) {
+export function validateAdminForm(form, { takenCountries, takenStates, isEdit, inviteCreate, units } = {}) {
   if (ROLES_WITH_COUNTRY.includes(form.role) && !String(form.branch_country || "").trim()) {
     return "Country is required for this role.";
   }
@@ -80,6 +82,10 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
   }
   if (form.role === "sub_unit_leader") {
     if (!form.service_unit_id) return "Service unit is required.";
+    const unit = (units || []).find((u) => Number(u.id) === Number(form.service_unit_id));
+    if (!unitHasSubUnits(unit)) {
+      return "This service unit has no sub-units. Assign a service unit leader instead.";
+    }
     if (!form.sub_unit_name) return "Sub-unit is required.";
   }
   if (ROLES_WITH_SATELLITE.includes(form.role) && !String(form.satellite_site || "").trim()) {
@@ -110,8 +116,8 @@ export function usesPlatformInviteCreate(_actorRole, isEdit = false) {
 }
 
 /** Validates role/scope change on reassign (login fields unchanged). */
-export function validateAdminReassignForm(form, { takenCountries, takenStates } = {}) {
-  const base = validateAdminForm(form, { takenCountries, takenStates, isEdit: true });
+export function validateAdminReassignForm(form, { takenCountries, takenStates, units } = {}) {
+  const base = validateAdminForm(form, { takenCountries, takenStates, isEdit: true, units });
   if (base) return base;
 
   const cc = String(form.branch_country || "").toUpperCase();

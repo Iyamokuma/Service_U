@@ -8,7 +8,7 @@ import {
 } from "../../lib/geoApi.js";
 import { branchCountryCodeFromIso2 } from "../branchRegions.js";
 
-export function LocationCreateModal({ open, onClose, onSubmit, saving }) {
+export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLabel, introText }) {
   const [continents, setContinents] = useState([]);
   const [countries, setCountries] = useState([]);
   const [states, setStates] = useState([]);
@@ -140,15 +140,15 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving }) {
             Cancel
           </button>
           <button type="submit" form="location-create-form" className="sa-btn sa-btn-primary" disabled={saving}>
-            {saving ? "Saving…" : "Create location"}
+            {saving ? "Saving…" : submitLabel || "Create location"}
           </button>
         </>
       }
     >
       <form id="location-create-form" onSubmit={handleSubmit}>
         <p className="sa-text-sm sa-text-muted" style={{ marginBottom: 16, lineHeight: 1.5 }}>
-          Select continent through LGA from the geography directory, then type satellite church name(s). Locations go
-          live on the registration form immediately.
+          {introText ||
+            "Select continent through LGA from the geography directory, then type satellite church name(s). Locations go live on the registration form immediately."}
         </p>
 
         {!catalogCountry && countryIso2 ? (

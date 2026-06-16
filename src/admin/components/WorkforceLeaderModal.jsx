@@ -7,6 +7,7 @@ import { usesAdminInviteCreate } from "../adminAccountForm.js";
 import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
 import { adminCreateButtonLabel } from "../adminInviteUi.js";
 import { validateWorkforceLeaderForm } from "../stateLeaderForm.js";
+import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 
 export function WorkforceLeaderModal({
   open,
@@ -53,6 +54,7 @@ export function WorkforceLeaderModal({
     const unit = unitOptions.find((u) => Number(u.id) === Number(form.service_unit_id));
     return (unit?.sub_units || []).filter((s) => Number(s.is_active) !== 0);
   }, [unitOptions, form.service_unit_id]);
+  const selectedUnitHasSubs = subUnitOptions.length > 0;
 
   useEffect(() => {
     if (!open) return;
@@ -194,15 +196,24 @@ export function WorkforceLeaderModal({
             className="sa-field-select"
             value={form.sub_unit_name}
             onChange={set("sub_unit_name")}
-            disabled={!form.service_unit_id || isEdit}
+            disabled={!form.service_unit_id || isEdit || !selectedUnitHasSubs}
           >
-            <option value="">Select sub-unit</option>
+            <option value="">
+              {!form.service_unit_id
+                ? "Select service unit first"
+                : selectedUnitHasSubs
+                  ? "Select sub-unit"
+                  : "No sub-units on this unit"}
+            </option>
             {subUnitOptions.map((s) => (
               <option key={s.id || s.name} value={s.name}>
                 {s.name}
               </option>
             ))}
           </select>
+          {form.service_unit_id && !selectedUnitHasSubs && !isEdit ? (
+            <div className="sa-field-hint">This service unit has no sub-units.</div>
+          ) : null}
         </div>
       ) : null}
       {inviteCreate ? <AdminInviteBanner /> : null}

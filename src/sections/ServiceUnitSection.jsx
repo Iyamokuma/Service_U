@@ -2,11 +2,13 @@ import { Fragment } from "react";
 import { Collapse } from "../components/Collapse.jsx";
 import { SectionHead } from "./SectionHead.jsx";
 import { SERVICE_UNITS } from "../data.js";
+import { unitHasSubUnits, subUnitNamesForUnit } from "../serviceUnitUtils.js";
 
 export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS, locationLabel = "" }) {
   const renderUnit = (u) => {
     const isSelected = Number(form.unitId) === Number(u.id);
-    const showSubs = isSelected && !!u.subs?.length;
+    const hasSubs = unitHasSubUnits(u);
+    const showSubs = isSelected && hasSubs;
     return (
       <Fragment key={u.id}>
         <button
@@ -15,12 +17,12 @@ export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS, l
           aria-pressed={isSelected}
           onClick={() => {
             set("unitId", u.id);
-            if (!u.subs) set("subUnit", "");
+            if (!hasSubs) set("subUnit", "");
           }}
         >
           <span className="unit-num">{String(u.id).padStart(2, "0")}</span>
           <span className="unit-name">{u.name}</span>
-          {u.subs && <span className="unit-meta">{u.subs.length} sub-units</span>}
+          {hasSubs ? <span className="unit-meta">{subUnitNamesForUnit(u).length} sub-units</span> : null}
           <span className="unit-check">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <path
@@ -42,7 +44,7 @@ export function ServiceUnitSection({ form, set, errors, units = SERVICE_UNITS, l
                   <div className="sub-unit-location">Church location: {locationLabel}</div>
                 ) : null}
                 <div className="sub-unit-chips">
-                  {u.subs.map((s) => (
+                  {subUnitNamesForUnit(u).map((s) => (
                     <button
                       key={s}
                       type="button"

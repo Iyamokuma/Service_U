@@ -159,29 +159,68 @@ export function buildStateRows(catalog) {
     satCount.set(k, (satCount.get(k) || 0) + 1);
   }
 
-  return (states || [])
-    .map((s) => {
-      const country = countryById.get(Number(s.country_id));
-      const cc = normUp(country?.branch_country_code);
-      const st = normUp(s.branch_state_code);
-      const branchAdmin = stateAdminFor(admins, cc, st);
-      return {
-        kind: "state",
-        branch_country: cc,
-        branch_state: st,
-        countryLabel: branchCountryLabel(cc),
-        stateLabel: s.name || branchStateLabel(cc, st),
-        satelliteCount: satCount.get(stateKey(cc, st)) || 0,
-        unitLeaders: countLeadersInState(admins, cc, st),
-        contact: branchAdmin?.email || branchAdmin?.full_name || "—",
-        members: stats?.membersByState?.[stateKey(cc, st)] || 0,
-      };
-    })
-    .sort((a, b) => {
-      const ac = a.countryLabel.localeCompare(b.countryLabel);
-      if (ac !== 0) return ac;
-      return a.stateLabel.localeCompare(b.stateLabel);
+  const rows = (states || []).map((s) => {
+    const country = countryById.get(Number(s.country_id));
+    const cc = normUp(country?.branch_country_code);
+    const st = normUp(s.branch_state_code);
+    const branchAdmin = stateAdminFor(admins, cc, st);
+    const contact = branchAdmin
+      ? branchAdmin.role === "country_super_admin"
+        ? `${branchAdmin.full_name} (Country HQ)`
+        : branchAdmin.email || branchAdmin.full_name || "—"
+      : "—";
+    return {
+      kind: "state",
+      branch_country: cc,
+      branch_state: st,
+      countryLabel: branchCountryLabel(cc),
+      stateLabel: s.name || branchStateLabel(cc, st),
+      satelliteCount: satCount.get(stateKey(cc, st)) || 0,
+      unitLeaders: countLeadersInState(admins, cc, st),
+      contact,
+      branchAdminName: branchAdmin?.full_name || "—",
+      branchAdminRole: branchAdmin?.role || "",
+      branchKind: branchAdmin?.role === "country_super_admin" ? "country_hq" : branchAdmin ? "state_admin" : null,
+      members: stats?.membersByState?.[stateKey(cc, st)] || 0,
+    };
+  });
+
+  const seen = new Set(rows.map((r) => stateKey(r.branch_country, r.branch_state)));
+  for (const a of admins || []) {
+    if (Number(a.is_active) !== 1) continue;
+    if (a.role !== "state_super_admin" && a.role !== "country_super_admin") continue;
+    const cc = normUp(a.branch_country);
+    const st = normUp(a.branch_state);
+    if (!cc || !st) continue;
+    const key = stateKey(cc, st);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const branchAdmin = stateAdminFor(admins, cc, st);
+    rows.push({
+      kind: "state",
+      branch_country: cc,
+      branch_state: st,
+      countryLabel: branchCountryLabel(cc),
+      stateLabel: branchStateLabel(cc, st),
+      satelliteCount: satCount.get(key) || 0,
+      unitLeaders: countLeadersInState(admins, cc, st),
+      contact: branchAdmin
+        ? branchAdmin.role === "country_super_admin"
+          ? `${branchAdmin.full_name} (Country HQ)`
+          : branchAdmin.email || branchAdmin.full_name || "—"
+        : "—",
+      branchAdminName: branchAdmin?.full_name || "—",
+      branchAdminRole: branchAdmin?.role || "",
+      branchKind: a.role === "country_super_admin" ? "country_hq" : "state_admin",
+      members: stats?.membersByState?.[key] || 0,
     });
+  }
+
+  return rows.sort((a, b) => {
+    const ac = a.countryLabel.localeCompare(b.countryLabel);
+    if (ac !== 0) return ac;
+    return a.stateLabel.localeCompare(b.stateLabel);
+  });
 }
 
 export function buildSatelliteRows(catalog) {

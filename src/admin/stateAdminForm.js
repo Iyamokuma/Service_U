@@ -1,12 +1,29 @@
 /** Shared helpers for Country Admin → State Branch Admin accounts. */
 
-import { branchStatesForCountry } from "./branchRegions.js";
+import { branchStatesForCountry, branchStateLabel } from "./branchRegions.js";
 
 const PENDING = new Set(["open", "in_review"]);
 
 function adminFromRequestPayload(req) {
   const payload = req?.payload && typeof req.payload === "object" ? req.payload : {};
   return payload.admin && typeof payload.admin === "object" ? payload.admin : {};
+}
+
+/** True when this admin account covers a state branch (dedicated or Country Admin HQ). */
+export function isStateBranchLeader(admin) {
+  if (!admin || Number(admin.is_active) !== 1) return false;
+  if (admin.role === "state_super_admin") return true;
+  return admin.role === "country_super_admin" && !!String(admin.branch_state || "").trim();
+}
+
+/** Count admins who lead a state branch in a country (includes Country Admin HQ). */
+export function countStateBranchLeaders(admins, countryCode) {
+  const cc = String(countryCode || "").toUpperCase();
+  return (admins || []).filter(
+    (a) =>
+      isStateBranchLeader(a) &&
+      String(a.branch_country || "").toUpperCase() === cc,
+  ).length;
 }
 
 /** States that already have an active or pending State Branch Admin (or Country Admin HQ) in this country. */
@@ -86,6 +103,53 @@ export function stateLeaderForCode(admins, countryCode, stateCode) {
   return null;
 }
 
+/** List state branches covered in a country (directory + admin accounts, incl. Country HQ). */
+export function listStateBranchesForCountry(countryCode, admins, directoryStates = []) {
+  const cc = String(countryCode || "").toUpperCase();
+  if (!cc) return [];
+  const byState = new Map();
+
+  for (const s of directoryStates || []) {
+    const st = String(s.branch_state_code || s.code || "").toUpperCase();
+    if (!st) continue;
+    const country = s.country_id != null
+      ? String(s.branch_country_code || "").toUpperCase()
+      : cc;
+    if (country && country !== cc) continue;
+    byState.set(st, {
+      stateCode: st,
+      stateLabel: s.name || branchStateLabel(cc, st),
+      admin: null,
+      kind: null,
+    });
+  }
+
+  for (const a of admins || []) {
+    if (!isStateBranchLeader(a)) continue;
+    if (String(a.branch_country || "").toUpperCase() !== cc) continue;
+    const st = String(a.branch_state || "").toUpperCase();
+    if (!st) continue;
+    const kind = a.role === "country_super_admin" ? "country_hq" : "state_admin";
+    const existing = byState.get(st);
+    byState.set(st, {
+      stateCode: st,
+      stateLabel: existing?.stateLabel || branchStateLabel(cc, st),
+      admin: a,
+      kind,
+    });
+  }
+
+  return [...byState.values()]
+    .filter((row) => row.admin || row.stateLabel)
+    .sort((a, b) => String(a.stateLabel).localeCompare(String(b.stateLabel)));
+}
+
+export function stateBranchKindLabel(kind) {
+  if (kind === "country_hq") return "Country & State (HQ)";
+  if (kind === "state_admin") return "State Branch Admin";
+  return "Vacant";
+}
+
 export function stateLeaderLabel(leader) {
   if (!leader) return "Vacant";
   if (leader.kind === "country_hq") return "Country & State (HQ)";
@@ -110,7 +174,7 @@ export function validateStateBranchAdminForm(form, { countryCode, takenStates, i
   const st = String(form.branch_state || "").trim();
   if (!st) return "Select a state / region.";
   if (!isEdit && takenStates?.has(String(st).toUpperCase())) {
-    return "This state already has a State Branch Admin.";
+    return "This state already has a State Branch Admin or Country Admin headquarters.";
   }
   return "";
 }

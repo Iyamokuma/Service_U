@@ -1,12 +1,24 @@
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { stateBranchKindLabel } from "../stateAdminForm.js";
 import {
   countryAdminFor,
   satelliteAdminFor,
   stateAdminFor,
   stateKey,
 } from "../catalogUtils.js";
+import { listStateBranchesForCountry } from "../stateAdminForm.js";
 
-export function BranchLocationDetail({ detail, catalog, onBack, onToggleChurch, onDeleteChurch, busy }) {
+export function BranchLocationDetail({
+  detail,
+  catalog,
+  onBack,
+  onToggleChurch,
+  onDeleteChurch,
+  onAddSatellites,
+  canAddSatellites = false,
+  canManageChurches = false,
+  busy,
+}) {
   const { churches, satellites, admins, stats } = catalog;
 
   if (detail.kind === "church") {
@@ -63,17 +75,21 @@ export function BranchLocationDetail({ detail, catalog, onBack, onToggleChurch, 
             <DetailItem label="Satellite pastor" value={satAdmin?.full_name || "—"} />
           </div>
           <div className="sa-table-actions" style={{ marginTop: 20 }}>
-            <button
-              type="button"
-              className="sa-btn sa-btn-outline sa-btn-sm"
-              disabled={busy}
-              onClick={() => onToggleChurch(ch, Number(ch.is_active) === 1 ? 0 : 1)}
-            >
-              {Number(ch.is_active) === 1 ? "Hide from form" : "Show on form"}
-            </button>
-            <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={busy} onClick={() => onDeleteChurch(ch)}>
-              Delete location
-            </button>
+            {canManageChurches ? (
+              <>
+                <button
+                  type="button"
+                  className="sa-btn sa-btn-outline sa-btn-sm"
+                  disabled={busy}
+                  onClick={() => onToggleChurch(ch, Number(ch.is_active) === 1 ? 0 : 1)}
+                >
+                  {Number(ch.is_active) === 1 ? "Hide from form" : "Show on form"}
+                </button>
+                <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" disabled={busy} onClick={() => onDeleteChurch(ch)}>
+                  Delete location
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
@@ -84,47 +100,69 @@ export function BranchLocationDetail({ detail, catalog, onBack, onToggleChurch, 
     const cc = String(detail.code || "").toUpperCase();
     const country = catalog.countries.find((c) => String(c.branch_country_code || "").toUpperCase() === cc);
     const countryStates = (catalog.states || []).filter((s) => Number(s.country_id) === Number(country?.id));
+    const stateBranches = listStateBranchesForCountry(cc, admins, countryStates).filter((row) => row.admin);
     const countryChurches = (churches || []).filter((c) => String(c.branch_country || "").toUpperCase() === cc);
     const countryAdmin = countryAdminFor(admins, cc);
 
     return (
       <div className="sa-card">
-        <div className="sa-card-head" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="sa-card-head" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={onBack}>
             ← Back
           </button>
           <span className="sa-card-title">{country?.name || branchCountryLabel(cc)}</span>
+          {canAddSatellites ? (
+            <button
+              type="button"
+              className="sa-btn sa-btn-primary sa-btn-sm"
+              style={{ marginLeft: "auto" }}
+              disabled={busy}
+              onClick={() => onAddSatellites?.({ kind: "country", branch_country: cc })}
+            >
+              + Add satellites
+            </button>
+          ) : null}
         </div>
         <div className="sa-card-body">
           <div className="sa-detail-grid">
             <DetailItem label="Branch code" value={cc} />
             <DetailItem label="Country admin" value={countryAdmin?.full_name || "—"} />
-            <DetailItem label="States / regions" value={String(countryStates.length)} />
+            <DetailItem label="State branches" value={String(stateBranches.length)} />
+            <DetailItem label="States in directory" value={String(countryStates.length)} />
             <DetailItem label="Satellite churches" value={String(countryChurches.length)} />
             <DetailItem label="Members (accepted)" value={String(stats?.membersByCountry?.[cc] || 0)} />
           </div>
-          <h4 style={{ marginTop: 24, marginBottom: 8 }}>States in this country</h4>
+          <h4 style={{ marginTop: 24, marginBottom: 8 }}>State branches</h4>
           <div className="sa-table-wrap">
             <table className="sa-table">
               <thead>
                 <tr>
-                  <th>State</th>
-                  <th>Code</th>
+                  <th>State / branch</th>
+                  <th>Branch admin</th>
+                  <th>Type</th>
                   <th>Satellites</th>
                 </tr>
               </thead>
               <tbody>
-                {countryStates.map((s) => (
-                  <tr key={s.id}>
-                    <td>{s.name}</td>
-                    <td>{s.branch_state_code}</td>
+                {stateBranches.map((row) => (
+                  <tr key={row.stateCode}>
+                    <td>{row.stateLabel}</td>
+                    <td className="sa-text-sm">{row.admin?.full_name || "—"}</td>
+                    <td className="sa-text-sm">{stateBranchKindLabel(row.kind)}</td>
                     <td>
                       {countryChurches.filter(
-                        (c) => String(c.branch_state || "").toUpperCase() === String(s.branch_state_code || "").toUpperCase(),
+                        (c) => String(c.branch_state || "").toUpperCase() === row.stateCode,
                       ).length}
                     </td>
                   </tr>
                 ))}
+                {stateBranches.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="sa-text-muted sa-text-sm" style={{ textAlign: "center", padding: 16 }}>
+                      No state branches created for this country yet.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -157,13 +195,24 @@ export function BranchLocationDetail({ detail, catalog, onBack, onToggleChurch, 
 
     return (
       <div className="sa-card">
-        <div className="sa-card-head" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="sa-card-head" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={onBack}>
             ← Back
           </button>
           <span className="sa-card-title">
             {stateRow?.name || branchStateLabel(cc, st)} · {branchCountryLabel(cc)}
           </span>
+          {canAddSatellites ? (
+            <button
+              type="button"
+              className="sa-btn sa-btn-primary sa-btn-sm"
+              style={{ marginLeft: "auto" }}
+              disabled={busy}
+              onClick={() => onAddSatellites?.({ kind: "state", branch_country: cc, branch_state: st })}
+            >
+              + Add satellites
+            </button>
+          ) : null}
         </div>
         <div className="sa-card-body">
           <div className="sa-detail-grid">

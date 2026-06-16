@@ -61,6 +61,7 @@ export function BranchOversight({ units }) {
     const u = (units?.data || []).find((x) => Number(x.id) === Number(filters.unit_id));
     return (u?.sub_units || []).map((s) => s.name).filter(Boolean);
   }, [units?.data, filters.unit_id]);
+  const showSubUnitFilter = Boolean(filters.unit_id) && subUnitOptions.length > 0;
 
   useEffect(() => {
     if (!admin || !isSupervisoryBranchRole(admin.role)) return;
@@ -284,14 +285,16 @@ export function BranchOversight({ units }) {
               </option>
             ))}
           </select>
-          <select className="sa-select" value={filters.sub_unit} onChange={setFilter("sub_unit")} disabled={!filters.unit_id}>
-            <option value="">{filters.unit_id ? "All sub-units" : "Pick unit first"}</option>
-            {subUnitOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          {showSubUnitFilter ? (
+            <select className="sa-select" value={filters.sub_unit} onChange={setFilter("sub_unit")}>
+              <option value="">All sub-units</option>
+              {subUnitOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {statusTab === "all" && (
             <select className="sa-select" value={filters.status} onChange={setFilter("status")}>
               <option value="">All statuses</option>

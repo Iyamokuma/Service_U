@@ -38,7 +38,6 @@ import {
   normalizeSatelliteAdminPage,
   normalizeServiceUnitLeaderPage,
   normalizeSubUnitLeaderPage,
-  canSwitchAdminView,
 } from "./adminViewMode.js";
 import { ServiceUnitUsers } from "./pages/ServiceUnitUsers.jsx";
 import { SubUnitUsers } from "./pages/SubUnitUsers.jsx";
@@ -123,7 +122,7 @@ export function AdminLayout() {
   /** Avoid a blank main area when country ↔ state view changes leave an invalid page id. */
   const contentPage = useMemo(() => {
     if (!admin) return page;
-    if (isCountrySuperAdmin(admin.role) && canSwitchAdminView(admin)) {
+    if (isCountrySuperAdmin(admin.role)) {
       return normalizePageForViewMode(page, admin, viewMode);
     }
     if (admin.role === "state_super_admin") {
@@ -368,8 +367,7 @@ export function AdminLayout() {
           {contentPage === "role-dashboard" && <RoleDashboard setPage={setPage} />}
           {contentPage === "data-locations" && admin?.role === "data_entry_admin" && <DataEntryLocationForm />}
           {(contentPage === "locations" || contentPage === "branch-catalog") &&
-            canEditBranchCatalog(admin?.role) &&
-            !(isCountrySuperAdmin(admin?.role) && actingAsState) && (
+            canEditBranchCatalog(admin?.role) && (
             <BranchCatalog variant={contentPage === "locations" ? "locations" : "catalog"} />
           )}
           {contentPage === "overview"  && <Overview units={units} setPage={setPage} navigateToQueue={navigateToQueue} />}

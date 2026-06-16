@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { insertAdminNotification, systemNotificationSender } from "./admin_notifications_helper.ts";
 import { getResendFromAddress } from "./admin_invite.ts";
 import { sendHtmlEmail } from "./resend_mail.ts";
 
@@ -137,13 +138,14 @@ async function insertNotification(
   body: string,
   entityId: string,
 ) {
-  await supabase.from("admin_notifications").insert({
+  await insertAdminNotification(supabase, {
     admin_id: adminId,
     type,
     title,
     body,
     entity_type: "registration",
     entity_id: entityId,
+    sender: systemNotificationSender("Intake queue"),
   });
 }
 

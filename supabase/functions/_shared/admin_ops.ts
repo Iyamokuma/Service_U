@@ -48,6 +48,11 @@ import {
   isRootSuperAdminRole,
   verifyTotpCode,
 } from "./admin_totp.ts";
+import {
+  adminNotificationSender,
+  insertAdminNotification,
+  systemNotificationSender,
+} from "./admin_notifications_helper.ts";
 
 type AdminRow = Record<string, unknown>;
 type Ctx = { admin: AdminRow; ip: string };
@@ -407,19 +412,24 @@ async function notifyGlobalAdminsOfRequest(
   requestId: number,
   title: string,
   body: string,
+  sender?: { full_name?: unknown; role?: unknown; id?: unknown },
 ): Promise<void> {
   const { data: supers } = await supabase.from("admins").select("id,email").in("role", ["super_admin", "general_admin"]).eq(
     "is_active",
     1,
   );
+  const senderMeta = sender
+    ? adminNotificationSender(sender)
+    : systemNotificationSender("Admin requests");
   for (const row of supers || []) {
-    await supabase.from("admin_notifications").insert({
+    await insertAdminNotification(supabase, {
       admin_id: (row as { id: number }).id,
       type: "admin_request",
       title,
       body,
       entity_type: "request",
       entity_id: String(requestId),
+      sender: senderMeta,
     });
     const email = norm((row as { email?: unknown }).email).toLowerCase();
     await trySendAdminEmail(
@@ -2130,6 +2140,7 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
       Number(data.id),
       "New admin account request",
       `${admin.full_name} requested a new ${roleLabel} account (${adminBody.full_name}).`,
+      admin,
     );
     return { data };
   }
@@ -2189,6 +2200,7 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
       Number(data.id),
       "New location proposal",
       `${admin.full_name} proposed churches in ${lgaName}, ${stateName}, ${countryName}.`,
+      admin,
     );
     return { data };
   }
@@ -2211,6 +2223,7 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
     Number(data.id),
     "New request submitted",
     `${admin.full_name} submitted a ${requestType.replace(/_/g, " ")} request.`,
+    admin,
   );
   return { data };
 }
@@ -2255,13 +2268,14 @@ async function handleUpdateRequest(supabase: SupabaseClient, params: Record<stri
   if (fromAdminId > 0) {
     const title = "Request status updated";
     const bodyText = `Your ${reqType.replace(/_/g, " ")} request is now "${newStatus}".`;
-    await supabase.from("admin_notifications").insert({
+    await insertAdminNotification(supabase, {
       admin_id: fromAdminId,
       type: "request_update",
       title,
       body: bodyText,
       entity_type: "request",
       entity_id: String(params.id),
+      sender: adminNotificationSender(admin),
     });
     const { data: fromAdmin } = await supabase.from("admins").select("email").eq("id", fromAdminId).maybeSingle();
     const requesterEmail = norm((fromAdmin as { email?: unknown })?.email).toLowerCase();
@@ -2364,13 +2378,14 @@ async function handleApproveServiceUnitProposal(
   if (requesterId > 0) {
     const title = "Request approved";
     const bodyText = `Your service unit proposal "${unitName}" was approved and has been created.`;
-    await supabase.from("admin_notifications").insert({
+    await insertAdminNotification(supabase, {
       admin_id: requesterId,
       type: "request_update",
       title,
       body: bodyText,
       entity_type: "request",
       entity_id: String(req.id),
+      sender: adminNotificationSender(admin),
     });
     const { data: requester } = await supabase.from("admins").select("email").eq("id", requesterId).maybeSingle();
     const requesterEmail = norm((requester as { email?: unknown })?.email).toLowerCase();
@@ -2919,6 +2934,13 @@ async function deliverAnnouncement(
   const preview = body.length > 140 ? `${body.slice(0, 137)}…` : body;
   const bodyInner = `<p style="margin:0 0 8px;font-size:17px;font-weight:600;">${title}</p><div>${body.replace(/\n/g, "<br>")}</div>`;
 
+  let announcementSender = systemNotificationSender("Announcements");
+  const createdById = Number(announcement.created_by_admin_id || 0);
+  if (Number.isFinite(createdById) && createdById > 0) {
+    const { data: author } = await supabase.from("admins").select("id,full_name,role").eq("id", createdById).maybeSingle();
+    if (author) announcementSender = adminNotificationSender(author as Record<string, unknown>);
+  }
+
   const { data: allAdmins } = await supabase.from("admins").select("*").eq("is_active", 1);
   const admins = (allAdmins || []) as Record<string, unknown>[];
   const recipientAdmins = resolveAnnouncementAdminRecipients(admins, destType, cfg, scope);
@@ -2930,7 +2952,7 @@ async function deliverAnnouncement(
     seenAdminIds.add(id);
 
     if (mediumPush) {
-      await supabase.from("admin_notifications").insert({
+      await insertAdminNotification(supabase, {
         admin_id: id,
         type: "announcement",
         title,
@@ -2938,6 +2960,7 @@ async function deliverAnnouncement(
         entity_type: "announcement",
         entity_id: annId,
         metadata: { destination_type: destType },
+        sender: announcementSender,
       });
     }
     if (mediumEmail && destType !== "members") {
@@ -3153,8 +3176,8 @@ async function handleDeleteAnnouncement(supabase: SupabaseClient, params: Record
 
 function requireCatalogEditor(admin: AdminRow) {
   const r = norm(admin.role);
-  if (!["super_admin", "general_admin", "data_entry_admin", "country_super_admin"].includes(r)) {
-    throw new Error("Only Super Admin, General Admin, Data Entry Admin, or Country Admin can edit the branch catalog.");
+  if (!["super_admin", "general_admin", "data_entry_admin"].includes(r)) {
+    throw new Error("Only Super Admin, General Admin, or Data Entry Admin can access the branch catalog.");
   }
 }
 
@@ -3317,6 +3340,9 @@ async function handleCatalogCreateLocation(
   ip: string,
 ) {
   requireCatalogEditor(admin);
+  if (norm(admin.role) === "data_entry_admin") {
+    throw new Error("Data Entry Admins must submit location proposals for approval.");
+  }
   const body = (params.body || params) as Record<string, unknown>;
   const continent = String(body.continent || "");
   const iso = String(body.countryIso2 || "").trim();
@@ -3346,8 +3372,8 @@ async function handleCatalogCreateLocation(
 
 async function handleCatalogAddCountry(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   requireCatalogEditor(admin);
-  if (norm(admin.role) === "country_super_admin") {
-    throw new Error("Country admins cannot add new countries. Add states and churches within your country instead.");
+  if (norm(admin.role) === "data_entry_admin") {
+    throw new Error("Data Entry Admins must submit location proposals for approval.");
   }
   const code = normUp(params.branch_country_code);
   const name = norm(params.name);
@@ -3438,13 +3464,11 @@ async function handleCatalogAddChurch(supabase: SupabaseClient, params: Record<s
 
 async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   requireCatalogEditor(admin);
+  if (norm(admin.role) !== "super_admin" && norm(admin.role) !== "general_admin") {
+    throw new Error("Only Super Admin or General Admin can change location visibility.");
+  }
   const id = params.id;
   const isActive = Number(params.is_active) === 1 ? 1 : 0;
-  if (norm(admin.role) === "country_super_admin") {
-    const { data: church } = await supabase.from("churches").select("branch_country").eq("id", id).maybeSingle();
-    if (!church) throw new Error("Church not found.");
-    assertCatalogCountryScope(admin, String((church as { branch_country?: string }).branch_country || ""));
-  }
   const { error } = await supabase.from("churches").update({ is_active: isActive }).eq("id", id);
   if (error) throw new Error(error.message);
   await logActivity(supabase, admin, "catalog.church_active", "church", String(id), `is_active=${isActive}`, ip);
@@ -3453,10 +3477,12 @@ async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Re
 
 async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
   requireCatalogEditor(admin);
+  if (norm(admin.role) !== "super_admin" && norm(admin.role) !== "general_admin") {
+    throw new Error("Only Super Admin or General Admin can delete locations.");
+  }
   const id = params.id;
   const { data: row } = await supabase.from("churches").select("directory_branch_id,branch_country").eq("id", id).maybeSingle();
   if (!row) throw new Error("Church not found.");
-  assertCatalogCountryScope(admin, String((row as { branch_country?: string }).branch_country || ""));
   const { error: e1 } = await supabase.from("churches").delete().eq("id", id);
   if (e1) throw new Error(e1.message);
   const bid = Number((row as { directory_branch_id?: number }).directory_branch_id);
