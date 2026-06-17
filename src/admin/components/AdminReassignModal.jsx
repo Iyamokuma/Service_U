@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
 import { SearchableSelect } from "./SearchableSelect.jsx";
+import { api } from "../api.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
-  BRANCH_COUNTRIES,
-  branchCountryLabel,
-  branchStatesForCountry,
-  coerceStateForCountry,
-  defaultHeadquartersStateForCountry,
-} from "../branchRegions.js";
-import { satelliteSitesForBranch } from "../satelliteSites.js";
+  countriesFromCatalog,
+  statesFromCatalog,
+  satellitesFromChurches,
+} from "../catalogGeoOptions.js";
 import {
   occupiedCountryCodes,
   ROLES_WITH_COUNTRY,
   ROLES_WITH_STATE,
   ROLES_WITH_SATELLITE,
+  ROLES_WITH_BRANCH_CHURCH,
   validateAdminReassignForm,
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
@@ -36,7 +35,10 @@ function emptyScopeForRole(role, prev = {}) {
     role: r,
     branch_country: ROLES_WITH_COUNTRY.includes(r) ? prev.branch_country || "" : "",
     branch_state: ROLES_WITH_STATE.includes(r) ? prev.branch_state || "" : "",
-    satellite_site: ROLES_WITH_SATELLITE.includes(r) ? prev.satellite_site || "" : "",
+    satellite_site:
+      ROLES_WITH_BRANCH_CHURCH.includes(r) || ROLES_WITH_SATELLITE.includes(r)
+        ? prev.satellite_site || ""
+        : "",
     service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(r) ? prev.service_unit_id || "" : "",
     sub_unit_name: r === "sub_unit_leader" ? prev.sub_unit_name || "" : "",
   };
@@ -52,9 +54,12 @@ export function AdminReassignModal({
   pendingRequests = [],
   unitList = [],
   isRootSuper = false,
+  isGlobalAdmin = false,
 }) {
   const [form, setForm] = useState(null);
   const [churches, setChurches] = useState([]);
+  const [catalog, setCatalog] = useState(null);
+  const useCatalogGeo = isGlobalAdmin;
 
   const roleOptions = useMemo(
     () => ROLE_OPTIONS.filter((r) => r.value !== "super_admin" || isRootSuper),
@@ -62,9 +67,27 @@ export function AdminReassignModal({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setChurches([]);
+      setCatalog(null);
+      return;
+    }
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-  }, [open]);
+    if (useCatalogGeo) {
+      api.catalogList().then(setCatalog).catch(() => setCatalog(null));
+    }
+  }, [open, useCatalogGeo]);
+
+  const allCountryOptions = useMemo(
+    () => (useCatalogGeo && catalog ? countriesFromCatalog(catalog) : countriesFromCatalog(null)),
+    [useCatalogGeo, catalog],
+  );
+
+  const allStateOptions = useMemo(() => {
+    const cc = String(form?.branch_country || "").toUpperCase();
+    if (!cc) return [];
+    return useCatalogGeo && catalog ? statesFromCatalog(catalog, cc) : statesFromCatalog(null, cc);
+  }, [useCatalogGeo, catalog, form?.branch_country]);
 
   useEffect(() => {
     if (!open || !admin?.id) return;
@@ -94,16 +117,30 @@ export function AdminReassignModal({
   );
 
   const stateOptions = useMemo(() => {
-    const cc = String(form?.branch_country || "").toUpperCase();
-    if (!cc) return [];
-    return branchStatesForCountry(cc).filter((s) => !takenStates.has(String(s.code).toUpperCase()));
-  }, [form?.branch_country, takenStates]);
+    return allStateOptions.filter((s) => !takenStates.has(String(s.code).toUpperCase()));
+  }, [allStateOptions, takenStates]);
 
-  const satelliteOptions = useMemo(() => {
-    const cc = String(form?.branch_country || "").toUpperCase();
-    const st = coerceStateForCountry(cc, form?.branch_state || "");
-    return satelliteSitesForBranch(churches, cc, st);
-  }, [churches, form?.branch_country, form?.branch_state]);
+  const satelliteOptions = useMemo(
+    () => satellitesFromChurches(churches, form?.branch_country, form?.branch_state),
+    [churches, form?.branch_country, form?.branch_state],
+  );
+
+  const showBranchChurchStepFlow =
+    isGlobalAdmin && form?.role && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
+
+  const branchStateLabel =
+    form?.role === "country_super_admin" ? "Headquarters state" : "State / region";
+
+  const branchChurchOpts = useMemo(() => {
+    if (!showBranchChurchStepFlow || !form?.branch_country || !form?.branch_state) return [];
+    return satellitesFromChurches(churches, form.branch_country, form.branch_state);
+  }, [showBranchChurchStepFlow, churches, form?.branch_country, form?.branch_state]);
+
+  const steppedStateOptions = useMemo(() => {
+    if (!showBranchChurchStepFlow) return [];
+    if (form?.role === "satellite_church_admin") return allStateOptions;
+    return stateOptions;
+  }, [showBranchChurchStepFlow, form?.role, allStateOptions, stateOptions]);
 
   const selectedUnit = useMemo(
     () => unitList.find((u) => Number(u.id) === Number(form?.service_unit_id)),
@@ -118,16 +155,19 @@ export function AdminReassignModal({
       ...f,
       ...emptyScopeForRole(role, f),
       role,
-      branch_state:
-        role === "country_super_admin" && f.branch_country && !f.branch_state
-          ? defaultHeadquartersStateForCountry(f.branch_country) || ""
-          : emptyScopeForRole(role, f).branch_state,
+      branch_state: emptyScopeForRole(role, f).branch_state,
     }));
   }
 
   function submit() {
     if (!form) return;
-    const msg = validateAdminReassignForm(form, { takenCountries, takenStates, units: unitList });
+    const msg = validateAdminReassignForm(form, {
+      takenCountries,
+      takenStates,
+      units: unitList,
+      satellitesInScope:
+        showBranchChurchStepFlow && form?.branch_state ? branchChurchOpts : [],
+    });
     if (msg) {
       onSave(null, msg);
       return;
@@ -139,7 +179,9 @@ export function AdminReassignModal({
       role: form.role,
       branch_country: ROLES_WITH_COUNTRY.includes(form.role) ? form.branch_country : "",
       branch_state: ROLES_WITH_STATE.includes(form.role) ? form.branch_state : "",
-      satellite_site: ROLES_WITH_SATELLITE.includes(form.role) ? form.satellite_site : "",
+      satellite_site: ROLES_WITH_BRANCH_CHURCH.includes(form.role) || ROLES_WITH_SATELLITE.includes(form.role)
+        ? form.satellite_site
+        : "",
       service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(form.role)
         ? form.service_unit_id
         : "",
@@ -200,7 +242,7 @@ export function AdminReassignModal({
           <p className="sa-text-sm sa-fw-600" style={{ margin: "0 0 8px" }}>
             New scope / location
           </p>
-          <div className="sa-form-row">
+          <div className={showBranchChurchStepFlow ? "sa-field" : "sa-form-row"}>
             <div className="sa-field">
               <label className="sa-label">
                 Country <span className="sa-required">*</span>
@@ -213,23 +255,20 @@ export function AdminReassignModal({
                   setForm((f) => ({
                     ...f,
                     branch_country,
-                    branch_state:
-                      f.role === "country_super_admin"
-                        ? defaultHeadquartersStateForCountry(branch_country) || ""
-                        : "",
+                    branch_state: "",
                     satellite_site: "",
                   }));
                 }}
               >
                 <option value="">Select country</option>
-                {BRANCH_COUNTRIES.map((c) => (
+                {allCountryOptions.map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.name}
                   </option>
                 ))}
               </select>
             </div>
-            {ROLES_WITH_STATE.includes(form.role) ? (
+            {!showBranchChurchStepFlow && ROLES_WITH_STATE.includes(form.role) ? (
               <div className="sa-field">
                 <label className="sa-label">
                   {form.role === "country_super_admin" ? "Headquarters state" : "State / region"}{" "}
@@ -248,21 +287,67 @@ export function AdminReassignModal({
                   disabled={!form.branch_country}
                 >
                   <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
-                  {(form.role === "state_super_admin" ? stateOptions : branchStatesForCountry(form.branch_country)).map(
-                    (s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.name}
-                      </option>
-                    ),
-                  )}
+                  {(form.role === "state_super_admin" || form.role === "country_super_admin"
+                    ? stateOptions
+                    : allStateOptions
+                  ).map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : null}
           </div>
+
+          {showBranchChurchStepFlow && form.branch_country ? (
+            <div className="sa-field">
+              <label className="sa-label">
+                {branchStateLabel} <span className="sa-required">*</span>
+              </label>
+              <select
+                className="sa-field-select"
+                value={form.branch_state}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    branch_state: e.target.value,
+                    satellite_site: "",
+                  }))
+                }
+              >
+                <option value="">Select state</option>
+                {steppedStateOptions.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {showBranchChurchStepFlow && form.branch_state ? (
+            <div className="sa-field">
+              <label className="sa-label">
+                Church branch <span className="sa-required">*</span>
+              </label>
+              <SearchableSelect
+                value={form.satellite_site}
+                onChange={(e) => setForm((f) => ({ ...f, satellite_site: e.target.value }))}
+                options={branchChurchOpts}
+                placeholder={
+                  branchChurchOpts.length ? "Select church branch" : "No churches in this state yet"
+                }
+                searchPlaceholder="Search church branches…"
+                emptyMessage="No churches match your search"
+                ariaLabel="Church branch"
+              />
+            </div>
+          ) : null}
         </>
       ) : null}
 
-      {ROLES_WITH_SATELLITE.includes(form.role) ? (
+      {ROLES_WITH_SATELLITE.includes(form.role) && !showBranchChurchStepFlow ? (
         <div className="sa-field">
           <label className="sa-label">
             Satellite church <span className="sa-required">*</span>
@@ -271,6 +356,7 @@ export function AdminReassignModal({
             value={form.satellite_site}
             onChange={(e) => setForm((f) => ({ ...f, satellite_site: e.target.value }))}
             options={satelliteOptions}
+            disabled={!form.branch_country || !form.branch_state}
             placeholder="Select satellite"
             searchPlaceholder="Search satellite churches…"
             emptyMessage="No satellites in this state"

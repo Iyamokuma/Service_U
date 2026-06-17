@@ -211,6 +211,9 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
           onCloseActionMenu={closeActionMenu}
           menuItems={menuItems}
           onStats={setWorkforceStats}
+          me={me}
+          reload={reload}
+          bulkScope={{ isSatellitePastor: true }}
         />
       ) : (
         <UnitMembers

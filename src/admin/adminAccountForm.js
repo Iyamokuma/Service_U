@@ -24,6 +24,13 @@ export const ROLES_WITH_SATELLITE = [
   "sub_unit_leader",
 ];
 
+/** Branch hierarchy roles tied to a satellite church from the directory (Super / General Admin create). */
+export const ROLES_WITH_BRANCH_CHURCH = [
+  "country_super_admin",
+  "state_super_admin",
+  "satellite_church_admin",
+];
+
 const PENDING_ADMIN_REQUEST_STATUSES = new Set(["open", "in_review"]);
 
 function adminFromRequestPayload(req) {
@@ -49,7 +56,7 @@ export function occupiedCountryCodes(admins, pendingRequests, excludeId) {
   return set;
 }
 
-export function validateAdminForm(form, { takenCountries, takenStates, isEdit, inviteCreate, units } = {}) {
+export function validateAdminForm(form, { takenCountries, takenStates, isEdit, inviteCreate, units, satellitesInScope } = {}) {
   if (ROLES_WITH_COUNTRY.includes(form.role) && !String(form.branch_country || "").trim()) {
     return "Country is required for this role.";
   }
@@ -67,6 +74,9 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
     if (takenStates?.has(st)) {
       return "This state already has a State Branch Admin (or another headquarters). Choose a different state.";
     }
+    if ((satellitesInScope?.length ?? 0) > 0 && !String(form.satellite_site || "").trim()) {
+      return "Select a church branch for this Country Admin.";
+    }
   }
   if (!isEdit && form.role === "state_super_admin") {
     const cc = String(form.branch_country || "").toUpperCase();
@@ -75,6 +85,9 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
     if (!st) return "Select a state / region for the State Branch Admin.";
     if (takenStates?.has(st)) {
       return "This state already has a State Branch Admin (or one pending approval).";
+    }
+    if ((satellitesInScope?.length ?? 0) > 0 && !String(form.satellite_site || "").trim()) {
+      return "Select a church branch for this State Branch Admin.";
     }
   }
   if (form.role === "service_unit_leader" && !form.service_unit_id) {
@@ -88,10 +101,24 @@ export function validateAdminForm(form, { takenCountries, takenStates, isEdit, i
     }
     if (!form.sub_unit_name) return "Sub-unit is required.";
   }
-  if (ROLES_WITH_SATELLITE.includes(form.role) && !String(form.satellite_site || "").trim()) {
-    if (form.role === "satellite_church_admin") {
-      return "Select a satellite church for this pastor admin.";
+  if (
+    ROLES_WITH_BRANCH_CHURCH.includes(form.role) &&
+    (satellitesInScope?.length ?? 0) > 0 &&
+    !String(form.satellite_site || "").trim()
+  ) {
+    if (form.role === "country_super_admin") {
+      return "Select a church branch for this Country Admin.";
     }
+    if (form.role === "state_super_admin") {
+      return "Select a church branch for this State Branch Admin.";
+    }
+    return "Select a satellite church for this pastor admin.";
+  }
+  if (
+    ROLES_WITH_SATELLITE.includes(form.role) &&
+    !ROLES_WITH_BRANCH_CHURCH.includes(form.role) &&
+    !String(form.satellite_site || "").trim()
+  ) {
     return "Select a satellite church for this leader.";
   }
   if (!isEdit && !inviteCreate) {
@@ -116,8 +143,14 @@ export function usesPlatformInviteCreate(_actorRole, isEdit = false) {
 }
 
 /** Validates role/scope change on reassign (login fields unchanged). */
-export function validateAdminReassignForm(form, { takenCountries, takenStates, units } = {}) {
-  const base = validateAdminForm(form, { takenCountries, takenStates, isEdit: true, units });
+export function validateAdminReassignForm(form, { takenCountries, takenStates, units, satellitesInScope } = {}) {
+  const base = validateAdminForm(form, {
+    takenCountries,
+    takenStates,
+    isEdit: true,
+    units,
+    satellitesInScope,
+  });
   if (base) return base;
 
   const cc = String(form.branch_country || "").toUpperCase();
@@ -128,6 +161,19 @@ export function validateAdminReassignForm(form, { takenCountries, takenStates, u
   }
   if (form.role === "state_super_admin" && cc && st && takenStates?.has(st)) {
     return "This state already has an active State Branch Admin.";
+  }
+  if (
+    ROLES_WITH_BRANCH_CHURCH.includes(form.role) &&
+    (satellitesInScope?.length ?? 0) > 0 &&
+    !String(form.satellite_site || "").trim()
+  ) {
+    if (form.role === "country_super_admin") {
+      return "Select a church branch for this Country Admin.";
+    }
+    if (form.role === "state_super_admin") {
+      return "Select a church branch for this State Branch Admin.";
+    }
+    return "Select a satellite church for this pastor admin.";
   }
   return "";
 }

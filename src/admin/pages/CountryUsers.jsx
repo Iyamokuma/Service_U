@@ -8,6 +8,9 @@ import { SatellitePastorAdminModal } from "../components/SatellitePastorAdminMod
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 import { canCountryAdminManageRole } from "../roles.js";
 import { buildAdminRowMenuItems, isAdminActive, nextAdminActiveValue } from "../components/adminRowMenuItems.js";
+import { TableSelectCheckbox } from "../components/TableSelectCheckbox.jsx";
+import { TableBulkActionsBar } from "../components/TableBulkActionsBar.jsx";
+import { useAdminTableBulk } from "../hooks/useAdminTableBulk.js";
 import { UsersPendingQueue } from "../components/UsersPendingQueue.jsx";
 import { UsersPageMeta } from "../components/UsersPageMeta.jsx";
 import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
@@ -185,6 +188,14 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
       rows: filtered.slice(start, start + ADMINS_PAGE_SIZE),
     };
   }, [filtered, adminsPage]);
+
+  const bulk = useAdminTableBulk({
+    rows: adminsPagination.rows,
+    me,
+    reload,
+    bulkScope: { isCountryAdmin: true },
+    noun: "admin",
+  });
 
   const actionTarget = useMemo(
     () => pastorAdmins.find((a) => Number(a.id) === Number(actionMenu.id)),
@@ -507,6 +518,13 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
               : ""}
           </p>
 
+          <TableBulkActionsBar
+            selectedCount={bulk.selection.selectedCount}
+            onClear={bulk.selection.clear}
+            actions={bulk.bulkActions}
+            busy={bulk.bulkBusy}
+          />
+
           <div className="sa-table-wrap">
             {adminsPagination.rows.length === 0 ? (
               <div className="sa-empty">
@@ -520,6 +538,17 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
               <table className="sa-table sa-table-admins-simple">
                 <thead>
                   <tr>
+                    {bulk.showBulkColumn ? (
+                      <th className="sa-table-select-col">
+                        <TableSelectCheckbox
+                          checked={bulk.selection.allSelected}
+                          indeterminate={bulk.selection.someSelected}
+                          onChange={bulk.selection.toggleAll}
+                          disabled={!bulk.selection.hasSelectableRows || bulk.bulkBusy}
+                          ariaLabel="Select all admins on this page"
+                        />
+                      </th>
+                    ) : null}
                     <th>Name of admin</th>
                     <th>Location</th>
                     <th>Role</th>
@@ -528,8 +557,23 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
                   </tr>
                 </thead>
                 <tbody>
-                  {adminsPagination.rows.map((a) => (
-                    <tr key={a.id}>
+                  {adminsPagination.rows.map((a) => {
+                    const selectable = bulk.canSelectRow(a);
+                    const marked = bulk.selection.isSelected(a.id);
+                    return (
+                    <tr key={a.id} className={marked ? "sa-row-selected" : undefined}>
+                      {bulk.showBulkColumn ? (
+                        <td className="sa-table-select-col">
+                          {selectable ? (
+                            <TableSelectCheckbox
+                              checked={marked}
+                              onChange={() => bulk.selection.toggle(a.id)}
+                              disabled={bulk.bulkBusy}
+                              ariaLabel={`Select ${a.full_name || "admin"}`}
+                            />
+                          ) : null}
+                        </td>
+                      ) : null}
                       <td>
                         <div className="sa-fw-600">{a.full_name}</div>
                         <AdminLoginMeta username={a.username} email={a.email} />
@@ -549,7 +593,8 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
                         )}
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             )}

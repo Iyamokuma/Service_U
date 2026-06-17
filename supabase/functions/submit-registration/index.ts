@@ -11,7 +11,7 @@ import {
 import { sendRegistrationWelcomeEmail } from "../_shared/registration_welcome.ts";
 import {
   processRegistrationLeaderDigests,
-  queueSubUnitLeaderNotifications,
+  queueRegistrationLeaderNotifications,
 } from "../_shared/registration_leader_notify.ts";
 
 const CORS_HEADERS = {
@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
 
     if (data?.id) {
       try {
-        await queueSubUnitLeaderNotifications(supabase, { ...row, id: data.id });
+        await queueRegistrationLeaderNotifications(supabase, { ...row, id: data.id });
         await processRegistrationLeaderDigests(supabase);
       } catch {
         /* best-effort leader digest */

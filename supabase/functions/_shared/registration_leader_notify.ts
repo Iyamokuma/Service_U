@@ -12,36 +12,71 @@ function regName(row: Record<string, unknown>): string {
   return [row.first_name, row.surname].filter(Boolean).join(" ").trim() || "Applicant";
 }
 
-/** Queue a new registration for batched sub-unit leader notification. */
-export async function queueSubUnitLeaderNotifications(
+async function queueLeaderNotification(
+  supabase: SupabaseClient,
+  regId: string,
+  adminId: number,
+): Promise<void> {
+  if (!regId || !Number.isFinite(adminId)) return;
+  await supabase.from("registration_notify_queue").upsert(
+    { registration_id: regId, admin_id: adminId, notified_at: null },
+    { onConflict: "registration_id,admin_id" },
+  );
+}
+
+/** Queue a new registration for batched leader notification (sub-unit or service-unit). */
+export async function queueRegistrationLeaderNotifications(
   supabase: SupabaseClient,
   registration: Record<string, unknown>,
 ): Promise<void> {
   const unitId = Number(registration.unit_id);
   const subUnit = norm(registration.sub_unit);
-  if (!unitId || !subUnit) return;
+  const regId = String(registration.id || "");
+  if (!unitId || !regId) return;
 
-  const { data: leaders } = await supabase.from("admins").select("id,email,sub_unit_name").eq(
+  if (subUnit) {
+    const { data: leaders } = await supabase.from("admins").select("id,email,sub_unit_name").eq(
+      "role",
+      "sub_unit_leader",
+    ).eq("service_unit_id", unitId).eq("is_active", 1);
+
+    for (const leader of leaders || []) {
+      const adminId = Number((leader as { id: number }).id);
+      if (!Number.isFinite(adminId)) continue;
+      const subUnitName = norm((leader as { sub_unit_name?: string }).sub_unit_name);
+      if (subUnitName.toLowerCase() !== subUnit.toLowerCase()) continue;
+      await queueLeaderNotification(supabase, regId, adminId);
+    }
+    return;
+  }
+
+  const { data: unitLeaders } = await supabase.from("admins").select("id,email").eq(
     "role",
-    "sub_unit_leader",
+    "service_unit_leader",
   ).eq("service_unit_id", unitId).eq("is_active", 1);
 
-  const regId = String(registration.id || "");
-  if (!regId) return;
-
-  for (const leader of leaders || []) {
+  for (const leader of unitLeaders || []) {
     const adminId = Number((leader as { id: number }).id);
     if (!Number.isFinite(adminId)) continue;
-    const subUnitName = norm((leader as { sub_unit_name?: string }).sub_unit_name);
-    if (subUnitName.toLowerCase() !== subUnit.toLowerCase()) continue;
-    await supabase.from("registration_notify_queue").upsert(
-      { registration_id: regId, admin_id: adminId, notified_at: null },
-      { onConflict: "registration_id,admin_id" },
-    );
+    await queueLeaderNotification(supabase, regId, adminId);
   }
 }
 
-/** Send batched digest emails to sub-unit leaders for pending new registrations. */
+/** @deprecated Use queueRegistrationLeaderNotifications */
+export const queueSubUnitLeaderNotifications = queueRegistrationLeaderNotifications;
+
+function leaderScopeLabel(
+  admin: Record<string, unknown> | null,
+  items: Record<string, unknown>[],
+): string {
+  const role = norm(admin?.role);
+  if (role === "service_unit_leader") {
+    return norm(items[0]?.unit_name) || "your service unit";
+  }
+  return norm(admin?.sub_unit_name) || "your sub-unit";
+}
+
+/** Send batched digest emails and in-app notifications for pending new registrations. */
 export async function processRegistrationLeaderDigests(supabase: SupabaseClient): Promise<void> {
   const { data: pending } = await supabase.from("registration_notify_queue").select(
     "id,registration_id,admin_id",
@@ -60,10 +95,9 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
 
   for (const [adminId, regIds] of byAdmin) {
     const uniqueIds = [...new Set(regIds)];
-    const { data: admin } = await supabase.from("admins").select("id,email,full_name,sub_unit_name").eq(
-      "id",
-      adminId,
-    ).maybeSingle();
+    const { data: admin } = await supabase.from("admins").select(
+      "id,email,full_name,sub_unit_name,role",
+    ).eq("id", adminId).maybeSingle();
     const email = norm((admin as { email?: string } | null)?.email).toLowerCase();
     if (!email) {
       await supabase.from("registration_notify_queue").update({ notified_at: new Date().toISOString() }).in(
@@ -86,7 +120,8 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
       continue;
     }
 
-    const subUnit = norm((admin as { sub_unit_name?: string })?.sub_unit_name) || "your sub-unit";
+    const adminRow = (admin || {}) as Record<string, unknown>;
+    const scopeLabel = leaderScopeLabel(adminRow, items);
     const listHtml = items.map((r) => {
       const when = r.submitted_at ? new Date(String(r.submitted_at)).toLocaleDateString() : "";
       return `<li><strong>${regName(r)}</strong> — ${norm(r.unit_name) || "Unit"}${when ? ` (${when})` : ""}</li>`;
@@ -102,8 +137,8 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
       : `<p>Please sign in to the admin dashboard to review.</p>`;
 
     const html = `
-      <p>Hello ${norm((admin as { full_name?: string })?.full_name) || "there"},</p>
-      <p>The following application${items.length === 1 ? "" : "s"} ${items.length === 1 ? "has" : "have"} been submitted for <strong>${subUnit}</strong>:</p>
+      <p>Hello ${norm(adminRow.full_name) || "there"},</p>
+      <p>The following application${items.length === 1 ? "" : "s"} ${items.length === 1 ? "has" : "have"} been submitted for <strong>${scopeLabel}</strong>:</p>
       <ul>${listHtml}</ul>
       <p>Sign in to review and respond to ${items.length === 1 ? "this application" : "these applications"}.</p>
       ${ctaHtml}
@@ -112,7 +147,7 @@ export async function processRegistrationLeaderDigests(supabase: SupabaseClient)
 
     await sendHtmlEmail(email, title, html, {
       tags: ["new_registration_leader"],
-      previewText: `New application${items.length === 1 ? "" : "s"} waiting in your ${subUnit} queue.`,
+      previewText: `New application${items.length === 1 ? "" : "s"} waiting in your ${scopeLabel} queue.`,
       title: "New application request",
     });
 

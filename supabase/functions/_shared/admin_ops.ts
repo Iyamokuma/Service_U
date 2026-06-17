@@ -254,6 +254,8 @@ function normalizeAdminScopeForRole(role: string, patch: Record<string, unknown>
   }
   if (
     r !== "satellite_church_admin" &&
+    r !== "country_super_admin" &&
+    r !== "state_super_admin" &&
     !["service_unit_leader", "sub_unit_leader"].includes(r)
   ) {
     patch.satellite_site = null;

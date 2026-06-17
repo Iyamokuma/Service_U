@@ -193,6 +193,9 @@ export function ServiceUnitUsers({ admins: adminsPayload, units, reload }) {
           onCloseActionMenu={closeActionMenu}
           menuItems={menuItems}
           onStats={setWorkforceStats}
+          me={me}
+          reload={reload}
+          bulkScope={{ isServiceLeader: true }}
         />
       ) : (
         <UnitMembers units={units} embedded unitLeaderGeo serviceUnitId={unitId} onMemberStats={({ total }) => setMemberTotal(total)} />

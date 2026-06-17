@@ -3,6 +3,9 @@ import { useAdminAuth } from "../AdminContext.jsx";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "../components/AdminRowActionsMenu.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
+import { TableSelectCheckbox } from "../components/TableSelectCheckbox.jsx";
+import { TableBulkActionsBar } from "../components/TableBulkActionsBar.jsx";
+import { useAdminTableBulk } from "../hooks/useAdminTableBulk.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { countryAdminHomeState, isCountrySuperAdmin } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
@@ -46,6 +49,7 @@ export function StateWorkforce({
   onCloseActionMenu,
   menuItems,
   onStats,
+  reload,
 }) {
   const { admin: me, viewMode } = useAdminAuth();
   const countryCode = String(me?.branch_country || "").toUpperCase();
@@ -137,6 +141,14 @@ export function StateWorkforce({
     };
   }, [filtered, workforcePage]);
 
+  const bulk = useAdminTableBulk({
+    rows: pagination.rows,
+    me: onOpenActions ? me : null,
+    reload: onOpenActions ? reload : null,
+    bulkScope: { isStateAdmin: true },
+    noun: "leader",
+  });
+
   if (!stateCode) {
     return (
       <div className="sa-card">
@@ -207,6 +219,13 @@ export function StateWorkforce({
           {pagination.pages > 1 ? ` · page ${pagination.page} of ${pagination.pages}` : ""}
         </p>
 
+        <TableBulkActionsBar
+          selectedCount={bulk.selection.selectedCount}
+          onClear={bulk.selection.clear}
+          actions={bulk.bulkActions}
+          busy={bulk.bulkBusy}
+        />
+
         <div className="sa-table-wrap">
           {pagination.rows.length === 0 ? (
             <div className="sa-empty">
@@ -220,6 +239,17 @@ export function StateWorkforce({
             <table className="sa-table sa-table-admins-simple">
               <thead>
                 <tr>
+                  {bulk.showBulkColumn ? (
+                    <th className="sa-table-select-col">
+                      <TableSelectCheckbox
+                        checked={bulk.selection.allSelected}
+                        indeterminate={bulk.selection.someSelected}
+                        onChange={bulk.selection.toggleAll}
+                        disabled={!bulk.selection.hasSelectableRows || bulk.bulkBusy}
+                        ariaLabel="Select all leaders on this page"
+                      />
+                    </th>
+                  ) : null}
                   <th>Name</th>
                   <th>Role</th>
                   <th>Service unit</th>
@@ -230,8 +260,23 @@ export function StateWorkforce({
                 </tr>
               </thead>
               <tbody>
-                {pagination.rows.map((r) => (
-                  <tr key={r.id}>
+                {pagination.rows.map((r) => {
+                  const selectable = bulk.canSelectRow(r);
+                  const marked = bulk.selection.isSelected(r.id);
+                  return (
+                  <tr key={r.id} className={marked ? "sa-row-selected" : undefined}>
+                    {bulk.showBulkColumn ? (
+                      <td className="sa-table-select-col">
+                        {selectable ? (
+                          <TableSelectCheckbox
+                            checked={marked}
+                            onChange={() => bulk.selection.toggle(r.id)}
+                            disabled={bulk.bulkBusy}
+                            ariaLabel={`Select ${r.full_name || "leader"}`}
+                          />
+                        ) : null}
+                      </td>
+                    ) : null}
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
                       <AdminLoginMeta username={r.username} email={r.email} />
@@ -249,7 +294,8 @@ export function StateWorkforce({
                       <AdminRowActionsTrigger onOpen={(e) => onOpenActions(e, r)} label="Action" />
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           )}

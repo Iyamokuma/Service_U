@@ -1,4 +1,4 @@
-import { canManageSuperAdminAccount } from "../roles.js";
+import { canManageSuperAdminAccount, canCountryAdminManageRole, canStateAdminManageRole } from "../roles.js";
 
 export function isAdminActive(row) {
   if (!row) return false;
@@ -86,5 +86,19 @@ export function canShowGlobalAdminActionMenu(row, me) {
   const isSelf = Number(row.id) === Number(me?.id);
   if (isSelf) return true;
   if (row.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) return false;
+  return true;
+}
+
+/** Whether a row can be marked for bulk delete / status actions. */
+export function canBulkSelectAdmin(row, me, scope = {}) {
+  if (!row?.id) return false;
+  if (Number(row.id) === Number(me?.id)) return false;
+  if (row.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) return false;
+  if (scope.isCountryAdmin && !canCountryAdminManageRole(row.role)) return false;
+  if (scope.isStateAdmin && !canStateAdminManageRole(row.role)) return false;
+  if (scope.isServiceLeader && row.role !== "sub_unit_leader") return false;
+  if (scope.isSatellitePastor && !["service_unit_leader", "sub_unit_leader"].includes(row.role)) {
+    return false;
+  }
   return true;
 }

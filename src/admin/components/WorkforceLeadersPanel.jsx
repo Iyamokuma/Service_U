@@ -3,6 +3,9 @@ import { AdminLoginMeta } from "./AdminLoginMeta.jsx";
 import { AdminRowActionsMenu, AdminRowActionsTrigger } from "./AdminRowActionsMenu.jsx";
 import { isAdminActive } from "./adminRowMenuItems.js";
 import { branchStateLabel } from "../branchRegions.js";
+import { TableSelectCheckbox } from "./TableSelectCheckbox.jsx";
+import { TableBulkActionsBar } from "./TableBulkActionsBar.jsx";
+import { useAdminTableBulk } from "../hooks/useAdminTableBulk.js";
 import {
   WORKFORCE_PAGE_SIZE,
   buildUnitNameMap,
@@ -38,7 +41,11 @@ export function WorkforceLeadersPanel({
   onCloseActionMenu,
   menuItems,
   onStats,
+  me,
+  reload,
+  bulkScope = {},
 }) {
+  const bulkEnabled = Boolean(me && reload && onOpenActions);
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
@@ -116,6 +123,14 @@ export function WorkforceLeadersPanel({
     };
   }, [filtered, workforcePage]);
 
+  const bulk = useAdminTableBulk({
+    rows: pagination.rows,
+    me: bulkEnabled ? me : null,
+    reload: bulkEnabled ? reload : null,
+    bulkScope,
+    noun: "leader",
+  });
+
   return (
     <>
       <div className="sa-card">
@@ -169,6 +184,13 @@ export function WorkforceLeadersPanel({
           {pagination.pages > 1 ? ` · page ${pagination.page} of ${pagination.pages}` : ""}
         </p>
 
+        <TableBulkActionsBar
+          selectedCount={bulk.selection.selectedCount}
+          onClear={bulk.selection.clear}
+          actions={bulk.bulkActions}
+          busy={bulk.bulkBusy}
+        />
+
         <div className="sa-table-wrap">
           {pagination.rows.length === 0 ? (
             <div className="sa-empty">
@@ -182,6 +204,17 @@ export function WorkforceLeadersPanel({
             <table className="sa-table sa-table-admins-simple">
               <thead>
                 <tr>
+                  {bulk.showBulkColumn ? (
+                    <th className="sa-table-select-col">
+                      <TableSelectCheckbox
+                        checked={bulk.selection.allSelected}
+                        indeterminate={bulk.selection.someSelected}
+                        onChange={bulk.selection.toggleAll}
+                        disabled={!bulk.selection.hasSelectableRows || bulk.bulkBusy}
+                        ariaLabel="Select all leaders on this page"
+                      />
+                    </th>
+                  ) : null}
                   <th>Name</th>
                   {showRoleFilter ? <th>Role</th> : null}
                   <th className="sa-leader-col-unit">Service unit</th>
@@ -192,8 +225,23 @@ export function WorkforceLeadersPanel({
                 </tr>
               </thead>
               <tbody>
-                {pagination.rows.map((r) => (
-                  <tr key={r.id}>
+                {pagination.rows.map((r) => {
+                  const selectable = bulk.canSelectRow(r);
+                  const marked = bulk.selection.isSelected(r.id);
+                  return (
+                  <tr key={r.id} className={marked ? "sa-row-selected" : undefined}>
+                    {bulk.showBulkColumn ? (
+                      <td className="sa-table-select-col">
+                        {selectable ? (
+                          <TableSelectCheckbox
+                            checked={marked}
+                            onChange={() => bulk.selection.toggle(r.id)}
+                            disabled={bulk.bulkBusy}
+                            ariaLabel={`Select ${r.full_name || "leader"}`}
+                          />
+                        ) : null}
+                      </td>
+                    ) : null}
                     <td>
                       <div className="sa-fw-600">{r.full_name}</div>
                       <AdminLoginMeta username={r.username} email={r.email} />
@@ -220,7 +268,8 @@ export function WorkforceLeadersPanel({
                       </td>
                     ) : null}
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           )}
