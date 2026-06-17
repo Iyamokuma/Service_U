@@ -15,6 +15,8 @@ export function AdminViewModeFloat({ page, setPage }) {
 
   const isState = viewMode === "state";
   const hqState = countryAdminHomeState(admin);
+  const hqChurch = String(admin?.satellite_site || "").trim();
+  const hqStateLabel = hqState ? branchStateLabel(admin.branch_country, hqState) || hqState : "";
 
   function selectMode(mode) {
     if (mode === viewMode) return;
@@ -51,7 +53,8 @@ export function AdminViewModeFloat({ page, setPage }) {
         </div>
         {hqState ? (
           <span className="sa-text-muted sa-text-sm" style={{ marginLeft: 12 }}>
-            HQ: {branchStateLabel(admin.branch_country, hqState) || hqState}
+            HQ state: {hqStateLabel}
+            {hqChurch ? ` · ${hqChurch}` : ""}
           </span>
         ) : null}
       </div>

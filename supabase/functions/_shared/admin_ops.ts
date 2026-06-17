@@ -679,6 +679,40 @@ function countryAdminActsAsStateAdmin(admin: AdminRow): boolean {
   return !!countryAdminHomeState(admin);
 }
 
+/** HQ state from the tied headquarters church row (when satellite_site is set). */
+async function hqStateFromChurch(
+  supabase: SupabaseClient,
+  branchCountry: string,
+  satelliteSite: string,
+): Promise<string> {
+  const cc = normUp(branchCountry);
+  const name = norm(satelliteSite);
+  if (!cc || !name) return "";
+  const { data: ch } = await supabase
+    .from("churches")
+    .select("branch_state,is_active")
+    .eq("branch_country", cc)
+    .eq("name", name)
+    .maybeSingle();
+  if (!ch || Number((ch as { is_active?: number }).is_active ?? 1) !== 1) return "";
+  return normUp((ch as { branch_state?: string }).branch_state);
+}
+
+async function persistCountryAdminHomeState(
+  supabase: SupabaseClient,
+  admin: AdminRow,
+  homeState: string,
+): Promise<AdminRow> {
+  const cc = normUp(admin.branch_country);
+  const st = normUp(homeState);
+  if (!cc || !st) return admin;
+  if (normUp(admin.branch_state) === st) return admin;
+  await assertUniqueStateAdmin(supabase, cc, st, Number(admin.id));
+  const { error } = await supabase.from("admins").update({ branch_state: st }).eq("id", admin.id);
+  if (error) throw new Error(error.message);
+  return { ...admin, branch_state: st };
+}
+
 /** Country Admin accounts always have a headquarters state (dual Country + State role). */
 export async function ensureCountryAdminHeadquarters(
   supabase: SupabaseClient,
@@ -687,16 +721,25 @@ export async function ensureCountryAdminHeadquarters(
   if (norm(admin.role) !== "country_super_admin") return admin;
   const cc = normUp(admin.branch_country);
   if (!cc) return admin;
+
+  const sat = norm(admin.satellite_site);
+  if (sat) {
+    const fromChurch = await hqStateFromChurch(supabase, cc, sat);
+    if (fromChurch) {
+      try {
+        return await persistCountryAdminHomeState(supabase, admin, fromChurch);
+      } catch {
+        /* church state may conflict with another state admin — keep existing */
+      }
+    }
+  }
+
   if (normUp(admin.branch_state)) return admin;
 
   const states = branchStatesForCountry(cc);
   for (const s of states) {
     try {
-      await assertUniqueStateAdmin(supabase, cc, s.code, Number(admin.id));
-      const st = normUp(s.code);
-      const { error } = await supabase.from("admins").update({ branch_state: st }).eq("id", admin.id);
-      if (error) throw new Error(error.message);
-      return { ...admin, branch_state: st };
+      return await persistCountryAdminHomeState(supabase, admin, s.code);
     } catch {
       /* try next state */
     }
@@ -705,10 +748,7 @@ export async function ensureCountryAdminHeadquarters(
   const fallback = normUp(defaultHeadquartersStateForCountry(cc));
   if (!fallback) return admin;
   try {
-    await assertUniqueStateAdmin(supabase, cc, fallback, Number(admin.id));
-    const { error } = await supabase.from("admins").update({ branch_state: fallback }).eq("id", admin.id);
-    if (error) throw new Error(error.message);
-    return { ...admin, branch_state: fallback };
+    return await persistCountryAdminHomeState(supabase, admin, fallback);
   } catch {
     return admin;
   }

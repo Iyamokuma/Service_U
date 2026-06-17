@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { api } from "../api.js";
-import { isCountrySuperAdmin } from "../roles.js";
+import { isCountrySuperAdmin, countryAdminHomeState } from "../roles.js";
 import { CountryAdminHqSettings } from "../components/CountryAdminHqSettings.jsx";
 import { AdminTotpSecurity } from "../components/AdminTotpSecurity.jsx";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { availableHomeStatesForCountryAdmin } from "../stateAdminForm.js";
 
 export function ProfileSettings() {
@@ -17,13 +18,15 @@ export function ProfileSettings() {
   });
   const [saving, setSaving] = useState(false);
   const [allAdmins, setAllAdmins] = useState([]);
+  const [churches, setChurches] = useState([]);
   const [homeStateDraft, setHomeStateDraft] = useState(admin?.branch_state || "");
   const [savingHome, setSavingHome] = useState(false);
   const [hqOpenSignal, setHqOpenSignal] = useState(0);
 
   const isCountryAdmin = isCountrySuperAdmin(admin?.role);
   const countryCode = String(admin?.branch_country || "").toUpperCase();
-  const myHomeState = String(admin?.branch_state || "").trim();
+  const myHomeState = countryAdminHomeState(admin, { churches }) || String(admin?.branch_state || "").trim();
+  const hqChurch = String(admin?.satellite_site || "").trim();
 
   const loadAdmins = useCallback(() => {
     if (!isCountryAdmin) return;
@@ -35,14 +38,18 @@ export function ProfileSettings() {
 
   useEffect(() => {
     loadAdmins();
-  }, [loadAdmins]);
+    if (isCountryAdmin) {
+      fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    }
+  }, [loadAdmins, isCountryAdmin]);
 
   useEffect(() => {
-    setHomeStateDraft(admin?.branch_state || "");
-  }, [admin?.branch_state]);
+    const hq = countryAdminHomeState(admin, { churches }) || admin?.branch_state || "";
+    setHomeStateDraft(hq);
+  }, [admin?.branch_state, admin?.satellite_site, churches, admin]);
 
   const homeStateOptions = isCountryAdmin
-    ? availableHomeStatesForCountryAdmin(countryCode, allAdmins, [], admin?.id)
+    ? availableHomeStatesForCountryAdmin(countryCode, allAdmins, [], admin?.id, { churches })
     : [];
 
   async function saveHomeState() {
@@ -98,6 +105,7 @@ export function ProfileSettings() {
               homeStateDraft={homeStateDraft}
               homeStateOptions={homeStateOptions}
               myHomeState={myHomeState}
+              hqChurch={hqChurch}
               savingHome={savingHome}
               onChangeHomeState={setHomeStateDraft}
               onSave={saveHomeState}

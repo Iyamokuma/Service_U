@@ -1,6 +1,7 @@
 /** Shared helpers for Country Admin → State Branch Admin accounts. */
 
 import { branchStatesForCountry, branchStateLabel } from "./branchRegions.js";
+import { statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
 
 const PENDING = new Set(["open", "in_review"]);
 
@@ -61,13 +62,22 @@ export function availableStatesForCountryAdmin(countryCode, admins, pendingReque
 }
 
 /** States available for Country Admin to set as headquarters (dual role). */
-export function availableHomeStatesForCountryAdmin(countryCode, admins, pendingRequests, countryAdminId) {
+export function availableHomeStatesForCountryAdmin(
+  countryCode,
+  admins,
+  pendingRequests,
+  countryAdminId,
+  { catalog, churches } = {},
+) {
   const cc = String(countryCode || "").toUpperCase();
   const taken = occupiedStateCodes(admins, pendingRequests, countryCode, countryAdminId);
-  return branchStatesForCountry(countryCode).filter((s) => {
+  const me = (admins || []).find((a) => Number(a.id) === Number(countryAdminId));
+  const stateRows = catalog || (churches && churches.length)
+    ? statesFromCatalogAndChurches(catalog, cc, churches || [])
+    : branchStatesForCountry(cc);
+  return stateRows.filter((s) => {
     const code = String(s.code).toUpperCase();
     if (!taken.has(code)) return true;
-    const me = (admins || []).find((a) => Number(a.id) === Number(countryAdminId));
     return me?.role === "country_super_admin" && String(me.branch_state || "").toUpperCase() === code;
   });
 }

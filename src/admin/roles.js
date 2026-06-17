@@ -86,9 +86,20 @@ export const COUNTRY_MANAGED_ADMIN_ROLES = [
 ];
 
 /** Headquarters state on Country Admin (required; set at creation or auto-assigned on login). */
-export function countryAdminHomeState(admin) {
+export function countryAdminHomeState(admin, { churches } = {}) {
   if (admin?.role !== "country_super_admin") return "";
-  return String(admin.branch_state || "").trim();
+  const cc = String(admin?.branch_country || "").trim().toUpperCase();
+  const sat = String(admin?.satellite_site || "").trim();
+  if (cc && sat && Array.isArray(churches) && churches.length) {
+    const ch = churches.find(
+      (c) =>
+        String(c.branch_country || "").toUpperCase() === cc &&
+        String(c.name || "").trim() === sat,
+    );
+    const fromChurch = String(ch?.branch_state || "").trim();
+    if (fromChurch) return fromChurch;
+  }
+  return String(admin?.branch_state || "").trim();
 }
 
 export function countryAdminActsAsStateAdmin(admin) {

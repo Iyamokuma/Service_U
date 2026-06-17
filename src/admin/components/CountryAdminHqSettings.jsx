@@ -9,6 +9,7 @@ export function CountryAdminHqSettings({
   homeStateDraft,
   homeStateOptions,
   myHomeState,
+  hqChurch = "",
   savingHome,
   onChangeHomeState,
   onSave,
@@ -18,6 +19,7 @@ export function CountryAdminHqSettings({
   const currentLabel = myHomeState
     ? branchStateLabel(countryCode, myHomeState)
     : "None (country oversight only)";
+  const churchNote = hqChurch ? ` · ${hqChurch}` : "";
 
   useEffect(() => {
     if (!forceOpenSignal) return;
@@ -36,12 +38,13 @@ export function CountryAdminHqSettings({
     <details className="sa-users-hq-settings" ref={detailsRef}>
       <summary className="sa-users-hq-settings-summary">
         <span className="sa-users-hq-settings-label">Headquarters state</span>
-        <span className="sa-users-hq-settings-value">{currentLabel}</span>
+        <span className="sa-users-hq-settings-value">{currentLabel}{churchNote}</span>
       </summary>
       <div className="sa-users-hq-settings-body">
         <p className="sa-text-muted sa-text-sm" style={{ margin: "0 0 12px", lineHeight: 1.55 }}>
-          Optional state where you also act as State Branch Admin. Use the Country / State toggle above to switch
-          views.
+          {hqChurch
+            ? `Your headquarters church (${hqChurch}) determines the state used in State Branch Admin view.`
+            : "Optional state where you also act as State Branch Admin. Use the Country / State toggle above to switch views."}
         </p>
         <div className="sa-form-row" style={{ alignItems: "flex-end", maxWidth: 480 }}>
           <div className="sa-field" style={{ flex: 1 }}>

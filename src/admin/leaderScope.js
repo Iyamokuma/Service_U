@@ -10,11 +10,13 @@ export function leaderScopeLabel(admin, viewMode) {
   if (admin.role === "country_super_admin") {
     const cc = String(admin.branch_country || "").trim();
     const st = String(admin.branch_state || "").trim();
+    const sat = String(admin.satellite_site || "").trim();
     if (viewMode === "state" && cc && st) {
-      return `${branchCountryLabel(cc)} · ${branchStateLabel(cc, st)}`;
+      const stateName = branchStateLabel(cc, st) || st;
+      return sat ? `${branchCountryLabel(cc)} · ${stateName} · ${sat}` : `${branchCountryLabel(cc)} · ${stateName}`;
     }
     if (cc && st) {
-      return `${branchCountryLabel(cc)} · HQ ${branchStateLabel(cc, st)}`;
+      return `${branchCountryLabel(cc)} · HQ ${branchStateLabel(cc, st)}${sat ? ` · ${sat}` : ""}`;
     }
     return cc ? branchCountryLabel(cc) : "Country";
   }
