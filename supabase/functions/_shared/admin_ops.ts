@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { assertStateBelongsToCountry, branchStatesForCountry, defaultHeadquartersStateForCountry } from "./branch_regions.ts";
+import { branchStatesForCountry, defaultHeadquartersStateForCountry } from "./branch_regions.ts";
+import { assertStateBelongsToCountryCatalog } from "./catalog_geo.ts";
 import {
   ensureDirectoryCountry,
   ensureDirectoryState,
@@ -231,7 +232,12 @@ const ROLES_REQUIRING_STATE = new Set([
   "sub_unit_leader",
 ]);
 
-function assertAdminLocationFields(role: string, branchCountry: string, branchState: string): void {
+async function assertAdminLocationFields(
+  supabase: SupabaseClient,
+  role: string,
+  branchCountry: string,
+  branchState: string,
+): Promise<void> {
   if (ROLES_REQUIRING_COUNTRY.has(role) && !branchCountry) {
     throw new Error("Country is required for this admin role.");
   }
@@ -239,7 +245,7 @@ function assertAdminLocationFields(role: string, branchCountry: string, branchSt
     throw new Error("State / region is required for this admin role.");
   }
   if (branchCountry && branchState) {
-    assertStateBelongsToCountry(branchCountry, branchState);
+    await assertStateBelongsToCountryCatalog(supabase, branchCountry, branchState);
   }
 }
 
@@ -473,7 +479,7 @@ async function validateAdminAccountProposal(
     satellite_site: norm(body.satellite_site),
   };
   assertCountryManagedRole(row.role);
-  assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+  await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
   if (["state_super_admin", "satellite_church_admin"].includes(row.role) && !row.branch_state) {
     throw new Error("State / region is required for this role.");
   }
@@ -547,7 +553,7 @@ async function insertAdminFromBody(
   if (row.role === "country_super_admin" && !row.branch_state) {
     throw new Error("Headquarters state is required for Country Admin accounts.");
   }
-  assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+  await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
   if (["service_unit_leader", "sub_unit_leader"].includes(String(row.role)) && !row.satellite_site) {
     throw new Error("Satellite church is required for workforce leaders.");
   }
@@ -1619,7 +1625,7 @@ async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string
         "State Branch admins may only create Satellite Pastor, Service Unit Leader, or Sub-Unit Leader accounts.",
       );
     }
-    assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+    await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
     if (row.role === "satellite_church_admin") {
       if (!row.satellite_site) throw new Error("Satellite church is required for Satellite Pastor Admin.");
       await assertUniqueSatelliteAdmin(supabase, row.branch_country, row.branch_state, row.satellite_site);
@@ -1652,23 +1658,23 @@ async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string
     }
     if (row.role === "state_super_admin") {
       if (!row.branch_state) throw new Error("State / region is required for State Branch Admin.");
-      assertStateBelongsToCountry(cc, normUp(row.branch_state));
-      assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+      await assertStateBelongsToCountryCatalog(supabase, cc, normUp(row.branch_state));
+      await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
       await assertUniqueStateAdmin(supabase, row.branch_country, row.branch_state);
     } else if (row.role === "satellite_church_admin") {
       if (stateView && hqState) row.branch_state = hqState;
       if (!row.branch_state) throw new Error("State / region is required for Satellite Pastor Admin.");
-      assertStateBelongsToCountry(cc, normUp(row.branch_state));
+      await assertStateBelongsToCountryCatalog(supabase, cc, normUp(row.branch_state));
       if (stateView && hqState && normUp(row.branch_state) !== hqState) {
         throw new Error("In state view, satellite pastors must be in your headquarters state.");
       }
       if (!row.satellite_site) throw new Error("Satellite church is required for Satellite Pastor Admin.");
-      assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+      await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
       await assertUniqueSatelliteAdmin(supabase, row.branch_country, row.branch_state, row.satellite_site);
     } else {
       if (stateView && hqState) row.branch_state = hqState;
       if (!row.branch_state) throw new Error("State / region is required for workforce leader accounts.");
-      assertStateBelongsToCountry(cc, normUp(row.branch_state));
+      await assertStateBelongsToCountryCatalog(supabase, cc, normUp(row.branch_state));
       if (stateView && hqState && normUp(row.branch_state) !== hqState) {
         throw new Error("In state view, workforce leaders must be in your headquarters state.");
       }
@@ -1678,7 +1684,7 @@ async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string
         if (!row.sub_unit_name) throw new Error("Sub-unit is required for Sub-Unit Leader.");
         await assertSubUnitInServiceUnit(supabase, Number(row.service_unit_id), row.sub_unit_name);
       }
-      assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+      await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
     }
     if (!usesInviteOnCreate(actorRole)) {
       await assertAdminUsernameAvailable(supabase, row.username);
@@ -1694,7 +1700,7 @@ async function handleCreateAdmin(supabase: SupabaseClient, params: Record<string
     if (!SATELLITE_MANAGED_ADMIN_ROLES.includes(row.role)) {
       throw new Error("Satellite pastors may only create Service Unit Leader or Sub-Unit Leader accounts.");
     }
-    assertAdminLocationFields(row.role, row.branch_country, row.branch_state);
+    await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
     if (!row.service_unit_id) throw new Error("Service unit is required.");
     if (row.role === "sub_unit_leader") {
       if (!row.sub_unit_name) throw new Error("Sub-unit is required for Sub-Unit Leader.");
@@ -1747,7 +1753,7 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
       throw new Error("Country admins may only update their own headquarters state on this account.");
     }
     if (homeState) {
-      assertStateBelongsToCountry(normUp(admin.branch_country), homeState);
+      await assertStateBelongsToCountryCatalog(supabase, normUp(admin.branch_country), homeState);
       await assertUniqueStateAdmin(supabase, normUp(admin.branch_country), homeState, targetId);
     }
     const selfPatch: Record<string, unknown> = {
@@ -1849,7 +1855,7 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
   const finalRole = norm(patch.role);
   const finalCountry = normUp(patch.branch_country);
   const finalState = normUp(patch.branch_state);
-  assertAdminLocationFields(finalRole, finalCountry, finalState);
+  await assertAdminLocationFields(supabase, finalRole, finalCountry, finalState);
   if (finalRole === "super_admin") {
     await assertUniqueSuperAdmin(supabase, targetId);
   }
@@ -1985,7 +1991,7 @@ async function handleUpdateRegistrationBranch(
   const body = (params.body || {}) as Record<string, unknown>;
   const cc = normUp(body.branch_country);
   const st = normUp(body.branch_state);
-  assertStateBelongsToCountry(cc, st);
+  await assertStateBelongsToCountryCatalog(supabase, cc, st);
   const { data: row } = await supabase.from("registrations").select("*").eq("id", params.id).maybeSingle();
   if (!row) throw new Error("Registration not found.");
   if (!canAccessRegistration(admin, row as Record<string, unknown>)) throw new Error("Not allowed.");

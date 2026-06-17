@@ -114,7 +114,8 @@ export function coerceStateForCatalog(catalog, countryCode, stateCode, churches 
   const sc = normUp(stateCode);
   if (!sc) return "";
   const valid = statesFromCatalogAndChurches(catalog, countryCode, churches).some((s) => s.code === sc);
-  return valid ? sc : "";
+  if (valid) return sc;
+  return coerceStateForCountry(countryCode, stateCode) ? sc : "";
 }
 
 /** Satellite church names from the admin church catalog for a country and optional state. */

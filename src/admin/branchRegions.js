@@ -89,8 +89,12 @@ export function defaultHeadquartersStateForCountry(countryCode) {
 /** True if stateCode exists for country (codes compared uppercase). */
 export function isStateValidForCountry(countryCode, stateCode) {
   const sc = normCode(stateCode);
-  if (!normCode(countryCode) || !sc) return false;
-  return branchStatesForCountry(countryCode).some((s) => s.code === sc);
+  const cc = normCode(countryCode);
+  if (!cc || !sc) return false;
+  if (branchStatesForCountry(cc).some((s) => s.code === sc)) return true;
+  // US churches use real subdivisions (TX, CA, …) while the directory bucket is regional (US).
+  if (cc === "US" && sc !== "US" && /^[A-Z0-9]{2,12}$/.test(sc)) return true;
+  return false;
 }
 
 /** Throws a clear Error if state is missing or not in the country list (fixes invalid state admin saves). */

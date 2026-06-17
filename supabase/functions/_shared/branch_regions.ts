@@ -82,8 +82,11 @@ export function defaultHeadquartersStateForCountry(countryCode: string): string 
 
 export function isStateValidForCountry(countryCode: string, stateCode: string): boolean {
   const sc = normCode(stateCode);
-  if (!normCode(countryCode) || !sc) return false;
-  return branchStatesForCountry(countryCode).some((s) => s.code === sc);
+  const cc = normCode(countryCode);
+  if (!cc || !sc) return false;
+  if (branchStatesForCountry(cc).some((s) => s.code === sc)) return true;
+  if (cc === "US" && sc !== "US" && /^[A-Z0-9]{2,12}$/.test(sc)) return true;
+  return false;
 }
 
 export function assertStateBelongsToCountry(countryCode: unknown, stateCode: unknown): void {
