@@ -9,7 +9,6 @@ import {
   churchBranchSelectOptions,
   hqChurchValueFromForm,
   parseHqChurchValue,
-  isRegionalBranchCountry,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import {
@@ -132,10 +131,9 @@ export function AdminReassignModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && form?.role && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
-  const usesDirectChurchPicker =
-    showBranchChurchStepFlow && isRegionalBranchCountry(form?.branch_country);
+  const usesDirectChurchPicker = showBranchChurchStepFlow;
 
-  const showBranchStateStep = showBranchChurchStepFlow && !usesDirectChurchPicker;
+  const showBranchStateStep = false;
 
   const branchStateLabel =
     form?.role === "country_super_admin" ? "Headquarters state" : "State / region";
@@ -151,8 +149,7 @@ export function AdminReassignModal({
     });
   }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form?.branch_country, form?.branch_state]);
 
-  const showChurchPicker =
-    showBranchChurchStepFlow && form?.branch_country && (usesDirectChurchPicker || form?.branch_state);
+  const showChurchPicker = showBranchChurchStepFlow && form?.branch_country;
 
   const steppedStateOptions = useMemo(() => {
     if (!showBranchStateStep) return [];

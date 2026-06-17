@@ -1,5 +1,12 @@
 /** Shared invite-only admin create UX (toasts + button labels). */
 
+export function adminErrorMessage(err) {
+  if (!err) return "Something went wrong.";
+  if (typeof err === "string") return err;
+  if (err instanceof Error && err.message) return err.message;
+  return String(err.message || err.error || "Something went wrong.");
+}
+
 export function toastAfterAdminCreate(toast, { res, email, isEdit, updatedMessage } = {}) {
   if (isEdit) {
     toast(updatedMessage || "Admin updated.", "success");

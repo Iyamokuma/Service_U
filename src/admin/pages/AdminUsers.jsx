@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { api } from "../api.js";
+import { api, shapeAdminListRow } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { SearchableSelect } from "../components/SearchableSelect.jsx";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
@@ -9,7 +9,6 @@ import {
   churchBranchSelectOptions,
   hqChurchValueFromForm,
   parseHqChurchValue,
-  isRegionalBranchCountry,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import { canEditBranchCatalog } from "../roles.js";
@@ -68,7 +67,8 @@ import {
 import { occupiedStateCodes, isStateBranchLeader, listStateBranchesForCountry, stateBranchKindLabel } from "../stateAdminForm.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 import { AdminInviteBanner } from "../components/AdminInviteBanner.jsx";
-import { adminCreateButtonLabel, toastAfterAdminCreate } from "../adminInviteUi.js";
+import { AdminErrorBoundary } from "../components/AdminErrorBoundary.jsx";
+import { adminCreateButtonLabel, toastAfterAdminCreate, adminErrorMessage } from "../adminInviteUi.js";
 
 const ROLES = [
   { value: "general_admin", label: "General Admin", desc: "Full global access except creating Super Admin accounts." },
@@ -388,8 +388,13 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   const allAdmins = data?.data ?? [];
 
   async function refreshAdminsList(row) {
-    if (row?.id) upsertAdminInList?.(row);
-    if (reload) await reload();
+    try {
+      if (row?.id) upsertAdminInList?.(row);
+      if (reload) await reload();
+    } catch (e) {
+      console.error("[admin] refreshAdminsList", e);
+      toast(adminErrorMessage(e), "error");
+    }
   }
 
   async function save(form, { satellitesInScope = [] } = {}) {
@@ -414,6 +419,8 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       return;
     }
     setSaving(true);
+    let savedRow = null;
+    let saved = false;
     try {
       const actorNeedsApproval = mustUseRequestFlowForCreate(me?.role, form.role) && !form.id;
       if (actorNeedsApproval) {
@@ -426,30 +433,35 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         toast("Request submitted for upline approval. The account will be active once approved.", "success");
         loadPendingAdminRequests();
         if (reload) await reload();
+        saved = true;
       } else {
         const payload = { ...form, viewer: me };
-        let savedRow = null;
         if (form.id) {
           const res = await api.updateAdmin(form.id, payload);
-          savedRow = res?.data ? { ...form, ...res.data, id: form.id } : { ...form, id: form.id };
+          savedRow = res?.data ? shapeAdminListRow({ ...form, ...res.data, id: form.id }) : shapeAdminListRow({ ...form, id: form.id });
           toast("Admin updated.", "success");
         } else {
           const res = await api.createAdmin(payload);
-          savedRow = res?.data ?? null;
+          savedRow = res?.data ? shapeAdminListRow(res.data) : null;
           if (inviteCreate) {
             toastAfterAdminCreate(toast, { res, email: form.email, isEdit: false });
           } else {
             toast("Admin created.", "success");
           }
         }
-        setModal(null);
-        setStateBranchModal(null);
-        setSatelliteModal(null);
-        setReassignModal(null);
-        await refreshAdminsList(savedRow);
+        saved = true;
       }
-    } catch (e) { toast(e.message, "error"); }
-    finally { setSaving(false); }
+    } catch (e) {
+      toast(adminErrorMessage(e), "error");
+    } finally {
+      setSaving(false);
+    }
+    if (!saved) return;
+    setModal(null);
+    setStateBranchModal(null);
+    setSatelliteModal(null);
+    setReassignModal(null);
+    await refreshAdminsList(savedRow);
   }
 
   async function resendInvite(row) {
@@ -695,6 +707,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   };
 
   return (
+    <AdminErrorBoundary>
     <>
       {isGlobalAdmin ? (
         <div className="sa-admins-page">
@@ -1080,6 +1093,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         />
       )}
     </>
+    </AdminErrorBoundary>
   );
 }
 
@@ -1176,7 +1190,9 @@ function AdminAccountsTable({
                     <div className="sa-avatar">{adminInitials(a.full_name)}</div>
                     <div className="sa-admins-name-text">
                       <div className="sa-fw-600">{a.full_name}</div>
-                      {a.id === +me.id ? <span className="sa-badge viewer">You</span> : null}
+                      {a.id != null && me?.id != null && Number(a.id) === Number(me.id) ? (
+                        <span className="sa-badge viewer">You</span>
+                      ) : null}
                     </div>
                   </div>
                 </td>
@@ -1209,7 +1225,7 @@ function AdminAccountsTable({
                             Edit
                           </button>
                         )}
-                      {a.id !== +me.id &&
+                      {a.id != null && me?.id != null && Number(a.id) !== Number(me.id) &&
                         !(a.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) &&
                         (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
                         (!isStateAdmin || canStateAdminManageRole(a.role)) && (
@@ -1218,12 +1234,12 @@ function AdminAccountsTable({
                           </button>
                         )}
                       {((isGlobalAdmin &&
-                          a.id !== +me.id &&
+                          Number(a.id) !== Number(me?.id) &&
                           (canManageSuperAdminAccount(me?.role) || a.role !== "super_admin")) ||
-                          (isSatellitePastor && a.id !== +me.id) ||
-                          (isServiceLeader && a.id !== +me.id && a.role === "sub_unit_leader") ||
-                          (isCountryAdmin && a.id !== +me.id && canCountryAdminManageRole(a.role)) ||
-                          (isStateAdmin && a.id !== +me.id && canStateAdminManageRole(a.role))) && (
+                          (isSatellitePastor && Number(a.id) !== Number(me?.id)) ||
+                          (isServiceLeader && Number(a.id) !== Number(me?.id) && a.role === "sub_unit_leader") ||
+                          (isCountryAdmin && Number(a.id) !== Number(me?.id) && canCountryAdminManageRole(a.role)) ||
+                          (isStateAdmin && Number(a.id) !== Number(me?.id) && canStateAdminManageRole(a.role))) && (
                           <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
                             Delete
                           </button>
@@ -1342,10 +1358,9 @@ function AdminModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
-  const usesDirectChurchPicker =
-    showBranchChurchStepFlow && isRegionalBranchCountry(form.branch_country);
+  const usesDirectChurchPicker = showBranchChurchStepFlow;
 
-  const showBranchStateStep = showBranchChurchStepFlow && !usesDirectChurchPicker;
+  const showBranchStateStep = false;
 
   const branchStateLabel =
     form.role === "country_super_admin" ? "Headquarters state" : "State / region";
@@ -1437,8 +1452,7 @@ function AdminModal({
     });
   }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form.branch_country, form.branch_state]);
 
-  const showChurchPicker =
-    showBranchChurchStepFlow && form.branch_country && (usesDirectChurchPicker || form.branch_state);
+  const showChurchPicker = showBranchChurchStepFlow && form.branch_country;
 
   const steppedStateOptions = useMemo(() => {
     if (!showBranchStateStep) return [];
@@ -1465,14 +1479,6 @@ function AdminModal({
   const createBlocked =
     !isEdit &&
     ((form.role === "country_super_admin" && countryOptions.length === 0) ||
-      (form.role === "country_super_admin" &&
-        form.branch_country &&
-        !isRegionalBranchCountry(form.branch_country) &&
-        stateOptions.length === 0) ||
-      (form.role === "state_super_admin" &&
-        form.branch_country &&
-        !isRegionalBranchCountry(form.branch_country) &&
-        stateOptions.length === 0) ||
       (showChurchPicker &&
         branchChurchOpts.length > 0 &&
         !String(form.satellite_site || "").trim()));
@@ -1493,8 +1499,9 @@ function AdminModal({
       }
       size="md"
       footer={<>
-        <button className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
+        <button type="button" className="sa-btn sa-btn-outline" onClick={onClose}>Cancel</button>
         <button
+          type="button"
           className="sa-btn sa-btn-primary"
           onClick={() =>
             onSave(form, {

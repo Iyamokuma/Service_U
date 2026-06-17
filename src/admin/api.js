@@ -113,13 +113,28 @@ export function mapAdminRow(a) {
   if (!a || typeof a !== "object") return a;
   return {
     ...a,
+    id: a.id != null ? Number(a.id) : a.id,
     branch_country_label: branchCountryLabel(a.branch_country),
     branch_state_label: branchStateLabel(a.branch_country, a.branch_state),
   };
 }
 
+/** Align list rows with server shapeAdminListRow (pending invite flag). */
+export function shapeAdminListRow(row) {
+  if (!row || typeof row !== "object") return null;
+  const mapped = mapAdminRow(row);
+  if (mapped?.id == null || !Number.isFinite(Number(mapped.id))) return null;
+  let pendingInvite = row.pending_invite;
+  if (pendingInvite !== true && pendingInvite !== false) {
+    pendingInvite =
+      !!String(row.invite_token || "").trim() && Number(row.must_change_password ?? 0) === 1;
+  }
+  return { ...mapped, id: Number(mapped.id), pending_invite: pendingInvite };
+}
+
 function mapAdminsList(data) {
-  return (data || []).map(mapAdminRow);
+  if (!Array.isArray(data)) return [];
+  return data.map((row) => shapeAdminListRow(row)).filter(Boolean);
 }
 
 /** Merge created/updated admin rows into a prior `api.admins()` payload without waiting for refetch. */
@@ -128,7 +143,7 @@ export function mergeAdminListPayload(prev, rowOrRows) {
   if (!rows.length) return prev ?? { data: [] };
   const existing = [...(prev?.data ?? [])];
   for (const raw of rows) {
-    const mapped = mapAdminRow(raw);
+    const mapped = shapeAdminListRow(raw);
     if (!mapped?.id) continue;
     const idx = existing.findIndex((a) => Number(a.id) === Number(mapped.id));
     if (idx >= 0) {
