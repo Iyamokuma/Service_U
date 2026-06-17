@@ -9,6 +9,7 @@ import {
   churchBranchSelectOptions,
   hqChurchValueFromForm,
   parseHqChurchValue,
+  isRegionalBranchCountry,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import {
@@ -131,21 +132,33 @@ export function AdminReassignModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && form?.role && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
+  const usesDirectChurchPicker =
+    showBranchChurchStepFlow && isRegionalBranchCountry(form?.branch_country);
+
+  const showBranchStateStep = showBranchChurchStepFlow && !usesDirectChurchPicker;
+
   const branchStateLabel =
     form?.role === "country_super_admin" ? "Headquarters state" : "State / region";
 
   const branchChurchOpts = useMemo(() => {
-    if (!showBranchChurchStepFlow || !form?.branch_country || !form?.branch_state) return [];
+    if (!showBranchChurchStepFlow || !form?.branch_country) return [];
+    if (usesDirectChurchPicker) {
+      return churchBranchSelectOptions(churches, form.branch_country, { countryWide: true });
+    }
+    if (!form?.branch_state) return [];
     return churchBranchSelectOptions(churches, form.branch_country, {
       allowedStateCodes: [form.branch_state],
     });
-  }, [showBranchChurchStepFlow, churches, form?.branch_country, form?.branch_state]);
+  }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form?.branch_country, form?.branch_state]);
+
+  const showChurchPicker =
+    showBranchChurchStepFlow && form?.branch_country && (usesDirectChurchPicker || form?.branch_state);
 
   const steppedStateOptions = useMemo(() => {
-    if (!showBranchChurchStepFlow) return [];
+    if (!showBranchStateStep) return [];
     if (form?.role === "satellite_church_admin") return allStateOptions;
     return stateOptions;
-  }, [showBranchChurchStepFlow, form?.role, allStateOptions, stateOptions]);
+  }, [showBranchStateStep, form?.role, allStateOptions, stateOptions]);
 
   const selectedUnit = useMemo(
     () => unitList.find((u) => Number(u.id) === Number(form?.service_unit_id)),
@@ -170,8 +183,7 @@ export function AdminReassignModal({
       takenCountries,
       takenStates,
       units: unitList,
-      satellitesInScope:
-        showBranchChurchStepFlow && form?.branch_state ? branchChurchOpts : [],
+      satellitesInScope: showChurchPicker ? branchChurchOpts : [],
     });
     if (msg) {
       onSave(null, msg);
@@ -305,7 +317,7 @@ export function AdminReassignModal({
             ) : null}
           </div>
 
-          {showBranchChurchStepFlow && form.branch_country ? (
+          {showBranchStateStep && form.branch_country ? (
             <div className="sa-field">
               <label className="sa-label">
                 {branchStateLabel} <span className="sa-required">*</span>
@@ -331,10 +343,11 @@ export function AdminReassignModal({
             </div>
           ) : null}
 
-          {showBranchChurchStepFlow && form.branch_state ? (
+          {showChurchPicker ? (
             <div className="sa-field">
               <label className="sa-label">
-                Church branch <span className="sa-required">*</span>
+                {form.role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
+                <span className="sa-required">*</span>
               </label>
               <SearchableSelect
                 value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
@@ -344,7 +357,7 @@ export function AdminReassignModal({
                 }}
                 options={branchChurchOpts}
                 placeholder={
-                  branchChurchOpts.length ? "Select church branch" : "No churches in this state yet"
+                  branchChurchOpts.length ? "Select church branch" : "No churches in this country yet"
                 }
                 searchPlaceholder="Search church branches…"
                 emptyMessage="No churches match your search"

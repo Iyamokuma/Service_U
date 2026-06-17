@@ -9,6 +9,7 @@ import {
   churchBranchSelectOptions,
   hqChurchValueFromForm,
   parseHqChurchValue,
+  isRegionalBranchCountry,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import { canEditBranchCatalog } from "../roles.js";
@@ -1341,6 +1342,11 @@ function AdminModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
+  const usesDirectChurchPicker =
+    showBranchChurchStepFlow && isRegionalBranchCountry(form.branch_country);
+
+  const showBranchStateStep = showBranchChurchStepFlow && !usesDirectChurchPicker;
+
   const branchStateLabel =
     form.role === "country_super_admin" ? "Headquarters state" : "State / region";
 
@@ -1421,14 +1427,21 @@ function AdminModal({
   });
 
   const branchChurchOpts = useMemo(() => {
-    if (!showBranchChurchStepFlow || !form.branch_country || !form.branch_state) return [];
+    if (!showBranchChurchStepFlow || !form.branch_country) return [];
+    if (usesDirectChurchPicker) {
+      return churchBranchSelectOptions(churches, form.branch_country, { countryWide: true });
+    }
+    if (!form.branch_state) return [];
     return churchBranchSelectOptions(churches, form.branch_country, {
       allowedStateCodes: [form.branch_state],
     });
-  }, [showBranchChurchStepFlow, churches, form.branch_country, form.branch_state]);
+  }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form.branch_country, form.branch_state]);
+
+  const showChurchPicker =
+    showBranchChurchStepFlow && form.branch_country && (usesDirectChurchPicker || form.branch_state);
 
   const steppedStateOptions = useMemo(() => {
-    if (!showBranchChurchStepFlow) return [];
+    if (!showBranchStateStep) return [];
     let opts =
       form.role === "satellite_church_admin"
         ? allStateOptions
@@ -1446,7 +1459,7 @@ function AdminModal({
       ];
     }
     return opts;
-  }, [showBranchChurchStepFlow, form.role, form.branch_state, form.branch_country, isEdit, allStateOptions, stateOptions]);
+  }, [showBranchStateStep, form.role, form.branch_state, form.branch_country, isEdit, allStateOptions, stateOptions]);
 
   const locationScopedRole = ROLES_WITH_COUNTRY.includes(form.role);
   const createBlocked =
@@ -1454,12 +1467,13 @@ function AdminModal({
     ((form.role === "country_super_admin" && countryOptions.length === 0) ||
       (form.role === "country_super_admin" &&
         form.branch_country &&
+        !isRegionalBranchCountry(form.branch_country) &&
         stateOptions.length === 0) ||
       (form.role === "state_super_admin" &&
         form.branch_country &&
+        !isRegionalBranchCountry(form.branch_country) &&
         stateOptions.length === 0) ||
-      (showBranchChurchStepFlow &&
-        form.branch_state &&
+      (showChurchPicker &&
         branchChurchOpts.length > 0 &&
         !String(form.satellite_site || "").trim()));
 
@@ -1484,8 +1498,7 @@ function AdminModal({
           className="sa-btn sa-btn-primary"
           onClick={() =>
             onSave(form, {
-              satellitesInScope:
-                showBranchChurchStepFlow && form.branch_state ? branchChurchOpts : [],
+              satellitesInScope: showChurchPicker ? branchChurchOpts : [],
             })
           }
           disabled={saving || createBlocked}
@@ -1717,7 +1730,7 @@ function AdminModal({
             ) : null}
           </div>
 
-          {showBranchChurchStepFlow && form.branch_country ? (
+          {showBranchStateStep && form.branch_country ? (
             <div className="sa-field">
               <label className="sa-label">
                 {branchStateLabel} <span className="sa-required">*</span>
@@ -1760,10 +1773,11 @@ function AdminModal({
             </div>
           ) : null}
 
-          {showBranchChurchStepFlow && form.branch_state ? (
+          {showChurchPicker ? (
             <div className="sa-field">
               <label className="sa-label">
-                Church branch <span className="sa-required">*</span>
+                {form.role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
+                <span className="sa-required">*</span>
               </label>
               <SearchableSelect
                 value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
@@ -1775,7 +1789,7 @@ function AdminModal({
                 placeholder={
                   branchChurchOpts.length
                     ? "Select church branch"
-                    : "No churches in this state yet"
+                    : "No churches in this country yet"
                 }
                 searchPlaceholder="Search church branches…"
                 emptyMessage="No churches match your search"
@@ -1783,7 +1797,7 @@ function AdminModal({
               />
               <div className="sa-field-hint">
                 {branchChurchOpts.length === 0
-                  ? "No churches listed for this state yet. Add branches via Data Entry or approve a location request first."
+                  ? "No churches listed for this country yet. Add branches via Data Entry or approve a location request first."
                   : branchChurchHint}
               </div>
             </div>
