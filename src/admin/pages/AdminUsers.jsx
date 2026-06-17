@@ -5,7 +5,7 @@ import { SearchableSelect } from "../components/SearchableSelect.jsx";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
-  statesFromCatalog,
+  statesFromCatalogAndChurches,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import { canEditBranchCatalog } from "../roles.js";
@@ -1324,10 +1324,11 @@ function AdminModal({
 
   const allStateOptions = useMemo(() => {
     if (!form.branch_country) return [];
-    return useCatalogGeo && catalog
-      ? statesFromCatalog(catalog, form.branch_country)
-      : branchStatesForCountry(form.branch_country);
-  }, [useCatalogGeo, catalog, form.branch_country]);
+    if (useCatalogGeo && catalog) {
+      return statesFromCatalogAndChurches(catalog, form.branch_country, churches);
+    }
+    return statesFromCatalogAndChurches(null, form.branch_country, churches);
+  }, [useCatalogGeo, catalog, form.branch_country, churches]);
 
   const satelliteOptions = useMemo(
     () => satellitesFromChurches(churches, form.branch_country, form.branch_state),

@@ -5,7 +5,7 @@ import { api } from "../api.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
-  statesFromCatalog,
+  statesFromCatalogAndChurches,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import {
@@ -86,8 +86,8 @@ export function AdminReassignModal({
   const allStateOptions = useMemo(() => {
     const cc = String(form?.branch_country || "").toUpperCase();
     if (!cc) return [];
-    return useCatalogGeo && catalog ? statesFromCatalog(catalog, cc) : statesFromCatalog(null, cc);
-  }, [useCatalogGeo, catalog, form?.branch_country]);
+    return statesFromCatalogAndChurches(catalog, cc, churches);
+  }, [catalog, form?.branch_country, churches]);
 
   useEffect(() => {
     if (!open || !admin?.id) return;
