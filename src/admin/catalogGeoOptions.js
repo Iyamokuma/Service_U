@@ -16,6 +16,15 @@ function normUp(s) {
   return String(s ?? "").trim().toUpperCase();
 }
 
+/** Countries whose admin state list is directory/regional only (not per-church branch_state codes). */
+const REGIONAL_STATE_COUNTRIES = new Set(["US"]);
+
+function statesFromChurchesForDropdown(countryCode, churches) {
+  const cc = normUp(countryCode);
+  if (REGIONAL_STATE_COUNTRIES.has(cc)) return [];
+  return statesFromChurches(churches, cc);
+}
+
 /** All countries: catalog first, then any static entries not yet in the directory. */
 export function countriesFromCatalog(catalog) {
   const rows = [];
@@ -83,7 +92,12 @@ export function statesFromCatalogAndChurches(catalog, countryCode, churches = []
     }
   }
 
-  const merged = mergeStateOptions(cc, catalogRows, statesFromChurches(churches, cc), branchStatesForCountry(cc));
+  const merged = mergeStateOptions(
+    cc,
+    catalogRows,
+    statesFromChurchesForDropdown(cc, churches),
+    branchStatesForCountry(cc),
+  );
   if (merged.length) return merged;
   return branchStatesForCountry(cc);
 }
@@ -116,13 +130,14 @@ export function satellitesFromChurches(churches, countryCode, stateCode = "") {
 
 const HQ_CHURCH_SEP = "::";
 
-/** Country Admin HQ picker: one option per church (state label · church name). */
-export function headquartersChurchOptions(churches, countryCode, { allowedStateCodes } = {}) {
+/** Searchable church branch options (value encodes state + church name). */
+export function churchBranchSelectOptions(churches, countryCode, { allowedStateCodes } = {}) {
   const cc = normUp(countryCode);
   if (!cc) return [];
   const allowed = allowedStateCodes?.length
     ? new Set(allowedStateCodes.map((c) => normUp(c)))
     : null;
+  const regionalScope = Boolean(allowed?.has(cc));
   const rows = [];
   for (const ch of churches || []) {
     if (normUp(ch.branch_country) !== cc) continue;
@@ -130,16 +145,20 @@ export function headquartersChurchOptions(churches, countryCode, { allowedStateC
     const name = String(ch.name || "").trim();
     if (!st || !name) continue;
     if (allowed && !allowed.has(st)) {
-      // Regional directory state (code matches country, e.g. US / North America)
       if (!allowed.has(cc)) continue;
     }
     const stateLabel = branchStateLabel(cc, st);
     rows.push({
       value: `${st}${HQ_CHURCH_SEP}${name}`,
-      label: `${stateLabel} · ${name}`,
+      label: regionalScope ? name : `${stateLabel} · ${name}`,
     });
   }
   return rows.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Country Admin HQ picker: one option per church (state label · church name). */
+export function headquartersChurchOptions(churches, countryCode, { allowedStateCodes } = {}) {
+  return churchBranchSelectOptions(churches, countryCode, { allowedStateCodes });
 }
 
 export function hqChurchValueFromForm(branchState, satelliteSite) {

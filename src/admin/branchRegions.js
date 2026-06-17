@@ -58,10 +58,7 @@ export const BRANCH_COUNTRIES = [
   {
     code: "US",
     name: "United States",
-    states: [
-      { code: "TX", name: "Texas" },
-      { code: "CA", name: "California" },
-    ],
+    states: [{ code: "US", name: "North America" }],
   },
   // Salvation Ministries directory (single “national” state = country code until subdivided)
   { code: "ASIA", name: "Asia Region", states: [{ code: "ASIA", name: "Asia Region" }] },

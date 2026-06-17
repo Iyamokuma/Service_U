@@ -6,6 +6,9 @@ import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
   statesFromCatalogAndChurches,
+  churchBranchSelectOptions,
+  hqChurchValueFromForm,
+  parseHqChurchValue,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import {
@@ -133,7 +136,9 @@ export function AdminReassignModal({
 
   const branchChurchOpts = useMemo(() => {
     if (!showBranchChurchStepFlow || !form?.branch_country || !form?.branch_state) return [];
-    return satellitesFromChurches(churches, form.branch_country, form.branch_state);
+    return churchBranchSelectOptions(churches, form.branch_country, {
+      allowedStateCodes: [form.branch_state],
+    });
   }, [showBranchChurchStepFlow, churches, form?.branch_country, form?.branch_state]);
 
   const steppedStateOptions = useMemo(() => {
@@ -332,8 +337,11 @@ export function AdminReassignModal({
                 Church branch <span className="sa-required">*</span>
               </label>
               <SearchableSelect
-                value={form.satellite_site}
-                onChange={(e) => setForm((f) => ({ ...f, satellite_site: e.target.value }))}
+                value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
+                onChange={(e) => {
+                  const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
+                  setForm((f) => ({ ...f, branch_state, satellite_site }));
+                }}
                 options={branchChurchOpts}
                 placeholder={
                   branchChurchOpts.length ? "Select church branch" : "No churches in this state yet"

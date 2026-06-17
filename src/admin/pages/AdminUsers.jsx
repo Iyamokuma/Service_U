@@ -6,6 +6,9 @@ import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
   statesFromCatalogAndChurches,
+  churchBranchSelectOptions,
+  hqChurchValueFromForm,
+  parseHqChurchValue,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import { canEditBranchCatalog } from "../roles.js";
@@ -1419,14 +1422,31 @@ function AdminModal({
 
   const branchChurchOpts = useMemo(() => {
     if (!showBranchChurchStepFlow || !form.branch_country || !form.branch_state) return [];
-    return satellitesFromChurches(churches, form.branch_country, form.branch_state);
+    return churchBranchSelectOptions(churches, form.branch_country, {
+      allowedStateCodes: [form.branch_state],
+    });
   }, [showBranchChurchStepFlow, churches, form.branch_country, form.branch_state]);
 
   const steppedStateOptions = useMemo(() => {
     if (!showBranchChurchStepFlow) return [];
-    if (form.role === "satellite_church_admin") return allStateOptions;
-    return isEdit ? allStateOptions : stateOptions;
-  }, [showBranchChurchStepFlow, form.role, isEdit, allStateOptions, stateOptions]);
+    let opts =
+      form.role === "satellite_church_admin"
+        ? allStateOptions
+        : isEdit
+          ? allStateOptions
+          : stateOptions;
+    const st = String(form.branch_state || "").toUpperCase();
+    if (st && !opts.some((s) => String(s.code).toUpperCase() === st)) {
+      opts = [
+        ...opts,
+        {
+          code: st,
+          name: branchStateLabel(form.branch_country, st) || st,
+        },
+      ];
+    }
+    return opts;
+  }, [showBranchChurchStepFlow, form.role, form.branch_state, form.branch_country, isEdit, allStateOptions, stateOptions]);
 
   const locationScopedRole = ROLES_WITH_COUNTRY.includes(form.role);
   const createBlocked =
@@ -1746,8 +1766,11 @@ function AdminModal({
                 Church branch <span className="sa-required">*</span>
               </label>
               <SearchableSelect
-                value={form.satellite_site}
-                onChange={(e) => setForm((f) => ({ ...f, satellite_site: e.target.value }))}
+                value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
+                onChange={(e) => {
+                  const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
+                  setForm((f) => ({ ...f, branch_state, satellite_site }));
+                }}
                 options={branchChurchOpts}
                 placeholder={
                   branchChurchOpts.length
