@@ -65,27 +65,27 @@ const PAGE_TITLES_DEFAULT = {
   "branch-catalog": "Branch directory",
   "unit-request": "Request Service Unit",
   workforce: "Workforce",
-  users: "Users",
+  users: "Members",
 };
 
 const PAGE_TITLES_BY_ROLE = {
   satellite_church_admin: {
     "role-dashboard": "Dashboard",
     oversight: "Application Queue",
-    users: "Users",
+    users: "Members",
     requests: "My Requests",
   },
   country_super_admin: {
     overview: "Country Analytics",
     oversight: "Application Queue",
     workforce: "Workforce",
-    users: "Users",
+    users: "Members",
   },
   state_super_admin: {
     overview: "State Analytics",
     oversight: "Application Queue",
     workforce: "Workforce",
-    users: "Users",
+    users: "Members",
   },
   data_entry_admin: {
     "role-dashboard": "Home",

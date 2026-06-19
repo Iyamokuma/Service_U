@@ -15,6 +15,8 @@ import { SmhLoader } from "../../components/SmhLoader.jsx";
 import {
   applyQueueStatusTab,
   pipelineStatusLabel,
+  queueActionVisible,
+  queueStatusOptionsForTab,
   queueStatusTabLabel,
   queueStatusTabsForRole,
 } from "../queueStatusTabs.js";
@@ -290,19 +292,41 @@ export function Queue({ units, initialTab = "all" }) {
   const unitOpts = units?.data ?? [];
   const allowedStatus = (current) => {
     const c = current || "new";
-    if (!["service_unit_leader", "sub_unit_leader"].includes(admin?.role)) return STATUSES;
-    if (c === "new") return ["new", "in_progress", "accepted", "rejected", "archived"];
-    if (c === "in_progress") return ["in_progress", "accepted", "rejected", "new", "archived"];
-    if (c === "accepted" || c === "rejected") return [c, "archived"];
-    if (c === "archived") return ["archived"];
-    return [c];
+    let opts;
+    if (!["service_unit_leader", "sub_unit_leader"].includes(admin?.role)) {
+      opts = [...STATUSES];
+    } else if (c === "new") {
+      opts = ["new", "in_progress", "accepted", "rejected", "archived"];
+    } else if (c === "in_progress") {
+      opts = ["in_progress", "accepted", "rejected", "new", "archived"];
+    } else if (c === "accepted" || c === "rejected") {
+      if (statusTab === "accepted" && c === "accepted") {
+        opts = ["accepted", "in_progress", "rejected", "archived"];
+      } else {
+        opts = [c, "archived"];
+      }
+    } else if (c === "archived") {
+      opts = ["archived"];
+    } else {
+      opts = [c];
+    }
+    return queueStatusOptionsForTab(c, statusTab, opts);
   };
 
   const leaderActionDisabled = (row, target) => {
     if (isServiceLeader && target === "archived") return true;
     if (row.status === "archived") return true;
+    if (!queueActionVisible(statusTab, target) && (statusTab === "accepted" || statusTab === "inprogress")) {
+      return true;
+    }
     if (target === "archived") {
       return !["new", "in_progress", "accepted", "rejected"].includes(row.status);
+    }
+    if (statusTab === "accepted" && row.status === "accepted") {
+      return !["in_progress", "rejected"].includes(target);
+    }
+    if (statusTab === "inprogress" && row.status === "in_progress") {
+      return !["accepted", "rejected"].includes(target);
     }
     if ((row.status === "accepted" || row.status === "rejected") && target !== "archived") return true;
     return !allowedStatus(row.status).includes(target);
@@ -596,30 +620,36 @@ export function Queue({ units, initialTab = "all" }) {
                           </button>
                           {isLeader ? (
                             <>
-                              <button
-                                type="button"
-                                className="sa-btn sa-btn-primary sa-btn-sm"
-                                disabled={leaderActionDisabled(r, "accepted")}
-                                onClick={() => requestLeaderAccept(r)}
-                              >
-                                Accept
-                              </button>
-                              <button
-                                type="button"
-                                className="sa-btn sa-btn-outline sa-btn-sm"
-                                disabled={leaderActionDisabled(r, "in_progress")}
-                                onClick={() => quickLeaderStatus(r.id, "in_progress")}
-                              >
-                                In progress
-                              </button>
-                              <button
-                                type="button"
-                                className="sa-btn sa-btn-danger sa-btn-sm"
-                                disabled={leaderActionDisabled(r, "rejected")}
-                                onClick={() => quickLeaderStatus(r.id, "rejected")}
-                              >
-                                Reject
-                              </button>
+                              {queueActionVisible(statusTab, "accepted") ? (
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-primary sa-btn-sm"
+                                  disabled={leaderActionDisabled(r, "accepted")}
+                                  onClick={() => requestLeaderAccept(r)}
+                                >
+                                  Accept
+                                </button>
+                              ) : null}
+                              {queueActionVisible(statusTab, "in_progress") ? (
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-outline sa-btn-sm"
+                                  disabled={leaderActionDisabled(r, "in_progress")}
+                                  onClick={() => quickLeaderStatus(r.id, "in_progress")}
+                                >
+                                  In progress
+                                </button>
+                              ) : null}
+                              {queueActionVisible(statusTab, "rejected") ? (
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-danger sa-btn-sm"
+                                  disabled={leaderActionDisabled(r, "rejected")}
+                                  onClick={() => quickLeaderStatus(r.id, "rejected")}
+                                >
+                                  Reject
+                                </button>
+                              ) : null}
                               {!isServiceLeader && (
                                 <button
                                   type="button"

@@ -29,6 +29,27 @@ export function pipelineStatusLabel(st) {
   return String(st || "new").replace(/_/g, " ");
 }
 
+/** Quick status actions shown on queue rows, scoped to the active status tab. */
+export function queueActionsForTab(statusTab) {
+  if (statusTab === "accepted") return ["in_progress", "rejected"];
+  if (statusTab === "inprogress") return ["accepted", "rejected"];
+  return ["accepted", "in_progress", "rejected"];
+}
+
+export function queueActionVisible(statusTab, action) {
+  return queueActionsForTab(statusTab).includes(action);
+}
+
+/** Status options in the update modal — current value plus tab-allowed transitions. */
+export function queueStatusOptionsForTab(current, statusTab, baseOptions) {
+  const c = current || "new";
+  const base = Array.isArray(baseOptions) ? baseOptions : [];
+  if (statusTab !== "accepted" && statusTab !== "inprogress") return base;
+  const tabActions = queueActionsForTab(statusTab);
+  const opts = new Set([c, ...tabActions.filter((s) => base.includes(s))]);
+  return [...opts];
+}
+
 /** Map UI tab to queue API params (mutates scoped object). */
 export function applyQueueStatusTab(scoped, statusTab, { isLeader = false } = {}) {
   delete scoped.overdue_only;

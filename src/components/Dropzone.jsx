@@ -1,16 +1,31 @@
 import { useRef, useState } from "react";
+import {
+  formatPhotoBytes,
+  PHOTO_MAX_OUTPUT_BYTES,
+  PHOTO_MAX_UPLOAD_BYTES,
+  preparePhotoFile,
+} from "../photoCompress.js";
 
 export function Dropzone({ value, onChange }) {
   const inputRef = useRef(null);
   const [drag, setDrag] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  function handleFile(f) {
-    if (!f) return;
-    if (!f.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) =>
-      onChange({ name: f.name, size: f.size, dataUrl: e.target.result });
-    reader.readAsDataURL(f);
+  async function handleFile(f) {
+    if (!f || busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      const prepared = await preparePhotoFile(f);
+      onChange(prepared);
+    } catch (err) {
+      onChange(null);
+      setError(err?.message || "Could not use this image.");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
 
   return (
@@ -36,17 +51,25 @@ export function Dropzone({ value, onChange }) {
       </div>
       <div className="dropzone-body">
         <div className="dropzone-title">
-          {value?.name ? value.name : "Passport-style photo"}
+          {busy ? "Compressing photo…" : value?.name ? value.name : "Passport-style photo"}
         </div>
         <div className="dropzone-desc">
-          {value
-            ? `${(value.size / 1024).toFixed(0)} KB — ready to upload`
-            : "Drag & drop, or browse. JPG or PNG, portrait orientation, clear face, neutral background."}
+          {busy
+            ? "Optimizing image for upload…"
+            : value
+              ? `${formatPhotoBytes(value.size)} compressed — ready to upload`
+              : `Drag & drop, or browse. JPG or PNG up to ${formatPhotoBytes(PHOTO_MAX_UPLOAD_BYTES)}; saved at max ${formatPhotoBytes(PHOTO_MAX_OUTPUT_BYTES)}.`}
         </div>
+        {error ? (
+          <div className="error-msg" role="alert" style={{ marginTop: 8 }}>
+            {error}
+          </div>
+        ) : null}
         <div className="dropzone-actions">
           <button
             type="button"
             className="btn-ghost"
+            disabled={busy}
             onClick={() => inputRef.current?.click()}
           >
             {value ? "Replace" : "Browse file"}
@@ -55,7 +78,11 @@ export function Dropzone({ value, onChange }) {
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => onChange(null)}
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                onChange(null);
+              }}
             >
               Remove
             </button>
@@ -64,8 +91,9 @@ export function Dropzone({ value, onChange }) {
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,image/*"
           style={{ display: "none" }}
+          disabled={busy}
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
       </div>

@@ -180,8 +180,6 @@ export function canPostAnnouncements(role) {
     role === "country_super_admin" ||
     role === "state_super_admin" ||
     role === "satellite_church_admin" ||
-    role === "service_unit_leader" ||
-    role === "sub_unit_leader" ||
     role === "data_entry_admin"
   );
 }

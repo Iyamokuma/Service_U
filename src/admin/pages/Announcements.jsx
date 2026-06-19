@@ -75,6 +75,14 @@ function formatMedium(r) {
   return "—";
 }
 
+const SEND_ALL_AUDIENCE_LABELS = {
+  members: "Unit members",
+  service_unit_leaders: "Service unit leaders",
+  sub_unit_leaders: "Sub unit leaders",
+  satellite_pastors: "Satellite pastors",
+  state_branch_pastors: "State branch pastors",
+};
+
 function formatDestination(r, unitNames, destLabels, adminRoleOptions) {
   const type = r.destination_type || "admins";
   const cfg = parseAnnouncementConfig(r);
@@ -89,6 +97,21 @@ function formatDestination(r, unitNames, destLabels, adminRoleOptions) {
     sub_unit: "Sub-unit leaders",
   };
   const roleLabelByValue = Object.fromEntries((adminRoleOptions || []).map((o) => [o.value, o.label]));
+
+  if (type === "send_all") {
+    const audiences = Array.isArray(cfg.audiences)
+      ? cfg.audiences.map((a) => SEND_ALL_AUDIENCE_LABELS[a] || String(a).replace(/_/g, " ")).filter(Boolean)
+      : [];
+    const parts = [
+      branchCountryLabel(cfg.branch_country),
+      cfg.branch_state ? branchStateLabel(cfg.branch_country, cfg.branch_state) : "",
+      cfg.satellite_site || "",
+      cfg.service_unit_id ? unitNames[Number(cfg.service_unit_id)] || `Unit #${cfg.service_unit_id}` : "",
+      cfg.sub_unit || "",
+    ].filter(Boolean);
+    const audPart = audiences.length ? audiences.join(", ") : "No audiences";
+    return `Send all · ${audPart}${parts.length ? ` · ${parts.join(" · ")}` : ""}`;
+  }
 
   if (type === "members") {
     const m = cfg;

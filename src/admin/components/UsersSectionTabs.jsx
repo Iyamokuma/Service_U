@@ -1,6 +1,6 @@
 import { SectionSegmentTabs } from "./SectionSegmentTabs.jsx";
 
-/** Admins | Workforce | Unit members sub-tabs on the Users page. */
+/** Admins | Workforce | Unit members sub-tabs on the Members page. */
 export function UsersSectionTabs({
   active,
   onChange,
@@ -16,6 +16,6 @@ export function UsersSectionTabs({
   if (showMembersTab) tabs.push({ id: "members", label: membersLabel });
 
   return (
-    <SectionSegmentTabs tabs={tabs} active={active} onChange={onChange} ariaLabel="Users sections" />
+    <SectionSegmentTabs tabs={tabs} active={active} onChange={onChange} ariaLabel="Members sections" />
   );
 }

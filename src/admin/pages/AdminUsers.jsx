@@ -457,7 +457,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       setSaving(false);
     }
     if (!saved) return;
-    setModal(null);
+      setModal(null);
     setStateBranchModal(null);
     setSatelliteModal(null);
     setReassignModal(null);
@@ -1079,18 +1079,18 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
           }}
         />
       ) : (
-        <AdminModal
-          open={!!modal}
-          data={modal}
-          unitList={unitList}
-          existingAdmins={allAdmins}
-          pendingAdminRequests={pendingAdminRequests}
-          onClose={() => setModal(null)}
-          onSave={save}
-          saving={saving}
-          me={me}
+      <AdminModal
+        open={!!modal}
+        data={modal}
+        unitList={unitList}
+        existingAdmins={allAdmins}
+        pendingAdminRequests={pendingAdminRequests}
+        onClose={() => setModal(null)}
+        onSave={save}
+        saving={saving}
+        me={me}
           viewMode={viewMode}
-        />
+      />
       )}
     </>
     </AdminErrorBoundary>
@@ -1217,22 +1217,22 @@ function AdminAccountsTable({
                       <span className="sa-text-muted sa-text-sm">—</span>
                     )
                   ) : (
-                    <div className="sa-table-actions">
+                  <div className="sa-table-actions">
                       {!(a.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) &&
-                        (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
-                        (!isStateAdmin || canStateAdminManageRole(a.role)) && (
-                          <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
-                            Edit
-                          </button>
-                        )}
+                      (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
+                      (!isStateAdmin || canStateAdminManageRole(a.role)) && (
+                        <button type="button" className="sa-btn sa-btn-outline sa-btn-sm" onClick={() => setModal(a)}>
+                          Edit
+                        </button>
+                      )}
                       {a.id != null && me?.id != null && Number(a.id) !== Number(me.id) &&
                         !(a.role === "super_admin" && !canManageSuperAdminAccount(me?.role)) &&
-                        (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
-                        (!isStateAdmin || canStateAdminManageRole(a.role)) && (
-                          <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
-                            {a.is_active ? "Deactivate" : "Activate"}
-                          </button>
-                        )}
+                      (!isCountryAdmin || canCountryAdminManageRole(a.role)) &&
+                      (!isStateAdmin || canStateAdminManageRole(a.role)) && (
+                        <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => toggleActive(a)}>
+                          {a.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                      )}
                       {((isGlobalAdmin &&
                           Number(a.id) !== Number(me?.id) &&
                           (canManageSuperAdminAccount(me?.role) || a.role !== "super_admin")) ||
@@ -1240,11 +1240,11 @@ function AdminAccountsTable({
                           (isServiceLeader && Number(a.id) !== Number(me?.id) && a.role === "sub_unit_leader") ||
                           (isCountryAdmin && Number(a.id) !== Number(me?.id) && canCountryAdminManageRole(a.role)) ||
                           (isStateAdmin && Number(a.id) !== Number(me?.id) && canStateAdminManageRole(a.role))) && (
-                          <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
-                            Delete
-                          </button>
-                        )}
-                    </div>
+                        <button type="button" className="sa-btn sa-btn-danger sa-btn-sm" onClick={() => removeAdmin(a)}>
+                          Delete
+                        </button>
+                      )}
+                  </div>
                   )}
                 </td>
               </tr>
@@ -1433,7 +1433,7 @@ function AdminModal({
   );
   const stateOptions = allStateOptions.filter((s) => {
     if (form.role === "state_super_admin" && !isEdit) {
-      return !takenStates.has(String(s.code).toUpperCase());
+    return !takenStates.has(String(s.code).toUpperCase());
     }
     if (form.role === "country_super_admin" && !isEdit) {
       return !takenStates.has(String(s.code).toUpperCase());
@@ -1525,16 +1525,16 @@ function AdminModal({
           <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="John Doe" />
         </div>
         {!inviteCreate ? (
-          <div className="sa-field">
-            <label className="sa-label">Username <span className="sa-required">*</span></label>
-            <input
-              className="sa-input"
-              value={form.username}
-              onChange={set("username")}
-              placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
-              disabled={isEdit}
-            />
-          </div>
+        <div className="sa-field">
+          <label className="sa-label">Username <span className="sa-required">*</span></label>
+          <input
+            className="sa-input"
+            value={form.username}
+            onChange={set("username")}
+            placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
+            disabled={isEdit}
+          />
+            </div>
         ) : null}
       </div>
       <div className="sa-field">
@@ -1542,13 +1542,13 @@ function AdminModal({
         <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="admin@church.org" />
       </div>
       {!inviteCreate ? (
-        <div className="sa-field">
+      <div className="sa-field">
           <label className="sa-label">
             {isEdit ? "New Password (leave blank to keep current)" : "Password"}{" "}
             {!isEdit && <span className="sa-required">*</span>}
           </label>
-          <input className="sa-input" type="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" />
-        </div>
+        <input className="sa-input" type="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" />
+      </div>
       ) : null}
       <div className="sa-form-row">
         <div className="sa-field">
@@ -1650,37 +1650,37 @@ function AdminModal({
             Scope / location <span className="sa-required">*</span>
           </p>
           <div className={showBranchChurchStepFlow ? "sa-field" : "sa-form-row"}>
-            <div className="sa-field">
-              <label className="sa-label">Country <span className="sa-required">*</span></label>
-              <select
-                className="sa-field-select"
-                value={form.branch_country}
-                onChange={(e) => {
-                  const branch_country = e.target.value;
-                  setForm((f) => {
-                    const next = {
-                      ...f,
-                      branch_country,
-                      branch_state: "",
+          <div className="sa-field">
+            <label className="sa-label">Country <span className="sa-required">*</span></label>
+            <select
+              className="sa-field-select"
+              value={form.branch_country}
+              onChange={(e) => {
+                const branch_country = e.target.value;
+                setForm((f) => {
+                  const next = {
+                    ...f,
+                    branch_country,
+                    branch_state: "",
                       satellite_site: "",
-                    };
-                    if (
-                      f.role === "country_super_admin" &&
-                      shouldAutoFillCountryAdminUsername(f.username)
-                    ) {
-                      next.username = suggestedCountryAdminUsername(branch_country);
-                    }
-                    return next;
-                  });
-                }}
+                  };
+                  if (
+                    f.role === "country_super_admin" &&
+                    shouldAutoFillCountryAdminUsername(f.username)
+                  ) {
+                    next.username = suggestedCountryAdminUsername(branch_country);
+                  }
+                  return next;
+                });
+              }}
                 disabled={
                   isCountryAdmin ||
                   isStateAdmin ||
                   isSatellitePastor ||
                   (form.role === "country_super_admin" && isEdit)
                 }
-              >
-                <option value="">Select country</option>
+            >
+              <option value="">Select country</option>
                 {(form.role === "country_super_admin" && !isEdit ? countryOptions : allCountryOptions).map(
                   (c) => (
                     <option key={c.code} value={c.code}>
@@ -1688,26 +1688,26 @@ function AdminModal({
                     </option>
                   ),
                 )}
-              </select>
-              {form.role === "country_super_admin" && !isEdit && countryOptions.length === 0 && (
+            </select>
+            {form.role === "country_super_admin" && !isEdit && countryOptions.length === 0 && (
                 <div className="sa-field-hint">
                   Every country already has a Country Admin (or one pending approval).
                 </div>
-              )}
-            </div>
+            )}
+          </div>
             {!showBranchChurchStepFlow && ROLES_WITH_STATE.includes(form.role) ? (
-              <div className="sa-field">
+            <div className="sa-field">
                 <label className="sa-label">
                   {form.role === "country_super_admin" ? "Headquarters state" : "State / region"}{" "}
                   <span className="sa-required">*</span>
                 </label>
-                <select
-                  className="sa-field-select"
-                  value={form.branch_state}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      branch_state: e.target.value,
+              <select
+                className="sa-field-select"
+                value={form.branch_state}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    branch_state: e.target.value,
                       satellite_site: ROLES_WITH_SATELLITE.includes(f.role) ? "" : f.satellite_site,
                     }))
                   }
@@ -1717,18 +1717,18 @@ function AdminModal({
                     isSatellitePastor ||
                     (form.role === "state_super_admin" && isEdit)
                   }
-                >
-                  <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
+              >
+                <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
                   {((form.role === "state_super_admin" || form.role === "country_super_admin") && !isEdit
-                    ? stateOptions
+                  ? stateOptions
                     : allStateOptions
-                  ).map((s) => (
+                ).map((s) => (
                     <option key={s.code} value={s.code}>
                       {s.name}
                     </option>
-                  ))}
-                </select>
-                {form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0 && (
+                ))}
+              </select>
+              {form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0 && (
                   <div className="sa-field-hint">
                     Every state in this country already has a State Branch Admin (or one pending approval).
                   </div>
@@ -1775,9 +1775,9 @@ function AdminModal({
               ) : (
                 <div className="sa-field-hint">
                   States are loaded from the branch directory for the selected country.
-                </div>
-              )}
             </div>
+          )}
+        </div>
           ) : null}
 
           {showChurchPicker ? (

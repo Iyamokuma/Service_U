@@ -152,7 +152,7 @@ export function SatelliteUsers({ admins: adminsPayload, units, reload, setPage }
     <>
       <header className="sa-users-page-head">
         <div className="sa-users-page-head-top">
-          <h1 className="sa-admins-title">Users</h1>
+          <h1 className="sa-admins-title">Members</h1>
           {sectionTab === "workforce" ? (
             <div className="sa-users-page-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button

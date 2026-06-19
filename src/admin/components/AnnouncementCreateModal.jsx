@@ -10,6 +10,7 @@ import {
   applyAnnouncementScopeLocks,
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
+  sendAllAudienceOptionsForPolicy,
 } from "../announcementScopePolicy.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 
@@ -33,6 +34,14 @@ const emptyForm = () => ({
   members: { branch_country: "", branch_state: "", satellite_site: "", service_unit_id: "", sub_unit: "" },
   leaders: { mode: "all", branch_country: "", branch_state: "", satellite_site: "", service_unit_id: "", sub_unit: "" },
   admins: { roles: ["general_admin"], branch_country: "", branch_state: "", satellite_site: "" },
+  send_all: {
+    audiences: [],
+    branch_country: "",
+    branch_state: "",
+    satellite_site: "",
+    service_unit_id: "",
+    sub_unit: "",
+  },
 });
 
 function AudienceGeoScope({
@@ -152,14 +161,21 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return;
     }
     const base = emptyForm();
-    if (policy.membersOnly) {
+    const audienceOptions = sendAllAudienceOptionsForPolicy(policy);
+    if (policy.usesSendAll) {
+      base.destination_type = "send_all";
+      const geo = !policy.isGlobal && admin ? initialAnnouncementGeoForm(admin, policy) : {};
+      base.send_all = {
+        audiences: audienceOptions.map((a) => a.value),
+        ...geo,
+      };
+    } else if (policy.membersOnly) {
       base.destination_type = "members";
-    }
-    if (policy.isSatellitePastor) {
+    } else if (policy.isSatellitePastor) {
       base.destination_type = "members";
       base.leaders.mode = policy.destinationLabels?.defaultLeaderMode || "service_unit";
     }
-    if (!policy.isGlobal && admin) {
+    if (!policy.usesSendAll && !policy.isGlobal && admin) {
       const geo = initialAnnouncementGeoForm(admin, policy);
       base.members = { ...base.members, ...geo };
       base.leaders = { ...base.leaders, ...geo };
@@ -201,6 +217,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   );
   const memberUnitHasSubUnits = unitHasSubUnits(memberSelectedUnit) || Boolean(policy.lockedSubUnit);
 
+  const sendAllAudienceOptions = useMemo(
+    () => sendAllAudienceOptionsForPolicy(policy),
+    [policy],
+  );
+
   const destLabels = policy.destinationLabels;
 
   const leaderModeOptions = useMemo(
@@ -233,7 +254,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   function buildPayload(workflow_action) {
     const destination_type = form.destination_type;
     let destination_config = {};
-    if (destination_type === "members") {
+    if (destination_type === "send_all") {
+      destination_config = { ...form.send_all };
+    } else if (destination_type === "members") {
       destination_config = { ...form.members };
     } else if (destination_type === "leaders") {
       destination_config = { ...form.leaders };
@@ -257,6 +280,15 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     if (!form.title.trim() || !form.body.trim()) return "Title and message are required.";
     if (!form.medium_email && !form.medium_push) {
       return "Select at least one medium: Email or Push notification.";
+    }
+    if (policy.usesSendAll && form.destination_type === "send_all") {
+      if (!form.send_all.audiences?.length) {
+        return "Select at least one audience under Send all.";
+      }
+      if (!form.send_all.branch_country && !policy.lockedCountry) {
+        return "Select a country for this announcement.";
+      }
+      return "";
     }
     if (policy.membersOnly && form.destination_type !== "members") {
       return "Sub-unit leaders may only send announcements to their unit members.";
@@ -395,7 +427,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         />
       </div>
 
-      {!policy.membersOnly ? (
+      {!policy.membersOnly && !policy.usesSendAll ? (
         <div className="sa-field">
           <label className="sa-label">Destination</label>
           <div className="sa-radio-row" style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
@@ -417,10 +449,115 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             </p>
           ) : null}
         </div>
+      ) : policy.usesSendAll ? (
+        <div className="sa-field">
+          <label className="sa-label">Destination</label>
+          <div className="sa-radio-row" style={{ marginTop: 8 }}>
+            <label className="sa-field-toggle" style={{ cursor: "default" }}>
+              <input type="radio" name="ann-dest" checked readOnly />
+              <span className="sa-field-toggle-label">Send all</span>
+            </label>
+          </div>
+          <p className="sa-field-hint" style={{ marginTop: 8, marginBottom: 12 }}>
+            Choose one or more groups to include in this announcement.
+          </p>
+          <div className="sa-ann-admin-role-row" role="group" aria-label="Send all audiences">
+            {sendAllAudienceOptions.map((opt) => (
+              <label key={opt.value} className="sa-field-toggle sa-ann-admin-role-item" style={{ cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.send_all.audiences.includes(opt.value)}
+                  onChange={(e) => {
+                    setForm((f) => {
+                      const audiences = new Set(f.send_all.audiences);
+                      if (e.target.checked) audiences.add(opt.value);
+                      else audiences.delete(opt.value);
+                      return { ...f, send_all: { ...f.send_all, audiences: [...audiences] } };
+                    });
+                  }}
+                />
+                <span className="sa-field-toggle-label">{opt.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
       ) : (
         <p className="sa-field-hint" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
           {scopeHint}
         </p>
+      )}
+
+      {policy.usesSendAll && form.destination_type === "send_all" && (
+        <section className="sa-ann-scope" aria-label="Send all audience scope">
+          <div className="sa-ann-scope-title">Audience scope</div>
+          <AudienceGeoScope
+            scope={form.send_all}
+            onScopeChange={(patch) => setForm((f) => ({ ...f, send_all: { ...f.send_all, ...patch } }))}
+            churches={churches}
+            countryOptions={countryOptions}
+            requireCountry
+            vis={policy.visibility}
+            lockedCountryCode={policy.lockedCountry}
+            lockedStateCode={policy.lockedState}
+            lockedSatelliteSite={policy.lockedSatellite}
+          />
+          {policy.visibility.unit && (
+            <div className="sa-ann-scope-grid" style={{ marginTop: 14 }}>
+              <div className="sa-field" style={{ marginBottom: 0 }}>
+                <label className="sa-label">Service unit</label>
+                {policy.lockedServiceUnitId ? (
+                  <LockedGeoField
+                    label=""
+                    value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`}
+                    hint="Service unit is fixed to your assignment."
+                  />
+                ) : (
+                  <SearchableDropdown
+                    value={form.send_all.service_unit_id ? String(form.send_all.service_unit_id) : ""}
+                    onChange={(id) =>
+                      setForm((f) => ({
+                        ...f,
+                        send_all: { ...f.send_all, service_unit_id: id, sub_unit: "" },
+                      }))
+                    }
+                    options={unitOptions}
+                    placeholder="All units"
+                    searchPlaceholder="Search service unit"
+                    emptyMessage="No units match"
+                    ariaLabel="Service unit"
+                  />
+                )}
+              </div>
+              {policy.visibility.subunit && (form.send_all.service_unit_id || policy.lockedServiceUnitId) ? (
+                <div className="sa-field" style={{ marginBottom: 0 }}>
+                  <label className="sa-label">Sub-unit</label>
+                  {policy.lockedSubUnit ? (
+                    <LockedGeoField label="" value={policy.lockedSubUnit} hint="Sub-unit is fixed to your assignment." />
+                  ) : (
+                    <SearchableDropdown
+                      value={form.send_all.sub_unit}
+                      onChange={(name) => setForm((f) => ({ ...f, send_all: { ...f.send_all, sub_unit: name } }))}
+                      options={[
+                        { value: "", label: "All sub-units" },
+                        ...(scopedUnitList
+                          .find((u) => Number(u.id) === Number(form.send_all.service_unit_id))
+                          ?.sub_units || []
+                        ).map((s) => ({ value: s.name, label: s.name })),
+                      ]}
+                      placeholder="All sub-units"
+                      searchPlaceholder="Search sub-unit"
+                      emptyMessage="No sub-units match"
+                      ariaLabel="Sub-unit"
+                    />
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
+          <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
+            {scopeHint}
+          </p>
+        </section>
       )}
 
       {form.destination_type === "members" && (

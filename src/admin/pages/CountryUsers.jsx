@@ -375,7 +375,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
     <>
       <header className="sa-users-page-head">
         <div className="sa-users-page-head-top">
-          <h1 className="sa-admins-title">Users</h1>
+          <h1 className="sa-admins-title">Members</h1>
           {sectionTab === "admins" ? (
             <div className="sa-users-page-actions">
               <button

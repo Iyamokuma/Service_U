@@ -12,7 +12,7 @@ import {
 import { ServiceUnitSection } from "./sections/ServiceUnitSection.jsx";
 import { SERVICE_UNITS, isEmail, isPhone, registrationSubmitFieldErrors } from "./data.js";
 import { unitHasSubUnits } from "./serviceUnitUtils.js";
-import { shrinkPhotoDataUrl } from "./photoCompress.js";
+import { compressPhotoDataUrl } from "./photoCompress.js";
 import { isSupabaseSubmitConfigured, submitRegistration } from "./registrationSubmit.js";
 import { fetchServiceUnitsCatalog } from "./serviceUnitsCatalog.js";
 import { FormTopBrand } from "./components/FormTopBrand.jsx";
@@ -211,7 +211,7 @@ export default function App() {
       let photo_path = "";
       try {
         if (form.photo?.dataUrl) {
-          photo_path = await shrinkPhotoDataUrl(form.photo.dataUrl);
+          photo_path = await compressPhotoDataUrl(form.photo.dataUrl);
         }
       } catch {
         photo_path = form.photo?.dataUrl || "";

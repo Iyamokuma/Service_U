@@ -13,6 +13,7 @@ import {
   processRegistrationLeaderDigests,
   queueRegistrationLeaderNotifications,
 } from "../_shared/registration_leader_notify.ts";
+import { validateRegistrationPhoto } from "../_shared/registration_photo.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -120,6 +121,9 @@ Deno.serve(async (req) => {
     if (!row.unit_id || !Number.isFinite(Number(row.unit_id))) {
       return json(400, { error: "Service unit is required." });
     }
+
+    const photoError = validateRegistrationPhoto(row.photo_path);
+    if (photoError) return json(400, { error: photoError });
 
     const { data: unitSubs } = await supabase
       .from("sub_units")

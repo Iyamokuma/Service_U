@@ -120,6 +120,38 @@ const DEFAULT_ADMIN_ROLES_BY_SENDER = {
 
 const DESTINATION_TABS_SUB_UNIT_MEMBERS_ONLY = [{ id: "members", label: "Service Unit Members" }];
 
+/** Send-all audience checkboxes (country / state / satellite pastor announcements). */
+export const SEND_ALL_AUDIENCE_OPTIONS = [
+  { value: "members", label: "Unit members" },
+  { value: "service_unit_leaders", label: "Service unit leaders" },
+  { value: "sub_unit_leaders", label: "Sub unit leaders" },
+  { value: "satellite_pastors", label: "Satellite pastors" },
+  { value: "state_branch_pastors", label: "State branch pastors" },
+];
+
+export function usesSendAllDestination(policy) {
+  if (!policy || policy.isServiceUnitLeader || policy.isSubUnitLeader || policy.membersOnly) return false;
+  return Boolean(policy.isCountryAdmin || policy.isStateBranchAudience || policy.isSatellitePastor);
+}
+
+export function sendAllAudienceOptionsForPolicy(policy) {
+  if (policy?.isSatellitePastor) {
+    return SEND_ALL_AUDIENCE_OPTIONS.filter((a) =>
+      ["members", "service_unit_leaders", "sub_unit_leaders"].includes(a.value),
+    );
+  }
+  if (policy?.isStateBranchAudience && !policy?.isCountryAdmin) {
+    return SEND_ALL_AUDIENCE_OPTIONS.filter((a) => a.value !== "state_branch_pastors");
+  }
+  if (policy?.isCountryAdmin && policy?.actingAsState) {
+    return SEND_ALL_AUDIENCE_OPTIONS.filter((a) => a.value !== "state_branch_pastors");
+  }
+  if (policy?.isCountryAdmin) {
+    return SEND_ALL_AUDIENCE_OPTIONS;
+  }
+  return SEND_ALL_AUDIENCE_OPTIONS;
+}
+
 /** Service Unit Leader — create announcement destination radios. */
 const DESTINATION_TABS_SERVICE_UNIT = [
   { id: "members", label: "Service Unit Members" },
@@ -357,6 +389,7 @@ export function getAnnouncementScopePolicy(admin, viewMode) {
     visibility,
     adminRoleOptions,
     defaultAdminRoles,
+    usesSendAll: false,
     scopeHint: buildScopeHint({
       isGlobal,
       isCountryAdmin,
@@ -369,7 +402,8 @@ export function getAnnouncementScopePolicy(admin, viewMode) {
       lockedSatellite,
     }),
   };
-  return { ...base, destinationLabels: getAnnouncementDestinationLabels(base) };
+  const withSendAll = { ...base, usesSendAll: usesSendAllDestination(base) };
+  return { ...withSendAll, destinationLabels: getAnnouncementDestinationLabels(withSendAll) };
 }
 
 function buildScopeHint(ctx) {

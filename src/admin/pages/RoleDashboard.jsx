@@ -133,7 +133,7 @@ function SatellitePastorDashboard({ setPage, admin }) {
                   Application Queue
                 </button>
                 <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("users")}>
-                  Users
+                  Members
                 </button>
                 <button type="button" className="sa-btn sa-btn-outline" onClick={() => setPage?.("announcements")}>
                   Announcements

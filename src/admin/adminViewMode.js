@@ -117,7 +117,6 @@ export const SERVICE_UNIT_LEADER_PAGES = [
   "overview",
   "queue",
   "users",
-  "announcements",
   "notifications",
   "activity",
   "profile",
@@ -127,7 +126,6 @@ export const SUB_UNIT_LEADER_PAGES = [
   "overview",
   "queue",
   "users",
-  "announcements",
   "notifications",
   "profile",
 ];

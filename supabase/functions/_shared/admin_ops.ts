@@ -1841,8 +1841,8 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
       : countryStateScope || actorRole === "state_super_admin"
         ? norm(body.role ?? target.role)
         : actorRole === "country_super_admin"
-          ? norm(body.role ?? target.role)
-          : (body.role ?? target.role);
+        ? norm(body.role ?? target.role)
+        : (body.role ?? target.role);
   if (countryStateScope) {
     assertStateManagedRole(nextRole);
   } else if (actorRole === "country_super_admin") {
@@ -1882,7 +1882,7 @@ async function handleUpdateAdmin(supabase: SupabaseClient, params: Record<string
       ? norm(admin.satellite_site)
       : actorRole === "state_super_admin" || countryStateScope
         ? (body.satellite_site !== undefined ? norm(body.satellite_site) : norm(target.satellite_site))
-        : (body.satellite_site !== undefined ? norm(body.satellite_site) : target.satellite_site),
+      : (body.satellite_site !== undefined ? norm(body.satellite_site) : target.satellite_site),
     is_active: body.is_active !== undefined ? Number(body.is_active) : target.is_active,
   };
   if (body.password) {
@@ -2104,11 +2104,11 @@ async function handleRequests(supabase: SupabaseClient, params: Record<string, u
     if (norm(params.scope_mode) === "state" && countryAdminActsAsStateAdmin(admin)) {
       q = q.eq("from_admin_id", admin.id);
     } else {
-      const { data: stateAdmins } = await supabase.from("admins").select("id")
-        .eq("branch_country", normUp(admin.branch_country))
-        .in("role", ["state_super_admin", "satellite_church_admin"]);
-      const ids = [Number(admin.id), ...(stateAdmins || []).map((a) => Number(a.id))];
-      q = q.in("from_admin_id", ids);
+    const { data: stateAdmins } = await supabase.from("admins").select("id")
+      .eq("branch_country", normUp(admin.branch_country))
+      .in("role", ["state_super_admin", "satellite_church_admin"]);
+    const ids = [Number(admin.id), ...(stateAdmins || []).map((a) => Number(a.id))];
+    q = q.in("from_admin_id", ids);
     }
   } else if (!["super_admin", "general_admin"].includes(role)) {
     q = q.eq("from_admin_id", admin.id);
@@ -2688,13 +2688,56 @@ async function handleAnnouncements(supabase: SupabaseClient, admin: AdminRow) {
 
 function parseAnnouncementDestination(body: Record<string, unknown>) {
   const destinationType = norm(body.destination_type) || "admins";
-  if (!["members", "leaders", "admins"].includes(destinationType)) {
+  if (!["members", "leaders", "admins", "send_all"].includes(destinationType)) {
     throw new Error("Invalid destination type.");
   }
   const cfg = (body.destination_config && typeof body.destination_config === "object")
     ? body.destination_config as Record<string, unknown>
     : {};
   return { destinationType, destinationConfig: cfg };
+}
+
+const SEND_ALL_AUDIENCE_KEYS = new Set([
+  "members",
+  "service_unit_leaders",
+  "sub_unit_leaders",
+  "satellite_pastors",
+  "state_branch_pastors",
+]);
+
+function allowedSendAllAudiencesForRole(role: string, scopeMode?: unknown): Set<string> {
+  const r = norm(role);
+  if (r === "satellite_church_admin") {
+    return new Set(["members", "service_unit_leaders", "sub_unit_leaders"]);
+  }
+  if (r === "state_super_admin") {
+    return new Set(["members", "service_unit_leaders", "sub_unit_leaders", "satellite_pastors"]);
+  }
+  if (r === "country_super_admin") {
+    if (norm(scopeMode) === "state") {
+      return new Set(["members", "service_unit_leaders", "sub_unit_leaders", "satellite_pastors"]);
+    }
+    return new Set(SEND_ALL_AUDIENCE_KEYS);
+  }
+  if (["super_admin", "general_admin", "data_entry_admin"].includes(r)) {
+    return new Set(SEND_ALL_AUDIENCE_KEYS);
+  }
+  return new Set();
+}
+
+function validateSendAllDestination(
+  admin: AdminRow,
+  cfg: Record<string, unknown>,
+  scopeMode?: unknown,
+): void {
+  const raw = Array.isArray((cfg as { audiences?: unknown }).audiences)
+    ? ((cfg as { audiences: unknown[] }).audiences).map((a) => norm(a)).filter(Boolean)
+    : [];
+  if (!raw.length) throw new Error("Select at least one audience under Send all.");
+  const allowed = allowedSendAllAudiencesForRole(norm(admin.role), scopeMode);
+  const filtered = raw.filter((a) => allowed.has(a));
+  if (!filtered.length) throw new Error("No valid audiences selected for your role.");
+  (cfg as { audiences: string[] }).audiences = filtered;
 }
 
 const ANNOUNCEMENT_ADMIN_ROLES_BY_SENDER: Record<string, string[]> = {
@@ -2864,6 +2907,16 @@ function announcementScopeFromPayload(
     return scope;
   }
 
+  if (destinationType === "send_all") {
+    const s = destinationConfig as Record<string, unknown>;
+    scope.branch_country = normUp(s.branch_country ?? body.branch_country);
+    scope.scope_branch_state = normUp(s.branch_state ?? "");
+    scope.scope_satellite_site = norm(s.satellite_site ?? "");
+    scope.scope_unit_id = s.service_unit_id ? Number(s.service_unit_id) : null;
+    scope.scope_sub_unit = norm(s.sub_unit ?? "");
+    return scope;
+  }
+
   return scope;
 }
 
@@ -2963,6 +3016,34 @@ async function fetchMemberEmailsForAnnouncementScope(
   return out;
 }
 
+function resolveSendAllAudienceAdminRecipients(
+  admins: Record<string, unknown>[],
+  audienceKey: string,
+  scope: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const key = norm(audienceKey);
+  if (key === "members") {
+    return admins.filter((a) => {
+      const role = norm(a.role);
+      if (!["service_unit_leader", "sub_unit_leader"].includes(role)) return false;
+      return adminMatchesAnnouncementScope(a, scope);
+    });
+  }
+  if (key === "service_unit_leaders") {
+    return admins.filter((a) => norm(a.role) === "service_unit_leader" && adminMatchesAnnouncementScope(a, scope));
+  }
+  if (key === "sub_unit_leaders") {
+    return admins.filter((a) => norm(a.role) === "sub_unit_leader" && adminMatchesAnnouncementScope(a, scope));
+  }
+  if (key === "satellite_pastors") {
+    return admins.filter((a) => norm(a.role) === "satellite_church_admin" && adminMatchesAnnouncementScope(a, scope));
+  }
+  if (key === "state_branch_pastors") {
+    return admins.filter((a) => norm(a.role) === "state_super_admin" && adminMatchesAnnouncementScope(a, scope));
+  }
+  return [];
+}
+
 async function deliverAnnouncement(
   supabase: SupabaseClient,
   announcement: Record<string, unknown>,
@@ -2993,12 +3074,12 @@ async function deliverAnnouncement(
 
   const { data: allAdmins } = await supabase.from("admins").select("*").eq("is_active", 1);
   const admins = (allAdmins || []) as Record<string, unknown>[];
-  const recipientAdmins = resolveAnnouncementAdminRecipients(admins, destType, cfg, scope);
   const seenAdminIds = new Set<number>();
+  const seenMemberEmails = new Set<string>();
 
-  for (const a of recipientAdmins) {
+  async function notifyAdminRecipient(a: Record<string, unknown>, sendEmailToAdmin = true) {
     const id = Number(a.id);
-    if (!Number.isFinite(id) || seenAdminIds.has(id)) continue;
+    if (!Number.isFinite(id) || seenAdminIds.has(id)) return;
     seenAdminIds.add(id);
 
     if (mediumPush) {
@@ -3013,7 +3094,7 @@ async function deliverAnnouncement(
         sender: announcementSender,
       });
     }
-    if (mediumEmail && destType !== "members") {
+    if (mediumEmail && sendEmailToAdmin) {
       const email = norm(a.email).toLowerCase();
       if (email) {
         const html = wrapEmailHtml({
@@ -3029,6 +3110,48 @@ async function deliverAnnouncement(
         });
       }
     }
+  }
+
+  if (destType === "send_all") {
+    const audiences = Array.isArray((cfg as { audiences?: unknown }).audiences)
+      ? ((cfg as { audiences: unknown[] }).audiences).map((a) => norm(a)).filter(Boolean)
+      : [];
+
+    for (const aud of audiences) {
+      if (aud === "members") {
+        const leaderAdmins = resolveSendAllAudienceAdminRecipients(admins, "members", scope);
+        for (const a of leaderAdmins) await notifyAdminRecipient(a, false);
+        if (mediumEmail) {
+          const members = await fetchMemberEmailsForAnnouncementScope(supabase, scope);
+          for (const m of members) {
+            if (!m.email || seenMemberEmails.has(m.email)) continue;
+            seenMemberEmails.add(m.email);
+            const greeting = m.name ? `Hello ${m.name},` : "Hello,";
+            const html = wrapEmailHtml({
+              title,
+              previewText: preview || title,
+              bodyHtml: `<p>${greeting}</p>${bodyInner}`,
+            });
+            await sendEmail({
+              to: m.email,
+              subject: formatOrgSubject(title, "announcement"),
+              html,
+              tags: ["announcement"],
+            });
+          }
+        }
+        continue;
+      }
+      const recips = resolveSendAllAudienceAdminRecipients(admins, aud, scope);
+      for (const a of recips) await notifyAdminRecipient(a);
+    }
+    return;
+  }
+
+  const recipientAdmins = resolveAnnouncementAdminRecipients(admins, destType, cfg, scope);
+
+  for (const a of recipientAdmins) {
+    await notifyAdminRecipient(a, destType !== "members");
   }
 
   if (destType === "members" && mediumEmail) {
@@ -3095,13 +3218,23 @@ async function handleCreateAnnouncement(supabase: SupabaseClient, params: Record
 
   const action = norm(body.workflow_action) || "send";
   const { destinationType, destinationConfig } = parseAnnouncementDestination(body);
-  if (norm(admin.role) === "sub_unit_leader" && destinationType !== "members") {
+  const senderRole = norm(admin.role);
+  if (["service_unit_leader", "sub_unit_leader"].includes(senderRole)) {
+    throw new Error("Your role cannot create announcements.");
+  }
+  if (destinationType === "send_all") {
+    if (!["country_super_admin", "state_super_admin", "satellite_church_admin", "super_admin", "general_admin"].includes(senderRole)) {
+      throw new Error("Send all announcements are not available for your role.");
+    }
+    validateSendAllDestination(admin, destinationConfig, params.scope_mode);
+  }
+  if (senderRole === "sub_unit_leader" && destinationType !== "members") {
     throw new Error("Sub-unit leaders may only send announcements to their unit members.");
   }
-  if (norm(admin.role) === "service_unit_leader" && !["members", "leaders"].includes(destinationType)) {
+  if (senderRole === "service_unit_leader" && !["members", "leaders"].includes(destinationType)) {
     throw new Error("Service unit leaders may only send announcements to service unit members or sub-unit leaders.");
   }
-  if (norm(admin.role) === "satellite_church_admin" && !["members", "leaders"].includes(destinationType)) {
+  if (senderRole === "satellite_church_admin" && !["members", "leaders", "send_all"].includes(destinationType)) {
     throw new Error(
       "Satellite Pastor Admins may only send announcements to service unit members or service unit heads.",
     );

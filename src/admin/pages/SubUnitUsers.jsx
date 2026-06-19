@@ -18,7 +18,7 @@ export function SubUnitUsers({ units }) {
     <>
       <header className="sa-users-page-head">
         <div className="sa-users-page-head-top">
-          <h1 className="sa-admins-title">Users</h1>
+          <h1 className="sa-admins-title">Members</h1>
         </div>
         <UsersPageMeta
           items={[

@@ -12,6 +12,8 @@ import { RegistrationDetails, fmtDate, fullName } from "./Queue.jsx";
 import { ApplicationStatusBadge } from "../components/ApplicationStatusBadge.jsx";
 import {
   applyQueueStatusTab,
+  queueActionVisible,
+  queueStatusOptionsForTab,
   queueStatusTabLabel,
   queueStatusTabsForRole,
 } from "../queueStatusTabs.js";
@@ -140,6 +142,38 @@ export function BranchOversight({ units }) {
       toast(e.message, "error");
     }
   }
+
+  async function quickStatus(id, status, row) {
+    if (status === "accepted") {
+      if (row?.status === "in_progress") {
+        setAcceptVerifyModal(row);
+        return;
+      }
+      toast("Move the application to In Progress before accepting.", "error");
+      return;
+    }
+    await saveRowStatus(id, status, "", row?.status);
+  }
+
+  function oversightActionDisabled(row, target) {
+    if (row.status === "archived") return true;
+    if (statusTab === "accepted" && row.status === "accepted") {
+      return !["in_progress", "rejected"].includes(target);
+    }
+    if (statusTab === "inprogress" && row.status === "in_progress") {
+      return !["accepted", "rejected"].includes(target);
+    }
+    if (target === "accepted") return row.status !== "in_progress";
+    if (target === "in_progress") return row.status !== "new";
+    if (target === "rejected") return row.status === "rejected";
+    return false;
+  }
+
+  const statusModalOptions = useMemo(() => {
+    if (!statusModal) return STATUSES;
+    const current = statusModal.originalStatus || statusModal.status;
+    return queueStatusOptionsForTab(current, statusTab, STATUSES);
+  }, [statusModal, statusTab]);
 
   if (!admin) return null;
 
@@ -409,7 +443,40 @@ export function BranchOversight({ units }) {
                           <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
                             {expanded === r.id ? "▲ Hide" : "▼ Details"}
                           </button>
-                          {canAction && (
+                          {canAction && (statusTab === "accepted" || statusTab === "inprogress" || statusTab === "new") ? (
+                            <>
+                              {queueActionVisible(statusTab, "accepted") ? (
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-primary sa-btn-sm"
+                                  disabled={oversightActionDisabled(r, "accepted")}
+                                  onClick={() => quickStatus(r.id, "accepted", r)}
+                                >
+                                  Accept
+                                </button>
+                              ) : null}
+                              {queueActionVisible(statusTab, "in_progress") ? (
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-outline sa-btn-sm"
+                                  disabled={oversightActionDisabled(r, "in_progress")}
+                                  onClick={() => quickStatus(r.id, "in_progress", r)}
+                                >
+                                  In progress
+                                </button>
+                              ) : null}
+                              {queueActionVisible(statusTab, "rejected") ? (
+                                <button
+                                  type="button"
+                                  className="sa-btn sa-btn-danger sa-btn-sm"
+                                  disabled={oversightActionDisabled(r, "rejected")}
+                                  onClick={() => quickStatus(r.id, "rejected", r)}
+                                >
+                                  Reject
+                                </button>
+                              ) : null}
+                            </>
+                          ) : canAction ? (
                             <button
                               type="button"
                               className="sa-btn sa-btn-outline sa-btn-sm"
@@ -424,7 +491,7 @@ export function BranchOversight({ units }) {
                             >
                               Update status
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -489,7 +556,7 @@ export function BranchOversight({ units }) {
                 value={statusModal.status}
                 onChange={(e) => setStatusModal((m) => ({ ...m, status: e.target.value }))}
               >
-                {STATUSES.map((s) => (
+                {statusModalOptions.map((s) => (
                   <option key={s} value={s}>
                     {s === "in_progress" ? "In review" : s.replace("_", " ")}
                   </option>
