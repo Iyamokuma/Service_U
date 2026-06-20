@@ -1316,6 +1316,7 @@ function AdminModal({
   );
   const [form, setForm] = useState(() => emptyForm());
   const [churches, setChurches] = useState([]);
+  const [churchesLoading, setChurchesLoading] = useState(false);
   const [catalog, setCatalog] = useState(null);
 
   const useCatalogGeo = isGlobalAdmin && canEditBranchCatalog(me?.role);
@@ -1323,12 +1324,15 @@ function AdminModal({
   useEffect(() => {
     if (!open) {
       setChurches([]);
+      setChurchesLoading(false);
       setCatalog(null);
       return;
     }
+    setChurchesLoading(true);
     fetchAdminChurchesCatalog()
       .then(setChurches)
-      .catch(() => setChurches([]));
+      .catch(() => setChurches([]))
+      .finally(() => setChurchesLoading(false));
     if (useCatalogGeo) {
       api
         .catalogList()
@@ -1480,6 +1484,7 @@ function AdminModal({
     !isEdit &&
     ((form.role === "country_super_admin" && countryOptions.length === 0) ||
       (showChurchPicker &&
+        !churchesLoading &&
         branchChurchOpts.length > 0 &&
         !String(form.satellite_site || "").trim()));
 
@@ -1692,6 +1697,7 @@ function AdminModal({
               (form.role === "country_super_admin" || form.role === "state_super_admin") &&
               steppedStateOptions.length === 0
             }
+            churchesLoading={churchesLoading}
           />
         </AdminScopePanel>
       )}

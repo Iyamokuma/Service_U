@@ -62,6 +62,7 @@ export function AdminReassignModal({
 }) {
   const [form, setForm] = useState(null);
   const [churches, setChurches] = useState([]);
+  const [churchesLoading, setChurchesLoading] = useState(false);
   const [catalog, setCatalog] = useState(null);
   const useCatalogGeo = isGlobalAdmin;
 
@@ -73,10 +74,15 @@ export function AdminReassignModal({
   useEffect(() => {
     if (!open) {
       setChurches([]);
+      setChurchesLoading(false);
       setCatalog(null);
       return;
     }
-    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    setChurchesLoading(true);
+    fetchAdminChurchesCatalog()
+      .then(setChurches)
+      .catch(() => setChurches([]))
+      .finally(() => setChurchesLoading(false));
     if (useCatalogGeo) {
       api.catalogList().then(setCatalog).catch(() => setCatalog(null));
     }
@@ -280,6 +286,7 @@ export function AdminReassignModal({
             branchChurchOpts={branchChurchOpts}
             showChurchPicker={showChurchPicker}
             steppedStateOptions={steppedStateOptions}
+            churchesLoading={churchesLoading}
           />
         </AdminScopePanel>
       ) : null}

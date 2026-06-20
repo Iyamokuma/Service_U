@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { SearchableSelect } from "./SearchableSelect.jsx";
 import {
   ROLES_WITH_SATELLITE,
@@ -29,6 +30,7 @@ export function AdminLocationScopeFields({
   showCountryVacantHint = false,
   showStateVacantHint = false,
   showSteppedStateVacantHint = false,
+  churchesLoading = false,
 }) {
   const role = form?.role || "";
   const countryList =
@@ -38,6 +40,11 @@ export function AdminLocationScopeFields({
       ? stateOptions
       : allStateOptions;
 
+  const countrySelectOptions = useMemo(
+    () => (countryList || []).map((c) => ({ value: c.code, label: c.name })),
+    [countryList],
+  );
+
   function pickCountry(branch_country) {
     setForm((f) => {
       let next = { ...f, branch_country, branch_state: "", satellite_site: "" };
@@ -46,6 +53,18 @@ export function AdminLocationScopeFields({
     });
   }
 
+  const countryDisabled = disableCountry || (role === "country_super_admin" && isEdit);
+
+  const churchHint = (() => {
+    if (churchesLoading && form.branch_country) {
+      return "Loading churches from the directory…";
+    }
+    if (branchChurchOpts.length === 0) {
+      return "No churches listed for this country yet. Add branches via Data Entry or approve a location request first.";
+    }
+    return branchChurchHint;
+  })();
+
   return (
     <>
       <div className={showBranchChurchStepFlow ? "sa-field" : "sa-form-row"}>
@@ -53,19 +72,16 @@ export function AdminLocationScopeFields({
           <label className="sa-label">
             Country <span className="sa-required">*</span>
           </label>
-          <select
-            className="sa-field-select"
+          <SearchableSelect
             value={form.branch_country}
             onChange={(e) => pickCountry(e.target.value)}
-            disabled={disableCountry || (role === "country_super_admin" && isEdit)}
-          >
-            <option value="">Select country</option>
-            {(countryList || []).map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            options={countrySelectOptions}
+            disabled={countryDisabled}
+            placeholder="Select country"
+            searchPlaceholder="Search countries…"
+            emptyMessage="No countries match"
+            searchAriaLabel="Filter countries"
+          />
           {showCountryVacantHint ? (
             <div className="sa-field-hint">
               Every country already has a Country Admin (or one pending approval).
@@ -147,7 +163,7 @@ export function AdminLocationScopeFields({
       ) : null}
 
       {showChurchPicker ? (
-        <div className="sa-field">
+        <div className="sa-field" style={{ marginTop: showBranchChurchStepFlow ? 4 : 0 }}>
           <label className="sa-label">
             {role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
             <span className="sa-required">*</span>
@@ -159,18 +175,21 @@ export function AdminLocationScopeFields({
               setForm((f) => ({ ...f, branch_state, satellite_site }));
             }}
             options={branchChurchOpts}
+            disabled={!form.branch_country || churchesLoading}
             placeholder={
-              branchChurchOpts.length ? "Select church branch" : "No churches in this country yet"
+              !form.branch_country
+                ? "Select country first"
+                : churchesLoading
+                  ? "Loading churches…"
+                  : branchChurchOpts.length
+                    ? "Select church branch"
+                    : "No churches in this country yet"
             }
             searchPlaceholder="Search church branches…"
             emptyMessage="No churches match your search"
-            ariaLabel="Church branch"
+            searchAriaLabel="Filter church branches"
           />
-          <div className="sa-field-hint">
-            {branchChurchOpts.length === 0
-              ? "No churches listed for this country yet. Add branches via Data Entry or approve a location request first."
-              : branchChurchHint}
-          </div>
+          <div className="sa-field-hint">{churchHint}</div>
         </div>
       ) : null}
     </>
