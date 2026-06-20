@@ -1,4 +1,4 @@
-/** Directory + church-aware state validation (extends static branch_regions). */
+/** Directory + church-aware state validation. */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isStateValidForCountry } from "./branch_regions.ts";
@@ -41,6 +41,29 @@ export async function isStateValidForCountryCatalog(
     .limit(1)
     .maybeSingle();
   return !!church;
+}
+
+/** State codes from directory_states for a country (data-entry catalog). */
+export async function directoryStateCodesForCountry(
+  supabase: SupabaseClient,
+  countryCode: unknown,
+): Promise<string[]> {
+  const cc = normUp(countryCode);
+  if (!cc) return [];
+  const { data: country } = await supabase
+    .from("directory_countries")
+    .select("id")
+    .eq("branch_country_code", cc)
+    .maybeSingle();
+  if (!country?.id) return [];
+  const { data: states } = await supabase
+    .from("directory_states")
+    .select("branch_state_code")
+    .eq("country_id", country.id)
+    .order("name");
+  return (states || [])
+    .map((s) => normUp(s.branch_state_code))
+    .filter(Boolean);
 }
 
 export async function assertStateBelongsToCountryCatalog(

@@ -5,8 +5,9 @@ import { useAdminAuth } from "../AdminContext.jsx";
 import { isCountrySuperAdmin, isStateSuperAdmin, isGlobalAdminRole } from "../roles.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
-import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
+import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
@@ -48,6 +49,7 @@ export function UnitMembers({
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [churches, setChurches] = useState([]);
+  const [catalog, setCatalog] = useState(null);
   const [filters, setFilters] = useState({
     search: "",
     unit_id: "",
@@ -56,7 +58,10 @@ export function UnitMembers({
     filter_satellite: "",
   });
 
-  const stateOptions = useMemo(() => branchStatesForCountry(countryCode), [countryCode]);
+  const stateOptions = useMemo(
+    () => statesFromCatalogAndChurches(catalog, countryCode, churches),
+    [catalog, countryCode, churches],
+  );
 
   const satelliteOptions = useMemo(
     () => satelliteSitesForCountry(churches, countryCode, filters.filter_branch_state),
@@ -64,9 +69,10 @@ export function UnitMembers({
   );
 
   useEffect(() => {
-    if (!isCountryGeo) return;
+    if (!isCountryAdmin && !isCountryGeo) return;
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-  }, [isCountryGeo]);
+    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
+  }, [isCountryAdmin, isCountryGeo]);
 
   useEffect(() => {
     if (!isCountryGeo || !filters.filter_satellite) return;
@@ -330,7 +336,7 @@ export function UnitMembers({
           onChange={(e) => setFilters((f) => ({ ...f, filter_branch_state: e.target.value }))}
         >
           <option value="">All states / regions</option>
-          {branchStatesForCountry(admin?.branch_country).map((s) => (
+          {stateOptions.map((s) => (
             <option key={s.code} value={s.code}>
               {s.name}
             </option>

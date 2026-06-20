@@ -6,7 +6,7 @@ import { useToast } from "../components/Toast.jsx";
 import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
 import { AddSatellitesModal } from "../components/AddSatellitesModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
-import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
+import { countriesFromCatalog, statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 import {
   buildAllRows,
@@ -152,26 +152,15 @@ export function BranchCatalog({ variant = "catalog" }) {
     [catalog],
   );
 
-  const countryOptions = useMemo(() => {
-    const fromDir = (catalog?.countries || []).map((c) => ({
-      code: String(c.branch_country_code || "").toUpperCase(),
-      name: c.name,
-    }));
-    if (fromDir.length) return fromDir.sort((a, b) => a.name.localeCompare(b.name));
-    return BRANCH_COUNTRIES.map((c) => ({ code: c.code, name: c.name }));
-  }, [catalog]);
+  const countryOptions = useMemo(
+    () => countriesFromCatalog(catalog || { countries: [] }),
+    [catalog],
+  );
 
   const branchOptions = useMemo(() => {
     const cc = filters.country;
     if (!cc) return [];
-    const fromDir = (catalog?.states || [])
-      .filter((s) => {
-        const country = catalog?.countries?.find((c) => Number(c.id) === Number(s.country_id));
-        return String(country?.branch_country_code || "").toUpperCase() === String(cc).toUpperCase();
-      })
-      .map((s) => ({ code: s.branch_state_code, name: s.name }));
-    if (fromDir.length) return fromDir;
-    return branchStatesForCountry(cc);
+    return statesFromCatalogAndChurches(catalog, cc, catalog?.churches || []);
   }, [catalog, filters.country]);
 
   const filterSearch = String(filters?.search ?? "");

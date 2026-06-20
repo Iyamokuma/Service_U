@@ -1,4 +1,4 @@
-import { BRANCH_COUNTRIES, branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 
 /**
@@ -18,6 +18,7 @@ export function GlobalAdminGeoFilterBar({ className = "" }) {
     setSatellite,
     clear,
     hasFilters,
+    countryOptions,
     stateOptions,
     satelliteOptions,
   } = geo;
@@ -38,7 +39,7 @@ export function GlobalAdminGeoFilterBar({ className = "" }) {
           onChange={(e) => setCountry(e.target.value)}
         >
           <option value="">Country</option>
-          {BRANCH_COUNTRIES.map((c) => (
+          {countryOptions.map((c) => (
             <option key={c.code} value={c.code}>
               {c.name}
             </option>

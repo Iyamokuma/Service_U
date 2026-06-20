@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
-import { BRANCH_COUNTRIES, branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
+import { api } from "../api.js";
+import { countriesFromCatalog } from "../catalogGeoOptions.js";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import {
   announcementCountryOptions,
@@ -152,6 +154,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   const policy = useMemo(() => getAnnouncementScopePolicy(admin, viewMode), [admin, viewMode]);
   const [form, setForm] = useState(emptyForm);
   const [churches, setChurches] = useState([]);
+  const [catalog, setCatalog] = useState(null);
   const [scheduleLater, setScheduleLater] = useState(false);
 
   useEffect(() => {
@@ -183,11 +186,12 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     }
     setForm(base);
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
   }, [open, admin, policy]);
 
   const countryOptions = useMemo(
-    () => announcementCountryOptions(policy.lockedCountry, BRANCH_COUNTRIES),
-    [policy.lockedCountry],
+    () => announcementCountryOptions(policy.lockedCountry, countriesFromCatalog(catalog || { countries: [] })),
+    [policy.lockedCountry, catalog],
   );
 
   const scopedUnitList = useMemo(() => {

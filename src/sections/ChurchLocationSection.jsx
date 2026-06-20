@@ -2,14 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { Field } from "../components/Field.jsx";
 import { SearchableDropdown } from "../components/SearchableDropdown.jsx";
 import { SectionHead } from "./SectionHead.jsx";
-import {
-  BRANCH_COUNTRIES,
-  branchCountryLabel,
-  branchStatesForCountry,
-  branchStateLabel,
-  isStateValidForCountry,
-  mergeStateOptions,
-} from "../admin/branchRegions.js";
+import { branchCountryLabel, mergeStateOptions } from "../admin/branchRegions.js";
 import { fetchChurchesCatalog } from "../lib/churchesCatalog.js";
 import { fetchDirectoryCountries, fetchDirectoryStates } from "../lib/directoryCatalog.js";
 
@@ -17,20 +10,15 @@ function norm(s) {
   return String(s ?? "").trim().toUpperCase();
 }
 
-/** Effective branch_state code for payloads (single-state countries, directory vs legacy). */
+/** Effective branch_state code for payloads (single-state countries). */
 export function effectiveBranchStateForPayload(form) {
   const cc = norm(form.branchCountry);
   if (!cc) return "";
   const ctx = form.churchLocationCtx;
-  if (ctx?.source === "directory") {
-    if (ctx.pending) return "";
-    const codes = (ctx.stateCodes || []).map((c) => norm(c)).filter(Boolean);
-    if (codes.length <= 1) return codes[0] || "";
-    return norm(form.branchState);
-  }
-  const states = branchStatesForCountry(form.branchCountry);
-  const single = states.length <= 1;
-  return single ? norm(states[0]?.code || "") : norm(form.branchState);
+  if (ctx?.pending) return "";
+  const codes = (ctx?.stateCodes || []).map((c) => norm(c)).filter(Boolean);
+  if (codes.length <= 1) return codes[0] || "";
+  return norm(form.branchState);
 }
 
 export function ChurchLocationSection({ form, set, setSilent, errors }) {
@@ -46,7 +34,7 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     fetchChurchesCatalog()
       .then((rows) => {
         setCatalog(rows);
-        setLoadErr(rows.length ? "" : "");
+        setLoadErr("");
       })
       .catch(() => {
         setCatalog([]);
@@ -88,15 +76,13 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     };
   }, [loadChurches, reloadDirectoryCountries]);
 
-  const useDirectory = dirCountries.length > 0;
-
   const selectedDirCountry = useMemo(
     () => dirCountries.find((c) => norm(c.branch_country_code) === norm(form.branchCountry)),
     [dirCountries, form.branchCountry],
   );
 
   useEffect(() => {
-    if (!useDirectory || !selectedDirCountry?.id) {
+    if (!selectedDirCountry?.id) {
       setDirStates([]);
       setDirStatesLoading(false);
       return;
@@ -119,32 +105,26 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     return () => {
       cancelled = true;
     };
-  }, [useDirectory, selectedDirCountry?.id]);
+  }, [selectedDirCountry?.id]);
 
-  const countriesInCatalog = useMemo(() => {
-    if (useDirectory) {
-      return [...dirCountries]
+  const countriesInCatalog = useMemo(
+    () =>
+      [...dirCountries]
         .filter((c) => norm(c.branch_country_code))
         .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-        .map((c) => ({ code: norm(c.branch_country_code), name: c.name }));
-    }
-    const codes = new Set(catalog.map((c) => norm(c.branch_country)));
-    return [...BRANCH_COUNTRIES]
-      .filter((c) => codes.has(norm(c.code)))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [catalog, dirCountries, useDirectory]);
+        .map((c) => ({ code: norm(c.branch_country_code), name: c.name })),
+    [dirCountries],
+  );
 
   const stateList = useMemo(() => {
     const cc = norm(form.branchCountry);
     if (!cc) return [];
-    const fromDir = useDirectory
-      ? dirStates.map((s) => ({ code: s.branch_state_code, name: s.name }))
-      : [];
+    const fromDir = dirStates.map((s) => ({ code: s.branch_state_code, name: s.name }));
     const fromChurches = catalog
       .filter((ch) => norm(ch.branch_country) === cc)
-      .map((ch) => ({ code: ch.branch_state, name: branchStateLabel(cc, ch.branch_state) }));
+      .map((ch) => ({ code: ch.branch_state, name: ch.branch_state }));
     return mergeStateOptions(cc, fromDir, fromChurches);
-  }, [useDirectory, dirStates, form.branchCountry, catalog]);
+  }, [dirStates, form.branchCountry, catalog]);
 
   const singleStateMode = stateList.length <= 1;
 
@@ -160,9 +140,9 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   useEffect(() => {
     const cc = norm(form.branchCountry);
     const st = norm(effectiveState);
-    if (!cc || !st || (useDirectory && dirStatesLoading)) return;
+    if (!cc || !st || dirStatesLoading) return;
     loadChurches();
-  }, [form.branchCountry, effectiveState, useDirectory, dirStatesLoading, loadChurches]);
+  }, [form.branchCountry, effectiveState, dirStatesLoading, loadChurches]);
 
   useEffect(() => {
     if (!norm(form.branchCountry)) return;
@@ -170,10 +150,6 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   }, [form.branchCountry, reloadDirectoryCountries]);
 
   useEffect(() => {
-    if (!useDirectory) {
-      silent("churchLocationCtx", form.branchCountry ? { source: "legacy" } : null);
-      return;
-    }
     if (!form.branchCountry) {
       silent("churchLocationCtx", null);
       return;
@@ -184,7 +160,7 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
       stateCodes: codes,
       pending: dirStatesLoading,
     });
-  }, [form.branchCountry, stateList, useDirectory, silent, dirStatesLoading]);
+  }, [form.branchCountry, stateList, silent, dirStatesLoading]);
 
   const churchesForPick = useMemo(() => {
     const cc = norm(form.branchCountry);
@@ -240,9 +216,10 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
 
   const stateLineLabel = useMemo(() => {
     const row = stateList.find((s) => norm(s.code) === norm(effectiveState));
-    if (row?.name) return row.name;
-    return branchStateLabel(form.branchCountry, effectiveState);
-  }, [stateList, form.branchCountry, effectiveState]);
+    return row?.name || effectiveState;
+  }, [stateList, effectiveState]);
+
+  const noCountriesYet = !dirErr && dirCountries.length === 0;
 
   return (
     <section className="section">
@@ -259,8 +236,11 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
             onChange={onCountryChange}
             aria-invalid={!!errors.churchCountry}
             data-state={errors.churchCountry ? "error" : undefined}
+            disabled={noCountriesYet}
           >
-            <option value="">Select country</option>
+            <option value="">
+              {noCountriesYet ? "No countries listed yet — check back soon" : "Select country"}
+            </option>
             {countriesInCatalog.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.name}
@@ -275,8 +255,16 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
               value={form.branchState}
               onChange={onStateChange}
               options={stateOptions}
-              disabled={!form.branchCountry}
-              placeholder={form.branchCountry ? "Select" : "Select country first"}
+              disabled={!form.branchCountry || dirStatesLoading}
+              placeholder={
+                !form.branchCountry
+                  ? "Select country first"
+                  : dirStatesLoading
+                    ? "Loading regions…"
+                    : stateOptions.length
+                      ? "Select"
+                      : "No states listed for this country yet"
+              }
               searchPlaceholder="Search state"
               emptyMessage="No states match your search"
               invalid={!!errors.churchState}
@@ -304,18 +292,18 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
             disabled={
               !form.branchCountry ||
               (!singleStateMode && !form.branchState) ||
-              (useDirectory && dirStatesLoading)
+              dirStatesLoading
             }
             placeholder={
               !form.branchCountry
                 ? "Select country first"
                 : !singleStateMode && !form.branchState
                   ? "Select state first"
-                  : useDirectory && dirStatesLoading
+                  : dirStatesLoading
                     ? "Loading regions…"
                     : churchOptions.length
                       ? "Select"
-                      : "No branches found for this area"
+                      : "No branches listed for this area yet"
             }
             searchPlaceholder="Search by name or address"
             emptyMessage="No branches match your search"
@@ -349,6 +337,11 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
             {dirErr}
           </div>
         ) : null}
+        {noCountriesYet ? (
+          <div className="field col-span-2 field-hint" role="status">
+            Church locations are being set up. Please try again later or contact the office.
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -361,33 +354,21 @@ export function validateChurchLocation(form) {
   const ctx = form.churchLocationCtx;
   const cc = norm(form.branchCountry);
 
-  if (ctx?.source === "directory") {
-    if (ctx.pending) {
-      e.churchState = "Loading regions for this country…";
-      return e;
-    }
-    const codes = (ctx.stateCodes || []).map((c) => norm(c)).filter(Boolean);
-    if (cc && codes.length === 0) {
-      e.churchState = "No states or regions are listed for this country yet. Please contact the office.";
-    }
-    const single = codes.length <= 1;
-    const st = single ? codes[0] || "" : norm(form.branchState);
-    if (cc && !single && !norm(form.branchState)) {
-      e.churchState = "Select the state / region for your branch.";
-    }
-    if (cc && st && codes.length > 0 && !codes.includes(norm(st))) {
-      e.churchState = "State does not match the selected country.";
-    }
-  } else {
-    const states = branchStatesForCountry(form.branchCountry);
-    const single = states.length <= 1;
-    const st = single ? states[0]?.code || "" : norm(form.branchState);
-    if (cc && !single && !norm(form.branchState)) {
-      e.churchState = "Select the state / region for your branch.";
-    }
-    if (cc && st && !isStateValidForCountry(form.branchCountry, st)) {
-      e.churchState = "State does not match the selected country.";
-    }
+  if (ctx?.pending) {
+    e.churchState = "Loading regions for this country…";
+    return e;
+  }
+  const codes = (ctx?.stateCodes || []).map((c) => norm(c)).filter(Boolean);
+  if (cc && codes.length === 0) {
+    e.churchState = "No states or regions are listed for this country yet. Please contact the office.";
+  }
+  const single = codes.length <= 1;
+  const st = single ? codes[0] || "" : norm(form.branchState);
+  if (cc && !single && !norm(form.branchState)) {
+    e.churchState = "Select the state / region for your branch.";
+  }
+  if (cc && st && codes.length > 0 && !codes.includes(norm(st))) {
+    e.churchState = "State does not match the selected country.";
   }
 
   if (!String(form.churchId || "").trim()) e.churchSelect = "Select your church / branch from the list.";

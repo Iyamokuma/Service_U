@@ -1,6 +1,6 @@
 /** Shared helpers for Country Admin → State Branch Admin accounts. */
 
-import { branchStatesForCountry, branchStateLabel } from "./branchRegions.js";
+import { branchStateLabel } from "./branchRegions.js";
 import { statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
 
 const PENDING = new Set(["open", "in_review"]);
@@ -65,10 +65,7 @@ export function availableStatesForCountryAdmin(
 ) {
   const cc = String(countryCode || "").toUpperCase();
   const taken = occupiedStateCodes(admins, pendingRequests, countryCode, excludeAdminId);
-  const stateRows =
-    catalog || (churches && churches.length)
-      ? statesFromCatalogAndChurches(catalog, cc, churches || [])
-      : branchStatesForCountry(cc);
+  const stateRows = statesFromCatalogAndChurches(catalog, cc, churches || []);
   return stateRows.filter((s) => !taken.has(String(s.code).toUpperCase()));
 }
 
@@ -83,9 +80,7 @@ export function availableHomeStatesForCountryAdmin(
   const cc = String(countryCode || "").toUpperCase();
   const taken = occupiedStateCodes(admins, pendingRequests, countryCode, countryAdminId);
   const me = (admins || []).find((a) => Number(a.id) === Number(countryAdminId));
-  const stateRows = catalog || (churches && churches.length)
-    ? statesFromCatalogAndChurches(catalog, cc, churches || [])
-    : branchStatesForCountry(cc);
+  const stateRows = statesFromCatalogAndChurches(catalog, cc, churches || []);
   return stateRows.filter((s) => {
     const code = String(s.code).toUpperCase();
     if (!taken.has(code)) return true;

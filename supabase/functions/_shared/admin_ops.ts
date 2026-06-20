@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { branchStatesForCountry, defaultHeadquartersStateForCountry } from "./branch_regions.ts";
-import { assertStateBelongsToCountryCatalog } from "./catalog_geo.ts";
+import { assertStateBelongsToCountryCatalog, directoryStateCodesForCountry } from "./catalog_geo.ts";
 import {
   ensureDirectoryCountry,
   ensureDirectoryState,
@@ -548,7 +547,8 @@ async function insertAdminFromBody(
     throw new Error("Country is required for Country Admin accounts.");
   }
   if (row.role === "country_super_admin" && !row.branch_state) {
-    row.branch_state = normUp(defaultHeadquartersStateForCountry(row.branch_country));
+    const directoryStates = await directoryStateCodesForCountry(supabase, row.branch_country);
+    row.branch_state = directoryStates[0] || "";
   }
   if (row.role === "country_super_admin" && !row.branch_state) {
     throw new Error("Headquarters state is required for Country Admin accounts.");
@@ -736,22 +736,34 @@ export async function ensureCountryAdminHeadquarters(
 
   if (normUp(admin.branch_state)) return admin;
 
-  const states = branchStatesForCountry(cc);
-  for (const s of states) {
+  const directoryStates = await directoryStateCodesForCountry(supabase, cc);
+  for (const code of directoryStates) {
     try {
-      return await persistCountryAdminHomeState(supabase, admin, s.code);
+      return await persistCountryAdminHomeState(supabase, admin, code);
     } catch {
       /* try next state */
     }
   }
 
-  const fallback = normUp(defaultHeadquartersStateForCountry(cc));
-  if (!fallback) return admin;
-  try {
-    return await persistCountryAdminHomeState(supabase, admin, fallback);
-  } catch {
-    return admin;
+  const { data: churchStates } = await supabase
+    .from("churches")
+    .select("branch_state")
+    .eq("branch_country", cc)
+    .eq("is_active", 1)
+    .order("branch_state");
+  const seenChurchStates = new Set<string>();
+  for (const row of churchStates || []) {
+    const code = normUp(row.branch_state);
+    if (!code || seenChurchStates.has(code)) continue;
+    seenChurchStates.add(code);
+    try {
+      return await persistCountryAdminHomeState(supabase, admin, code);
+    } catch {
+      /* try next state */
+    }
   }
+
+  return admin;
 }
 
 const COUNTRY_MANAGED_ADMIN_ROLES = [

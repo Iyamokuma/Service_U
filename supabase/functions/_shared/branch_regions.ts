@@ -1,90 +1,25 @@
-/** Mirrors src/admin/branchRegions.js for server-side validation. */
+/** Mirrors src/admin/branchRegions.js — directory is the source of truth for locations. */
 
-const NIGERIA_STATES = [
-  { code: "ABI", name: "Abia" },
-  { code: "ADM", name: "Adamawa" },
-  { code: "AKB", name: "Akwa Ibom" },
-  { code: "ANA", name: "Anambra" },
-  { code: "BAU", name: "Bauchi" },
-  { code: "BAY", name: "Bayelsa" },
-  { code: "BEN", name: "Benue" },
-  { code: "BOR", name: "Borno" },
-  { code: "CRV", name: "Cross River" },
-  { code: "DE", name: "Delta" },
-  { code: "EBY", name: "Ebonyi" },
-  { code: "EDO", name: "Edo" },
-  { code: "EKI", name: "Ekiti" },
-  { code: "ENU", name: "Enugu" },
-  { code: "FCT", name: "Federal Capital Territory" },
-  { code: "GOM", name: "Gombe" },
-  { code: "IMO", name: "Imo" },
-  { code: "JIG", name: "Jigawa" },
-  { code: "KAD", name: "Kaduna" },
-  { code: "KAN", name: "Kano" },
-  { code: "KAT", name: "Katsina" },
-  { code: "KEB", name: "Kebbi" },
-  { code: "KOG", name: "Kogi" },
-  { code: "KWA", name: "Kwara" },
-  { code: "LA", name: "Lagos" },
-  { code: "NAS", name: "Nasarawa" },
-  { code: "NIE", name: "Niger" },
-  { code: "OGU", name: "Ogun" },
-  { code: "OND", name: "Ondo" },
-  { code: "OSU", name: "Osun" },
-  { code: "OYO", name: "Oyo" },
-  { code: "PLA", name: "Plateau" },
-  { code: "RI", name: "Rivers" },
-  { code: "SOK", name: "Sokoto" },
-  { code: "TAR", name: "Taraba" },
-  { code: "YOB", name: "Yobe" },
-  { code: "ZAM", name: "Zamfara" },
-];
-
-const BRANCH_COUNTRIES = [
-  { code: "NG", name: "Nigeria", states: NIGERIA_STATES },
-  {
-    code: "GH",
-    name: "Ghana",
-    states: [
-      { code: "GA", name: "Greater Accra" },
-      { code: "AS", name: "Ashanti" },
-    ],
-  },
-  {
-    code: "US",
-    name: "United States",
-    states: [{ code: "US", name: "North America" }],
-  },
-  { code: "ASIA", name: "Asia Region", states: [{ code: "ASIA", name: "Asia Region" }] },
-  { code: "BJ", name: "Benin Republic", states: [{ code: "BJ", name: "National" }] },
-  { code: "CM", name: "Cameroon", states: [{ code: "CM", name: "National" }] },
-  { code: "GM", name: "Gambia", states: [{ code: "GM", name: "National" }] },
-  { code: "CH", name: "Switzerland", states: [{ code: "CH", name: "National" }] },
-  { code: "AE", name: "United Arab Emirates", states: [{ code: "AE", name: "National" }] },
-  { code: "GB", name: "United Kingdom", states: [{ code: "GB", name: "National" }] },
-];
+const BRANCH_COUNTRIES: { code: string; name: string; states: { code: string; name: string }[] }[] = [];
 
 function normCode(v: unknown): string {
   return String(v ?? "").trim().toUpperCase();
 }
 
 export function branchStatesForCountry(countryCode: string) {
-  const c = BRANCH_COUNTRIES.find((x) => x.code === normCode(countryCode));
-  const states = c?.states || [];
-  return [...states].sort((a, b) => a.name.localeCompare(b.name));
+  void countryCode;
+  return [] as { code: string; name: string }[];
 }
 
-/** First state in the country dataset — default HQ for Country Admin accounts. */
 export function defaultHeadquartersStateForCountry(countryCode: string): string {
-  const states = branchStatesForCountry(countryCode);
-  return states[0]?.code || "";
+  void countryCode;
+  return "";
 }
 
 export function isStateValidForCountry(countryCode: string, stateCode: string): boolean {
   const sc = normCode(stateCode);
   const cc = normCode(countryCode);
   if (!cc || !sc) return false;
-  if (branchStatesForCountry(cc).some((s) => s.code === sc)) return true;
   if (cc === "US" && sc !== "US" && /^[A-Z0-9]{2,12}$/.test(sc)) return true;
   return false;
 }
@@ -100,33 +35,14 @@ export function assertStateBelongsToCountry(countryCode: unknown, stateCode: unk
 }
 
 export function resolveStateCodeByName(countryCode: string, stateName: string): string {
+  void countryCode;
   const raw = String(stateName ?? "").trim();
-  if (!raw || !normCode(countryCode)) return "";
-  const states = branchStatesForCountry(countryCode);
-  const lower = raw.toLowerCase();
-  const stripped = lower.replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
-
-  let hit = states.find((s) => s.name.trim().toLowerCase() === lower);
-  if (!hit) hit = states.find((s) => s.name.trim().toLowerCase() === stripped);
-  if (!hit) {
-    hit = states.find((s) => {
-      const sn = s.name.trim().toLowerCase().replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
-      return sn === stripped || sn === lower;
-    });
-  }
-  if (!hit && stripped.length >= 4) {
-    hit = states.find((s) => {
-      const sn = s.name.trim().toLowerCase().replace(/\s+state\s*$/i, "").trim();
-      return sn.startsWith(stripped) || stripped.startsWith(sn);
-    });
-  }
-  return hit?.code || "";
+  if (!raw) return "";
+  return normCode(raw).replace(/[^A-Z0-9]/g, "").slice(0, 12);
 }
 
-/** For location-catalog publish: use catalog state code when the label matches; else A–Z/0–9 slug (max 12). */
 export function branchStateCodeForLocationPublish(countryCode: string, stateName: string): string {
-  const fromCatalog = resolveStateCodeByName(countryCode, stateName);
-  if (fromCatalog) return fromCatalog;
+  void countryCode;
   const slug = normCode(stateName).replace(/[^A-Z0-9]/g, "").slice(0, 12);
   return slug.length >= 1 ? slug : "REG";
 }

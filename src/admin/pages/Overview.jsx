@@ -5,10 +5,11 @@ import { leaderScopeLabel } from "../leaderScope.js";
 import { isGlobalAdminRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStateLabel, branchCountryLabel } from "../branchRegions.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
+import { countriesFromCatalog, statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
 import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
 import { CategoryHistogram, GenderHistogram, StatusPieChart } from "../components/charts/DashboardCharts.jsx";
-import { BRANCH_COUNTRIES, branchStatesForCountry } from "../branchRegions.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -53,9 +54,17 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
   const [status, setStatus] = useState("all");
   const [sex, setSex] = useState("");
   const [submittedDate, setSubmittedDate] = useState("");
+  const [churches, setChurches] = useState([]);
+  const [catalog, setCatalog] = useState(null);
 
+  useEffect(() => {
+    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
+  }, []);
+
+  const countryOptions = useMemo(() => countriesFromCatalog(catalog || { countries: [] }), [catalog]);
   const unitOpts = units?.data ?? [];
-  const stateOpts = country ? branchStatesForCountry(country) : [];
+  const stateOpts = country ? statesFromCatalogAndChurches(catalog, country, churches) : [];
   const selectedUnit = unitOpts.find((u) => String(u.id) === String(unitId));
   const subOpts = selectedUnit?.sub_units ?? [];
 
@@ -137,7 +146,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
           <select
             id="dash-filter-country"
             className="sa-select sa-dash-filter-compact"
-            title={country ? (BRANCH_COUNTRIES.find((c) => c.code === country)?.name || "") : ""}
+            title={country ? (countryOptions.find((c) => c.code === country)?.name || country) : ""}
             value={country}
             onChange={(e) => {
               setCountry(e.target.value);
@@ -146,7 +155,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
             }}
           >
             <option value="">Country</option>
-            {BRANCH_COUNTRIES.map((c) => (
+            {countryOptions.map((c) => (
               <option key={c.code} value={c.code}>{c.name}</option>
             ))}
           </select>

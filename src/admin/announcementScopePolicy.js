@@ -1,5 +1,5 @@
 import { isActingAsStateAdmin } from "./adminViewMode.js";
-import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "./branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 import { isCountrySuperAdmin, isGlobalAdminRole, isStateSuperAdmin } from "./roles.js";
 import { satelliteSitesForBranch } from "./satelliteSites.js";
 
@@ -458,7 +458,6 @@ export function announcementStateOptions(churches, lockedCountry, lockedState) {
   }
   const cc = String(lockedCountry || "").trim().toUpperCase();
   if (!cc) return [];
-  const fromRegions = branchStatesForCountry(cc).map((s) => ({ value: s.code, label: s.name }));
   const fromChurches = new Map();
   for (const ch of churches || []) {
     if (String(ch.branch_country || "").toUpperCase() !== cc) continue;
@@ -468,11 +467,12 @@ export function announcementStateOptions(churches, lockedCountry, lockedState) {
       fromChurches.set(st, branchStateLabel(cc, st) || st);
     }
   }
-  const merged = new Map(fromRegions.map((s) => [s.value, s.label]));
-  for (const [code, label] of fromChurches) {
-    if (!merged.has(code)) merged.set(code, label);
-  }
-  return [{ value: "", label: "All states" }, ...[...merged.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }))];
+  return [
+    { value: "", label: "All states" },
+    ...[...fromChurches.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([value, label]) => ({ value, label })),
+  ];
 }
 
 export function announcementSatelliteOptions(churches, lockedCountry, lockedState, lockedSatellite) {

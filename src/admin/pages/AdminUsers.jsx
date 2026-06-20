@@ -10,17 +10,14 @@ import {
   satellitesFromChurches,
   directoryStateOptionsFromRows,
 } from "../catalogGeoOptions.js";
-import { canEditBranchCatalog } from "../roles.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { exportCsv } from "../exportCsv.js";
 import { SERVICE_UNITS } from "../../data.js";
 import {
-  BRANCH_COUNTRIES,
   branchCountryLabel,
   branchStateLabel,
-  branchStatesForCountry,
   coerceStateForCountry,
 } from "../branchRegions.js";
 import {
@@ -1323,8 +1320,6 @@ function AdminModal({
   const [dbStateOptions, setDbStateOptions] = useState([]);
   const [dbStatesLoading, setDbStatesLoading] = useState(false);
 
-  const useCatalogGeo = isGlobalAdmin && canEditBranchCatalog(me?.role);
-
   useEffect(() => {
     if (!open) {
       setChurches([]);
@@ -1351,8 +1346,8 @@ function AdminModal({
   }, [open, isGlobalAdmin]);
 
   const allCountryOptions = useMemo(
-    () => (useCatalogGeo && catalog ? countriesFromCatalog(catalog) : BRANCH_COUNTRIES),
-    [useCatalogGeo, catalog],
+    () => countriesFromCatalog(catalog || { countries: [] }),
+    [catalog],
   );
 
   const showBranchChurchStepFlow =

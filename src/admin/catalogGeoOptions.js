@@ -1,15 +1,8 @@
 /**
- * Country / state options from the branch catalog (directory_countries + directory_states),
- * merged with static branchRegions for backward compatibility.
+ * Country / state options from the branch catalog (directory_countries + directory_states + churches).
  */
 
-import {
-  BRANCH_COUNTRIES,
-  branchCountryLabel,
-  branchStateLabel,
-  branchStatesForCountry,
-  mergeStateOptions,
-} from "./branchRegions.js";
+import { branchCountryLabel, branchStateLabel, mergeStateOptions } from "./branchRegions.js";
 import { satelliteSitesForBranch, satelliteSitesForCountry } from "./satelliteSites.js";
 
 function normUp(s) {
@@ -42,12 +35,6 @@ export function countriesFromCatalog(catalog) {
       name: String(c.name || "").trim() || branchCountryLabel(code),
       id: c.id,
     });
-  }
-  for (const c of BRANCH_COUNTRIES) {
-    if (!seen.has(c.code)) {
-      rows.push({ code: c.code, name: c.name });
-      seen.add(c.code);
-    }
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -96,14 +83,7 @@ export function statesFromCatalogAndChurches(catalog, countryCode, churches = []
     }
   }
 
-  const merged = mergeStateOptions(
-    cc,
-    catalogRows,
-    statesFromChurchesForDropdown(cc, churches),
-    branchStatesForCountry(cc),
-  );
-  if (merged.length) return merged;
-  return branchStatesForCountry(cc);
+  return mergeStateOptions(cc, catalogRows, statesFromChurchesForDropdown(cc, churches));
 }
 
 /** States from directory_states rows only (database records for one country). */
@@ -142,8 +122,7 @@ export function coerceStateForCatalog(catalog, countryCode, stateCode, churches 
   const sc = normUp(stateCode);
   if (!sc) return "";
   const valid = statesFromCatalogAndChurches(catalog, countryCode, churches).some((s) => s.code === sc);
-  if (valid) return sc;
-  return coerceStateForCountry(countryCode, stateCode) ? sc : "";
+  return valid ? sc : "";
 }
 
 /** Satellite church names from the admin church catalog for a country and optional state. */

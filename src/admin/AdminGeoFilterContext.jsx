@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { api } from "./api.js";
 import { fetchAdminChurchesCatalog } from "./churchesCatalog.js";
+import { countriesFromCatalog } from "./catalogGeoOptions.js";
 import { geoFilterApiParams, hasGeoFilters, satelliteOptionsForGeoFilter, stateOptionsForGeoFilter } from "./geoFilterUtils.js";
 import { isGlobalAdminRole } from "./roles.js";
 
@@ -11,6 +13,7 @@ const EMPTY = {
   apiParams: {},
   hasFilters: false,
   churches: [],
+  countryOptions: [],
   stateOptions: [],
   satelliteOptions: [],
   setCountry: () => {},
@@ -29,10 +32,12 @@ export function AdminGeoFilterProvider({ admin, children }) {
   const [state, setState] = useState("");
   const [satellite, setSatellite] = useState("");
   const [churches, setChurches] = useState([]);
+  const [catalog, setCatalog] = useState(null);
 
   useEffect(() => {
     if (!enabled) return;
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
+    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
   }, [enabled]);
 
   const clear = useCallback(() => {
@@ -64,6 +69,8 @@ export function AdminGeoFilterProvider({ admin, children }) {
       apiParams: geoFilterApiParams(filters),
       hasFilters: hasGeoFilters(filters),
       churches,
+      catalog,
+      countryOptions: countriesFromCatalog(catalog || { countries: [] }),
       stateOptions: country ? stateOptionsForGeoFilter(churches, country) : [],
       satelliteOptions:
         country && state ? satelliteOptionsForGeoFilter(churches, country, state) : [],
@@ -79,6 +86,7 @@ export function AdminGeoFilterProvider({ admin, children }) {
       enabled,
       filters,
       churches,
+      catalog,
       country,
       state,
       satellite,
