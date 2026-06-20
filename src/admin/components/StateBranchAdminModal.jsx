@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
-import { branchCountryLabel, branchStateLabel, branchStatesForCountry } from "../branchRegions.js";
+import { api } from "../api.js";
+import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import {
   availableStatesForCountryAdmin,
   occupiedStateCodes,
@@ -40,10 +42,28 @@ export function StateBranchAdminModal({
     branch_state: "",
     is_active: 1,
   });
+  const [churches, setChurches] = useState([]);
+  const [catalog, setCatalog] = useState(null);
+
+  useEffect(() => {
+    if (!open) {
+      setChurches([]);
+      setCatalog(null);
+      return;
+    }
+    fetchAdminChurchesCatalog()
+      .then(setChurches)
+      .catch(() => setChurches([]));
+    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
+  }, [open]);
 
   const stateOptions = useMemo(
-    () => availableStatesForCountryAdmin(cc, existingAdmins, pendingRequests, isEdit ? editData?.id : null),
-    [cc, existingAdmins, pendingRequests, isEdit, editData?.id],
+    () =>
+      availableStatesForCountryAdmin(cc, existingAdmins, pendingRequests, isEdit ? editData?.id : null, {
+        catalog,
+        churches,
+      }),
+    [cc, existingAdmins, pendingRequests, isEdit, editData?.id, catalog, churches],
   );
 
   useEffect(() => {

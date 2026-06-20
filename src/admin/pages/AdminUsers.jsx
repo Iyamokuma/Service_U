@@ -1362,10 +1362,6 @@ function AdminModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
-  const usesDirectChurchPicker = showBranchChurchStepFlow;
-
-  const showBranchStateStep = false;
-
   const branchStateLabel =
     form.role === "country_super_admin" ? "Headquarters state" : "State / region";
 
@@ -1447,19 +1443,16 @@ function AdminModal({
 
   const branchChurchOpts = useMemo(() => {
     if (!showBranchChurchStepFlow || !form.branch_country) return [];
-    if (usesDirectChurchPicker) {
-      return churchBranchSelectOptions(churches, form.branch_country, { countryWide: true });
-    }
     if (!form.branch_state) return [];
     return churchBranchSelectOptions(churches, form.branch_country, {
       allowedStateCodes: [form.branch_state],
     });
-  }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form.branch_country, form.branch_state]);
+  }, [showBranchChurchStepFlow, churches, form.branch_country, form.branch_state]);
 
   const showChurchPicker = showBranchChurchStepFlow;
 
-  const steppedStateOptions = useMemo(() => {
-    if (!showBranchStateStep) return [];
+  const stateFieldOptions = useMemo(() => {
+    if (!showBranchChurchStepFlow || !form.branch_country) return [];
     let opts =
       form.role === "satellite_church_admin"
         ? allStateOptions
@@ -1477,12 +1470,18 @@ function AdminModal({
       ];
     }
     return opts;
-  }, [showBranchStateStep, form.role, form.branch_state, form.branch_country, isEdit, allStateOptions, stateOptions]);
+  }, [showBranchChurchStepFlow, form.role, form.branch_state, form.branch_country, isEdit, allStateOptions, stateOptions]);
+
+  const steppedStateOptions = stateFieldOptions;
 
   const locationScopedRole = ROLES_WITH_COUNTRY.includes(form.role);
   const createBlocked =
     !isEdit &&
     ((form.role === "country_super_admin" && countryOptions.length === 0) ||
+      (showBranchChurchStepFlow &&
+        form.branch_country &&
+        stateFieldOptions.length > 0 &&
+        !String(form.branch_state || "").trim()) ||
       (showChurchPicker &&
         !churchesLoading &&
         branchChurchOpts.length > 0 &&
@@ -1499,11 +1498,12 @@ function AdminModal({
       allStateOptions={allStateOptions}
       stateOptions={stateOptions}
       showBranchChurchStepFlow={flat && showBranchChurchStepFlow}
-      showBranchStateStep={showBranchStateStep}
+      showBranchStateStep={false}
       branchStateLabelText={branchStateLabel}
       branchChurchHint={branchChurchHint}
       branchChurchOpts={branchChurchOpts}
       showChurchPicker={showChurchPicker}
+      stateFieldOptions={stateFieldOptions}
       steppedStateOptions={steppedStateOptions}
       disableCountry={isCountryAdmin || isStateAdmin || isSatellitePastor}
       disableState={isStateAdmin || isSatellitePastor}

@@ -19,7 +19,7 @@ import {
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
 import { roleDisplayLabel } from "../roles.js";
-import { branchCountryLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 import { AdminScopePanel, adminScopePanelLabel, formatAdminScopeDraft } from "./AdminScopePanel.jsx";
 import { AdminLocationScopeFields } from "./AdminLocationScopeFields.jsx";
@@ -138,31 +138,34 @@ export function AdminReassignModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && form?.role && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
-  const usesDirectChurchPicker = showBranchChurchStepFlow;
-
-  const showBranchStateStep = false;
-
   const branchStateLabel =
     form?.role === "country_super_admin" ? "Headquarters state" : "State / region";
 
   const branchChurchOpts = useMemo(() => {
     if (!showBranchChurchStepFlow || !form?.branch_country) return [];
-    if (usesDirectChurchPicker) {
-      return churchBranchSelectOptions(churches, form.branch_country, { countryWide: true });
-    }
     if (!form?.branch_state) return [];
     return churchBranchSelectOptions(churches, form.branch_country, {
       allowedStateCodes: [form.branch_state],
     });
-  }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form?.branch_country, form?.branch_state]);
+  }, [showBranchChurchStepFlow, churches, form?.branch_country, form?.branch_state]);
 
-  const showChurchPicker = showBranchChurchStepFlow && form?.branch_country;
+  const showChurchPicker = showBranchChurchStepFlow;
 
-  const steppedStateOptions = useMemo(() => {
-    if (!showBranchStateStep) return [];
-    if (form?.role === "satellite_church_admin") return allStateOptions;
-    return stateOptions;
-  }, [showBranchStateStep, form?.role, allStateOptions, stateOptions]);
+  const stateFieldOptions = useMemo(() => {
+    if (!showBranchChurchStepFlow || !form?.branch_country) return [];
+    let opts = form?.role === "satellite_church_admin" ? allStateOptions : stateOptions;
+    const st = String(form?.branch_state || "").toUpperCase();
+    if (st && !opts.some((s) => String(s.code).toUpperCase() === st)) {
+      opts = [
+        ...opts,
+        {
+          code: st,
+          name: branchStateLabel(form.branch_country, st) || st,
+        },
+      ];
+    }
+    return opts;
+  }, [showBranchChurchStepFlow, form?.role, form?.branch_state, form?.branch_country, allStateOptions, stateOptions]);
 
   const selectedUnit = useMemo(
     () => unitList.find((u) => Number(u.id) === Number(form?.service_unit_id)),
@@ -274,7 +277,7 @@ export function AdminReassignModal({
             allStateOptions={allStateOptions}
             stateOptions={stateOptions}
             showBranchChurchStepFlow={showBranchChurchStepFlow}
-            showBranchStateStep={showBranchStateStep}
+            showBranchStateStep={false}
             branchStateLabelText={branchStateLabel}
             branchChurchHint={
               form.role === "country_super_admin"
@@ -285,7 +288,8 @@ export function AdminReassignModal({
             }
             branchChurchOpts={branchChurchOpts}
             showChurchPicker={showChurchPicker}
-            steppedStateOptions={steppedStateOptions}
+            stateFieldOptions={stateFieldOptions}
+            steppedStateOptions={stateFieldOptions}
             churchesLoading={churchesLoading}
           />
         </AdminScopePanel>

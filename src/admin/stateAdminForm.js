@@ -56,9 +56,20 @@ export function occupiedStateCodes(admins, pendingRequests, countryCode, exclude
   return set;
 }
 
-export function availableStatesForCountryAdmin(countryCode, admins, pendingRequests, excludeAdminId) {
+export function availableStatesForCountryAdmin(
+  countryCode,
+  admins,
+  pendingRequests,
+  excludeAdminId,
+  { catalog, churches } = {},
+) {
+  const cc = String(countryCode || "").toUpperCase();
   const taken = occupiedStateCodes(admins, pendingRequests, countryCode, excludeAdminId);
-  return branchStatesForCountry(countryCode).filter((s) => !taken.has(String(s.code).toUpperCase()));
+  const stateRows =
+    catalog || (churches && churches.length)
+      ? statesFromCatalogAndChurches(catalog, cc, churches || [])
+      : branchStatesForCountry(cc);
+  return stateRows.filter((s) => !taken.has(String(s.code).toUpperCase()));
 }
 
 /** States available for Country Admin to set as headquarters (dual role). */

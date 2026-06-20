@@ -6,7 +6,7 @@ import {
   ROLES_WITH_SATELLITE,
   ROLES_WITH_STATE,
 } from "../adminAccountForm.js";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { branchStateLabel } from "../branchRegions.js";
 import { hqChurchValueFromForm, parseHqChurchValue } from "../catalogGeoOptions.js";
 
 /**
@@ -26,6 +26,7 @@ export function AdminLocationScopeFields({
   branchChurchHint = "",
   branchChurchOpts = [],
   showChurchPicker = false,
+  stateFieldOptions = [],
   steppedStateOptions = [],
   disableCountry = false,
   disableState = false,
@@ -56,6 +57,15 @@ export function AdminLocationScopeFields({
     });
   }
 
+  function pickState(branch_state) {
+    setForm((f) => ({ ...f, branch_state, satellite_site: "" }));
+  }
+
+  const stateDropdownOptions = useMemo(
+    () => (stateFieldOptions || []).map((s) => ({ value: s.code, label: s.name })),
+    [stateFieldOptions],
+  );
+
   const countryDisabled = disableCountry || (role === "country_super_admin" && isEdit);
 
   const churchHint = (() => {
@@ -77,9 +87,19 @@ export function AdminLocationScopeFields({
       : "";
 
   if (showBranchChurchStepFlow) {
+    const stateLabel = role === "country_super_admin" ? "Headquarters state" : branchStateLabelText;
     const countryHint = showCountryVacantHint
       ? "Every country already has a Country Admin (or one pending approval)."
       : "Where your branch is located.";
+    const stateHint = (() => {
+      if (!form.branch_country) return "Select a country first.";
+      if (showSteppedStateVacantHint || showStateVacantHint) {
+        return role === "country_super_admin"
+          ? "No available states in this country (all already have a branch admin or pending request)."
+          : "Every state in this country already has a State Branch Admin (or one pending approval).";
+      }
+      return "State where this branch is located.";
+    })();
     const churchFieldHint = (() => {
       if (churchesLoading && form.branch_country) {
         return "Loading churches from the directory…";
@@ -87,11 +107,11 @@ export function AdminLocationScopeFields({
       if (!form.branch_country) {
         return "Select a country first.";
       }
-      if (branchChurchOpts.length === 0) {
-        return "No churches listed for this country yet. Add branches via Data Entry or approve a location request first.";
+      if (!form.branch_state) {
+        return "Select a state first.";
       }
-      if (form.branch_country) {
-        return `Showing branches in ${branchCountryLabel(form.branch_country) || form.branch_country}.`;
+      if (branchChurchOpts.length === 0) {
+        return "No churches listed for this state yet. Add branches via Data Entry or approve a location request first.";
       }
       return branchChurchHint || "Pick the branch name as listed in the directory.";
     })();
@@ -99,11 +119,13 @@ export function AdminLocationScopeFields({
     const churchValue = hqChurchValueFromForm(form.branch_state, form.satellite_site);
     const churchPlaceholder = !form.branch_country
       ? "Select country first"
-      : churchesLoading
-        ? "Loading churches…"
-        : branchChurchOpts.length
-          ? "Select"
-          : "No branches found for this country";
+      : !form.branch_state
+        ? "Select state first"
+        : churchesLoading
+          ? "Loading churches…"
+          : branchChurchOpts.length
+            ? "Select"
+            : "No branches found for this state";
 
     return (
       <div className="grid">
@@ -123,6 +145,20 @@ export function AdminLocationScopeFields({
           </select>
         </Field>
 
+        <Field label={stateLabel} required hint={stateHint}>
+          <SearchableDropdown
+            value={form.branch_state}
+            onChange={pickState}
+            options={stateDropdownOptions}
+            disabled={!form.branch_country || disableState}
+            placeholder={form.branch_country ? "Select" : "Select country first"}
+            searchPlaceholder="Search state"
+            emptyMessage="No states match your search"
+            valid={!!form.branch_state}
+            ariaLabel={stateLabel}
+          />
+        </Field>
+
         <Field label="Church / branch" required span="2" hint={churchFieldHint}>
           <SearchableDropdown
             value={churchValue}
@@ -131,7 +167,7 @@ export function AdminLocationScopeFields({
               setForm((f) => ({ ...f, branch_state, satellite_site }));
             }}
             options={branchChurchOpts}
-            disabled={!form.branch_country || churchesLoading}
+            disabled={!form.branch_country || !form.branch_state || churchesLoading}
             placeholder={churchPlaceholder}
             searchPlaceholder="Search by name or address"
             emptyMessage="No branches match your search"
