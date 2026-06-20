@@ -4,6 +4,7 @@ import {
   ROLES_WITH_SATELLITE,
   ROLES_WITH_STATE,
 } from "../adminAccountForm.js";
+import { branchStateLabel } from "../branchRegions.js";
 import { hqChurchValueFromForm, parseHqChurchValue } from "../catalogGeoOptions.js";
 
 /**
@@ -59,15 +60,89 @@ export function AdminLocationScopeFields({
     if (churchesLoading && form.branch_country) {
       return "Loading churches from the directory…";
     }
+    if (!form.branch_country) {
+      return "Select a country first.";
+    }
     if (branchChurchOpts.length === 0) {
       return "No churches listed for this country yet. Add branches via Data Entry or approve a location request first.";
     }
-    return branchChurchHint;
+    return branchChurchHint || "Pick the branch name as listed in the directory.";
   })();
+
+  const selectedStateLabel =
+    form.branch_state && form.branch_country
+      ? branchStateLabel(form.branch_country, form.branch_state) || form.branch_state
+      : "";
+
+  if (showBranchChurchStepFlow) {
+    return (
+      <>
+        <div className="sa-field">
+          <label className="sa-label">
+            Country <span className="sa-required">*</span>
+          </label>
+          <select
+            className="sa-field-select"
+            value={form.branch_country}
+            onChange={(e) => pickCountry(e.target.value)}
+            disabled={countryDisabled}
+          >
+            <option value="">Select country</option>
+            {countrySelectOptions.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          {showCountryVacantHint ? (
+            <div className="sa-field-hint">
+              Every country already has a Country Admin (or one pending approval).
+            </div>
+          ) : (
+            <div className="sa-field-hint">Where this admin&apos;s branch is located.</div>
+          )}
+        </div>
+
+        <div className="sa-field">
+          <label className="sa-label">
+            Church / branch <span className="sa-required">*</span>
+          </label>
+          <SearchableSelect
+            value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
+            onChange={(e) => {
+              const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
+              setForm((f) => ({ ...f, branch_state, satellite_site }));
+            }}
+            options={branchChurchOpts}
+            disabled={!form.branch_country || churchesLoading}
+            placeholder={
+              !form.branch_country
+                ? "Select country first"
+                : churchesLoading
+                  ? "Loading churches…"
+                  : branchChurchOpts.length
+                    ? "Select"
+                    : "No branches found for this country"
+            }
+            searchPlaceholder="Search by name"
+            emptyMessage="No branches match your search"
+            searchAriaLabel="Church / branch"
+          />
+          <div className="sa-field-hint">{churchHint}</div>
+          {form.satellite_site ? (
+            <div className="sa-field-hint" style={{ marginTop: 6 }}>
+              Selected: <strong>{form.satellite_site}</strong>
+              {selectedStateLabel ? <> · {selectedStateLabel}</> : null}
+            </div>
+          ) : null}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
-      <div className={showBranchChurchStepFlow ? "sa-field" : "sa-form-row"}>
+      <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">
             Country <span className="sa-required">*</span>
@@ -89,7 +164,7 @@ export function AdminLocationScopeFields({
           ) : null}
         </div>
 
-        {!showBranchChurchStepFlow && ROLES_WITH_STATE.includes(role) ? (
+        {ROLES_WITH_STATE.includes(role) ? (
           <div className="sa-field">
             <label className="sa-label">
               {role === "country_super_admin" ? "Headquarters state" : branchStateLabelText}{" "}
@@ -163,7 +238,7 @@ export function AdminLocationScopeFields({
       ) : null}
 
       {showChurchPicker ? (
-        <div className="sa-field" style={{ marginTop: showBranchChurchStepFlow ? 4 : 0 }}>
+        <div className="sa-field">
           <label className="sa-label">
             {role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
             <span className="sa-required">*</span>

@@ -1456,7 +1456,7 @@ function AdminModal({
     });
   }, [showBranchChurchStepFlow, usesDirectChurchPicker, churches, form.branch_country, form.branch_state]);
 
-  const showChurchPicker = showBranchChurchStepFlow && form.branch_country;
+  const showChurchPicker = showBranchChurchStepFlow;
 
   const steppedStateOptions = useMemo(() => {
     if (!showBranchStateStep) return [];
@@ -1487,6 +1487,47 @@ function AdminModal({
         !churchesLoading &&
         branchChurchOpts.length > 0 &&
         !String(form.satellite_site || "").trim()));
+
+  const flatScopeLayout = showBranchChurchStepFlow && !isEdit;
+  const locationScopeFields = (flat) => (
+    <AdminLocationScopeFields
+      form={form}
+      setForm={setForm}
+      isEdit={isEdit}
+      countryOptions={countryOptions}
+      allCountryOptions={allCountryOptions}
+      allStateOptions={allStateOptions}
+      stateOptions={stateOptions}
+      showBranchChurchStepFlow={flat && showBranchChurchStepFlow}
+      showBranchStateStep={showBranchStateStep}
+      branchStateLabelText={branchStateLabel}
+      branchChurchHint={branchChurchHint}
+      branchChurchOpts={branchChurchOpts}
+      showChurchPicker={showChurchPicker}
+      steppedStateOptions={steppedStateOptions}
+      disableCountry={isCountryAdmin || isStateAdmin || isSatellitePastor}
+      disableState={isStateAdmin || isSatellitePastor}
+      onCountryChange={(next, branch_country, prev) => {
+        if (
+          next.role === "country_super_admin" &&
+          shouldAutoFillCountryAdminUsername(prev.username)
+        ) {
+          return { ...next, username: suggestedCountryAdminUsername(branch_country) };
+        }
+        return next;
+      }}
+      showCountryVacantHint={form.role === "country_super_admin" && !isEdit && countryOptions.length === 0}
+      showStateVacantHint={
+        form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0
+      }
+      showSteppedStateVacantHint={
+        !isEdit &&
+        (form.role === "country_super_admin" || form.role === "state_super_admin") &&
+        steppedStateOptions.length === 0
+      }
+      churchesLoading={churchesLoading}
+    />
+  );
 
   return (
     <Modal
@@ -1649,58 +1690,25 @@ function AdminModal({
         )}
       </div>
 
-      {locationScopedRole && (
-        <AdminScopePanel
-          label={adminScopePanelLabel(form.role)}
-          summary={formatAdminScopeDraft(form)}
-          hint={
-            form.role === "country_super_admin"
-              ? "Country Admin is tied to one headquarters church. State for the State Branch view is taken from that church."
-              : form.role === "state_super_admin"
-                ? "State Branch Admin oversees applications and pastors within the selected state."
-                : "Location determines which registrations and admins this account can access."
-          }
-          defaultOpen
-        >
-          <AdminLocationScopeFields
-            form={form}
-            setForm={setForm}
-            isEdit={isEdit}
-            countryOptions={countryOptions}
-            allCountryOptions={allCountryOptions}
-            allStateOptions={allStateOptions}
-            stateOptions={stateOptions}
-            showBranchChurchStepFlow={showBranchChurchStepFlow}
-            showBranchStateStep={showBranchStateStep}
-            branchStateLabelText={branchStateLabel}
-            branchChurchHint={branchChurchHint}
-            branchChurchOpts={branchChurchOpts}
-            showChurchPicker={showChurchPicker}
-            steppedStateOptions={steppedStateOptions}
-            disableCountry={isCountryAdmin || isStateAdmin || isSatellitePastor}
-            disableState={isStateAdmin || isSatellitePastor}
-            onCountryChange={(next, branch_country, prev) => {
-              if (
-                next.role === "country_super_admin" &&
-                shouldAutoFillCountryAdminUsername(prev.username)
-              ) {
-                return { ...next, username: suggestedCountryAdminUsername(branch_country) };
-              }
-              return next;
-            }}
-            showCountryVacantHint={form.role === "country_super_admin" && !isEdit && countryOptions.length === 0}
-            showStateVacantHint={
-              form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0
+      {locationScopedRole &&
+        (flatScopeLayout ? (
+          locationScopeFields(true)
+        ) : (
+          <AdminScopePanel
+            label={adminScopePanelLabel(form.role)}
+            summary={formatAdminScopeDraft(form)}
+            hint={
+              form.role === "country_super_admin"
+                ? "Country Admin is tied to one headquarters church. State for the State Branch view is taken from that church."
+                : form.role === "state_super_admin"
+                  ? "State Branch Admin oversees applications and pastors within the selected state."
+                  : "Location determines which registrations and admins this account can access."
             }
-            showSteppedStateVacantHint={
-              !isEdit &&
-              (form.role === "country_super_admin" || form.role === "state_super_admin") &&
-              steppedStateOptions.length === 0
-            }
-            churchesLoading={churchesLoading}
-          />
-        </AdminScopePanel>
-      )}
+            defaultOpen
+          >
+            {locationScopeFields(false)}
+          </AdminScopePanel>
+        ))}
 
       {ROLES_WITH_SATELLITE.includes(form.role) && !showBranchChurchStepFlow && (
         <div className="sa-field">
