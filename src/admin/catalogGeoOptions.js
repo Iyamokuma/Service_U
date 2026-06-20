@@ -7,11 +7,8 @@ import {
   BRANCH_COUNTRIES,
   branchCountryLabel,
   branchStateLabel,
-  branchStateCodeForLocationPublish,
   branchStatesForCountry,
-  canonicalStateOption,
   mergeStateOptions,
-  resolveStateCodeByName,
 } from "./branchRegions.js";
 import { satelliteSitesForBranch, satelliteSitesForCountry } from "./satelliteSites.js";
 
@@ -188,59 +185,4 @@ export function parseHqChurchValue(value) {
     branch_state: normUp(raw.slice(0, idx)),
     satellite_site: raw.slice(idx + HQ_CHURCH_SEP.length).trim(),
   };
-}
-
-function matchGeoStateName(countryCode, stateName, catalogStates) {
-  const cc = normUp(countryCode);
-  const raw = String(stateName ?? "").trim();
-  if (!cc || !raw) return null;
-  const lower = raw.toLowerCase();
-  const stripped = lower.replace(/\s+state\s*$/i, "").replace(/\s+province\s*$/i, "").trim();
-
-  let hit = catalogStates.find((s) => s.name.trim().toLowerCase() === lower);
-  if (!hit) hit = catalogStates.find((s) => s.name.trim().toLowerCase() === stripped);
-  if (!hit) {
-    hit = catalogStates.find((s) => {
-      const sn = s.name.trim().toLowerCase().replace(/\s+state\s*$/i, "").trim();
-      return sn === stripped || sn === lower;
-    });
-  }
-  if (hit) return hit;
-
-  const fromCatalog = resolveStateCodeByName(cc, raw);
-  if (fromCatalog) {
-    return canonicalStateOption(cc, fromCatalog, raw) || { code: fromCatalog, name: branchStateLabel(cc, fromCatalog) || raw };
-  }
-
-  const published = branchStateCodeForLocationPublish(cc, raw);
-  return canonicalStateOption(cc, published, raw) || { code: published, name: raw };
-}
-
-/** Map CountriesNow / geoCatalog state names to branch state dropdown rows. */
-export function stateOptionsFromGeoNames(countryCode, geoStateNames, catalog, churches) {
-  const cc = normUp(countryCode);
-  if (!cc) return [];
-  const catalogStates = statesFromCatalogAndChurches(catalog, cc, churches);
-  const fromGeo = (geoStateNames || [])
-    .map((name) => matchGeoStateName(cc, name, catalogStates))
-    .filter(Boolean);
-  if (!fromGeo.length) return catalogStates;
-  return mergeStateOptions(cc, fromGeo, catalogStates);
-}
-
-/** Load states for a country via admin-api geoCatalog, falling back to client geoApi. */
-export async function fetchAdminGeoStatesForCountry(api, countryCode, countryName, geoApi) {
-  const name = String(countryName || branchCountryLabel(countryCode) || "").trim();
-  if (!name) return [];
-  try {
-    const res = await api.geoCatalog({ step: "states", countryName: name });
-    const rows = Array.isArray(res?.data) ? res.data : [];
-    if (rows.length) return rows;
-  } catch {
-    /* edge fallback below */
-  }
-  if (geoApi?.fetchStatesForCountryName) {
-    return geoApi.fetchStatesForCountryName(name);
-  }
-  return [];
 }

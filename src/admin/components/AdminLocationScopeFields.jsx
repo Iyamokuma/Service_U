@@ -94,7 +94,7 @@ export function AdminLocationScopeFields({
       : "Where your branch is located.";
     const stateHint = (() => {
       if (!form.branch_country) return "Select a country first.";
-      if (statesLoading) return "Loading states from the geography directory…";
+      if (statesLoading) return "Loading states from the branch directory…";
       if (showSteppedStateVacantHint || showStateVacantHint) {
         return role === "country_super_admin"
           ? "No available states in this country (all already have a branch admin or pending request)."
