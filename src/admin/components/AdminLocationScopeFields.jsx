@@ -35,6 +35,7 @@ export function AdminLocationScopeFields({
   showStateVacantHint = false,
   showSteppedStateVacantHint = false,
   churchesLoading = false,
+  statesLoading = false,
 }) {
   const role = form?.role || "";
   const countryList =
@@ -93,6 +94,7 @@ export function AdminLocationScopeFields({
       : "Where your branch is located.";
     const stateHint = (() => {
       if (!form.branch_country) return "Select a country first.";
+      if (statesLoading) return "Loading states from the geography directory…";
       if (showSteppedStateVacantHint || showStateVacantHint) {
         return role === "country_super_admin"
           ? "No available states in this country (all already have a branch admin or pending request)."
@@ -150,11 +152,19 @@ export function AdminLocationScopeFields({
             value={form.branch_state}
             onChange={pickState}
             options={stateDropdownOptions}
-            disabled={!form.branch_country || disableState}
-            placeholder={form.branch_country ? "Select" : "Select country first"}
+            disabled={!form.branch_country || disableState || statesLoading}
+            placeholder={
+              !form.branch_country
+                ? "Select country first"
+                : statesLoading
+                  ? "Loading states…"
+                  : stateDropdownOptions.length
+                    ? "Select"
+                    : "No states found for this country"
+            }
             searchPlaceholder="Search state"
             emptyMessage="No states match your search"
-            valid={!!form.branch_state}
+            valid={!!form.branch_state && !statesLoading}
             ariaLabel={stateLabel}
           />
         </Field>
