@@ -8,6 +8,7 @@ import {
   statesFromCatalogAndChurches,
   churchBranchSelectOptions,
   satellitesFromChurches,
+  directoryStateOptionsFromRows,
 } from "../catalogGeoOptions.js";
 import { canEditBranchCatalog } from "../roles.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
@@ -1319,6 +1320,8 @@ function AdminModal({
   const [churchesLoading, setChurchesLoading] = useState(false);
   const [catalog, setCatalog] = useState(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [dbStateOptions, setDbStateOptions] = useState([]);
+  const [dbStatesLoading, setDbStatesLoading] = useState(false);
 
   const useCatalogGeo = isGlobalAdmin && canEditBranchCatalog(me?.role);
 
@@ -1328,6 +1331,8 @@ function AdminModal({
       setChurchesLoading(false);
       setCatalog(null);
       setCatalogLoading(false);
+      setDbStateOptions([]);
+      setDbStatesLoading(false);
       return;
     }
     setChurchesLoading(true);
@@ -1353,11 +1358,45 @@ function AdminModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
+  useEffect(() => {
+    if (!open || !showBranchChurchStepFlow || isEdit || !form.branch_country) {
+      setDbStateOptions([]);
+      setDbStatesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDbStatesLoading(true);
+    api
+      .catalogStatesForCountry(form.branch_country)
+      .then((res) => {
+        if (cancelled) return;
+        setDbStateOptions(directoryStateOptionsFromRows(form.branch_country, res?.states));
+      })
+      .catch(() => {
+        if (!cancelled) setDbStateOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDbStatesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, showBranchChurchStepFlow, isEdit, form.branch_country]);
+
   const allStateOptions = useMemo(() => {
     if (!form.branch_country) return [];
+    if (!isEdit && showBranchChurchStepFlow) return dbStateOptions;
     if (catalogLoading && !catalog) return [];
     return statesFromCatalogAndChurches(catalog, form.branch_country, churches);
-  }, [form.branch_country, catalog, churches, catalogLoading]);
+  }, [
+    form.branch_country,
+    catalog,
+    churches,
+    catalogLoading,
+    isEdit,
+    showBranchChurchStepFlow,
+    dbStateOptions,
+  ]);
 
   const satelliteOptions = useMemo(
     () => satellitesFromChurches(churches, form.branch_country, form.branch_state),
@@ -1461,6 +1500,7 @@ function AdminModal({
         : isEdit
           ? allStateOptions
           : stateOptions;
+    if (!isEdit) return opts;
     const st = String(form.branch_state || "").toUpperCase();
     if (st && !opts.some((s) => String(s.code).toUpperCase() === st)) {
       opts = [
@@ -1490,7 +1530,7 @@ function AdminModal({
     ((form.role === "country_super_admin" && countryOptions.length === 0) ||
       (showBranchChurchStepFlow &&
         form.branch_country &&
-        !catalogLoading &&
+        !dbStatesLoading &&
         stateFieldOptions.length > 0 &&
         !String(form.branch_state || "").trim()) ||
       (showChurchPicker &&
@@ -1533,12 +1573,12 @@ function AdminModal({
       }
       showSteppedStateVacantHint={
         !isEdit &&
-        !catalogLoading &&
+        !dbStatesLoading &&
         (form.role === "country_super_admin" || form.role === "state_super_admin") &&
         stateFieldOptions.length === 0
       }
       churchesLoading={churchesLoading}
-      statesLoading={catalogLoading && !!form.branch_country}
+      statesLoading={dbStatesLoading && showBranchChurchStepFlow && !isEdit && !!form.branch_country}
     />
   );
 

@@ -414,6 +414,10 @@ export const api = {
     return adminFetch("catalogList", {});
   },
 
+  async catalogStatesForCountry(branch_country_code) {
+    return adminFetch("catalogStatesForCountry", { branch_country_code });
+  },
+
   async churchCatalog() {
     return adminFetch("churchCatalog", {});
   },

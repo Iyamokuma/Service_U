@@ -106,6 +106,34 @@ export function statesFromCatalogAndChurches(catalog, countryCode, churches = []
   return branchStatesForCountry(cc);
 }
 
+/** States from directory_states rows only (database records for one country). */
+export function directoryStateOptionsFromRows(countryCode, rows) {
+  const cc = normUp(countryCode);
+  if (!cc) return [];
+  const seen = new Set();
+  const out = [];
+  for (const s of rows || []) {
+    const code = normUp(s.branch_state_code ?? s.code);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push({
+      code,
+      name: String(s.name || "").trim() || branchStateLabel(cc, code) || code,
+    });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Filter cached catalog to directory_states for one country (no static/church merge). */
+export function statesFromDirectoryOnly(catalog, countryCode) {
+  const cc = normUp(countryCode);
+  if (!cc || !catalog) return [];
+  const country = (catalog?.countries || []).find((c) => normUp(c.branch_country_code) === cc);
+  if (!country) return [];
+  const rows = (catalog?.states || []).filter((s) => Number(s.country_id) === Number(country.id));
+  return directoryStateOptionsFromRows(cc, rows);
+}
+
 export function defaultHeadquartersStateFromCatalog(catalog, countryCode) {
   return statesFromCatalog(catalog, countryCode)[0]?.code || "";
 }

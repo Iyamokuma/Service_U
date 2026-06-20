@@ -1103,6 +1103,8 @@ export async function dispatchAdminOp(
       return handleDeleteAnnouncement(supabase, params, admin, ip);
     case "catalogList":
       return handleCatalogList(supabase, admin);
+    case "catalogStatesForCountry":
+      return handleCatalogStatesForCountry(supabase, params, admin);
     case "churchCatalog":
       return handleChurchCatalog(supabase, admin);
     case "catalogAddCountry":
@@ -3567,7 +3569,35 @@ async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
   return loadScopedCatalog(supabase, admin);
 }
 
-/** Church/satellite site list for admin dropdowns — same DB sources as catalogList, scoped to role. */
+/** States for one country from directory_states (no static / church merge). */
+async function handleCatalogStatesForCountry(
+  supabase: SupabaseClient,
+  params: Record<string, unknown>,
+  admin: AdminRow,
+) {
+  requireCatalogEditor(admin);
+  const cc = normUp(String(params.branch_country_code || params.countryCode || ""));
+  if (!cc) throw new Error("Country code is required.");
+  assertCatalogCountryScope(admin, cc);
+
+  const { data: country, error: ce } = await supabase
+    .from("directory_countries")
+    .select("id,branch_country_code")
+    .eq("branch_country_code", cc)
+    .maybeSingle();
+  if (ce) throw new Error(ce.message);
+  if (!country?.id) return { states: [] };
+
+  const { data: states, error: se } = await supabase
+    .from("directory_states")
+    .select("id,name,branch_state_code,country_id")
+    .eq("country_id", country.id)
+    .not("branch_state_code", "is", null)
+    .order("name");
+  if (se) throw new Error(se.message);
+  return { states: states || [] };
+}
+
 async function handleChurchCatalog(supabase: SupabaseClient, admin: AdminRow) {
   const catalog = await loadScopedCatalog(supabase, admin);
   return {
