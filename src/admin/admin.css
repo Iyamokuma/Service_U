@@ -2130,6 +2130,10 @@
 }
 .sa-modal-close:hover { background: #fee2e2; color: #dc2626; }
 .sa-modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+/* Public registration Field / SearchableDropdown inside admin modals */
+.sa-modal .search-dropdown-panel {
+  z-index: 1100;
+}
 .sa-modal-foot {
   padding: 16px 24px; border-top: 1px solid var(--sa-border);
   display: flex; justify-content: flex-end; gap: 10px;

@@ -1,10 +1,12 @@
 import { useMemo } from "react";
+import { Field } from "../../components/Field.jsx";
+import { SearchableDropdown } from "../../components/SearchableDropdown.jsx";
 import { SearchableSelect } from "./SearchableSelect.jsx";
 import {
   ROLES_WITH_SATELLITE,
   ROLES_WITH_STATE,
 } from "../adminAccountForm.js";
-import { branchStateLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { hqChurchValueFromForm, parseHqChurchValue } from "../catalogGeoOptions.js";
 
 /**
@@ -75,14 +77,39 @@ export function AdminLocationScopeFields({
       : "";
 
   if (showBranchChurchStepFlow) {
+    const countryHint = showCountryVacantHint
+      ? "Every country already has a Country Admin (or one pending approval)."
+      : "Where your branch is located.";
+    const churchFieldHint = (() => {
+      if (churchesLoading && form.branch_country) {
+        return "Loading churches from the directory…";
+      }
+      if (!form.branch_country) {
+        return "Select a country first.";
+      }
+      if (branchChurchOpts.length === 0) {
+        return "No churches listed for this country yet. Add branches via Data Entry or approve a location request first.";
+      }
+      if (form.branch_country) {
+        return `Showing branches in ${branchCountryLabel(form.branch_country) || form.branch_country}.`;
+      }
+      return branchChurchHint || "Pick the branch name as listed in the directory.";
+    })();
+
+    const churchValue = hqChurchValueFromForm(form.branch_state, form.satellite_site);
+    const churchPlaceholder = !form.branch_country
+      ? "Select country first"
+      : churchesLoading
+        ? "Loading churches…"
+        : branchChurchOpts.length
+          ? "Select"
+          : "No branches found for this country";
+
     return (
-      <>
-        <div className="sa-field">
-          <label className="sa-label">
-            Country <span className="sa-required">*</span>
-          </label>
+      <div className="grid">
+        <Field label="Country" required hint={countryHint}>
           <select
-            className="sa-field-select"
+            className="select"
             value={form.branch_country}
             onChange={(e) => pickCountry(e.target.value)}
             disabled={countryDisabled}
@@ -94,49 +121,34 @@ export function AdminLocationScopeFields({
               </option>
             ))}
           </select>
-          {showCountryVacantHint ? (
-            <div className="sa-field-hint">
-              Every country already has a Country Admin (or one pending approval).
-            </div>
-          ) : (
-            <div className="sa-field-hint">Where this admin&apos;s branch is located.</div>
-          )}
-        </div>
+        </Field>
 
-        <div className="sa-field">
-          <label className="sa-label">
-            Church / branch <span className="sa-required">*</span>
-          </label>
-          <SearchableSelect
-            value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
-            onChange={(e) => {
-              const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
+        <Field label="Church / branch" required span="2" hint={churchFieldHint}>
+          <SearchableDropdown
+            value={churchValue}
+            onChange={(value) => {
+              const { branch_state, satellite_site } = parseHqChurchValue(value);
               setForm((f) => ({ ...f, branch_state, satellite_site }));
             }}
             options={branchChurchOpts}
             disabled={!form.branch_country || churchesLoading}
-            placeholder={
-              !form.branch_country
-                ? "Select country first"
-                : churchesLoading
-                  ? "Loading churches…"
-                  : branchChurchOpts.length
-                    ? "Select"
-                    : "No branches found for this country"
-            }
-            searchPlaceholder="Search by name"
+            placeholder={churchPlaceholder}
+            searchPlaceholder="Search by name or address"
             emptyMessage="No branches match your search"
-            searchAriaLabel="Church / branch"
+            valid={!!churchValue && !churchesLoading}
+            ariaLabel="Church / branch"
           />
-          <div className="sa-field-hint">{churchHint}</div>
-          {form.satellite_site ? (
-            <div className="sa-field-hint" style={{ marginTop: 6 }}>
+        </Field>
+
+        {form.satellite_site ? (
+          <div className="field col-span-2">
+            <div className="field-hint" style={{ marginTop: -4 }}>
               Selected: <strong>{form.satellite_site}</strong>
               {selectedStateLabel ? <> · {selectedStateLabel}</> : null}
             </div>
-          ) : null}
-        </div>
-      </>
+          </div>
+        ) : null}
+      </div>
     );
   }
 
