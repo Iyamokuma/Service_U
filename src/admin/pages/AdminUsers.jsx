@@ -7,8 +7,6 @@ import {
   countriesFromCatalog,
   statesFromCatalogAndChurches,
   churchBranchSelectOptions,
-  hqChurchValueFromForm,
-  parseHqChurchValue,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import { canEditBranchCatalog } from "../roles.js";
@@ -51,6 +49,8 @@ import {
   nextAdminActiveValue,
 } from "../components/adminRowMenuItems.js";
 import { AdminReassignModal } from "../components/AdminReassignModal.jsx";
+import { AdminScopePanel, adminScopePanelLabel, formatAdminScopeDraft } from "../components/AdminScopePanel.jsx";
+import { AdminLocationScopeFields } from "../components/AdminLocationScopeFields.jsx";
 import { useAdminTableBulk } from "../hooks/useAdminTableBulk.js";
 import { TableSelectCheckbox } from "../components/TableSelectCheckbox.jsx";
 import { TableBulkActionsBar } from "../components/TableBulkActionsBar.jsx";
@@ -1645,171 +1645,55 @@ function AdminModal({
       </div>
 
       {locationScopedRole && (
-        <>
-          <p className="sa-text-sm sa-fw-600" style={{ margin: "4px 0 8px" }}>
-            Scope / location <span className="sa-required">*</span>
-          </p>
-          <div className={showBranchChurchStepFlow ? "sa-field" : "sa-form-row"}>
-          <div className="sa-field">
-            <label className="sa-label">Country <span className="sa-required">*</span></label>
-            <select
-              className="sa-field-select"
-              value={form.branch_country}
-              onChange={(e) => {
-                const branch_country = e.target.value;
-                setForm((f) => {
-                  const next = {
-                    ...f,
-                    branch_country,
-                    branch_state: "",
-                      satellite_site: "",
-                  };
-                  if (
-                    f.role === "country_super_admin" &&
-                    shouldAutoFillCountryAdminUsername(f.username)
-                  ) {
-                    next.username = suggestedCountryAdminUsername(branch_country);
-                  }
-                  return next;
-                });
-              }}
-                disabled={
-                  isCountryAdmin ||
-                  isStateAdmin ||
-                  isSatellitePastor ||
-                  (form.role === "country_super_admin" && isEdit)
-                }
-            >
-              <option value="">Select country</option>
-                {(form.role === "country_super_admin" && !isEdit ? countryOptions : allCountryOptions).map(
-                  (c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name}
-                    </option>
-                  ),
-                )}
-            </select>
-            {form.role === "country_super_admin" && !isEdit && countryOptions.length === 0 && (
-                <div className="sa-field-hint">
-                  Every country already has a Country Admin (or one pending approval).
-                </div>
-            )}
-          </div>
-            {!showBranchChurchStepFlow && ROLES_WITH_STATE.includes(form.role) ? (
-            <div className="sa-field">
-                <label className="sa-label">
-                  {form.role === "country_super_admin" ? "Headquarters state" : "State / region"}{" "}
-                  <span className="sa-required">*</span>
-                </label>
-              <select
-                className="sa-field-select"
-                value={form.branch_state}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    branch_state: e.target.value,
-                      satellite_site: ROLES_WITH_SATELLITE.includes(f.role) ? "" : f.satellite_site,
-                    }))
-                  }
-                  disabled={
-                    !form.branch_country ||
-                    isStateAdmin ||
-                    isSatellitePastor ||
-                    (form.role === "state_super_admin" && isEdit)
-                  }
-              >
-                <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
-                  {((form.role === "state_super_admin" || form.role === "country_super_admin") && !isEdit
-                  ? stateOptions
-                    : allStateOptions
-                ).map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.name}
-                    </option>
-                ))}
-              </select>
-              {form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0 && (
-                  <div className="sa-field-hint">
-                    Every state in this country already has a State Branch Admin (or one pending approval).
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          {showBranchStateStep && form.branch_country ? (
-            <div className="sa-field">
-              <label className="sa-label">
-                {branchStateLabel} <span className="sa-required">*</span>
-              </label>
-              <select
-                className="sa-field-select"
-                value={form.branch_state}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    branch_state: e.target.value,
-                    satellite_site: "",
-                  }))
-                }
-                disabled={
-                  (form.role === "state_super_admin" && isEdit) ||
-                  (form.role === "country_super_admin" && isEdit)
-                }
-              >
-                <option value="">Select state</option>
-                {steppedStateOptions.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              {!isEdit &&
+        <AdminScopePanel
+          label={adminScopePanelLabel(form.role)}
+          summary={formatAdminScopeDraft(form)}
+          hint={
+            form.role === "country_super_admin"
+              ? "Country Admin is tied to one headquarters church. State for the State Branch view is taken from that church."
+              : form.role === "state_super_admin"
+                ? "State Branch Admin oversees applications and pastors within the selected state."
+                : "Location determines which registrations and admins this account can access."
+          }
+          defaultOpen
+        >
+          <AdminLocationScopeFields
+            form={form}
+            setForm={setForm}
+            isEdit={isEdit}
+            countryOptions={countryOptions}
+            allCountryOptions={allCountryOptions}
+            allStateOptions={allStateOptions}
+            stateOptions={stateOptions}
+            showBranchChurchStepFlow={showBranchChurchStepFlow}
+            showBranchStateStep={showBranchStateStep}
+            branchStateLabelText={branchStateLabel}
+            branchChurchHint={branchChurchHint}
+            branchChurchOpts={branchChurchOpts}
+            showChurchPicker={showChurchPicker}
+            steppedStateOptions={steppedStateOptions}
+            disableCountry={isCountryAdmin || isStateAdmin || isSatellitePastor}
+            disableState={isStateAdmin || isSatellitePastor}
+            onCountryChange={(next, branch_country, prev) => {
+              if (
+                next.role === "country_super_admin" &&
+                shouldAutoFillCountryAdminUsername(prev.username)
+              ) {
+                return { ...next, username: suggestedCountryAdminUsername(branch_country) };
+              }
+              return next;
+            }}
+            showCountryVacantHint={form.role === "country_super_admin" && !isEdit && countryOptions.length === 0}
+            showStateVacantHint={
+              form.role === "state_super_admin" && !isEdit && form.branch_country && stateOptions.length === 0
+            }
+            showSteppedStateVacantHint={
+              !isEdit &&
               (form.role === "country_super_admin" || form.role === "state_super_admin") &&
-              steppedStateOptions.length === 0 ? (
-                <div className="sa-field-hint">
-                  {form.role === "country_super_admin"
-                    ? "No available states in this country (all already have a branch admin or pending request)."
-                    : "Every state in this country already has a State Branch Admin (or one pending approval)."}
-                </div>
-              ) : (
-                <div className="sa-field-hint">
-                  States are loaded from the branch directory for the selected country.
-            </div>
-          )}
-        </div>
-          ) : null}
-
-          {showChurchPicker ? (
-            <div className="sa-field">
-              <label className="sa-label">
-                {form.role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
-                <span className="sa-required">*</span>
-              </label>
-              <SearchableSelect
-                value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
-                onChange={(e) => {
-                  const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
-                  setForm((f) => ({ ...f, branch_state, satellite_site }));
-                }}
-                options={branchChurchOpts}
-                placeholder={
-                  branchChurchOpts.length
-                    ? "Select church branch"
-                    : "No churches in this country yet"
-                }
-                searchPlaceholder="Search church branches…"
-                emptyMessage="No churches match your search"
-                searchAriaLabel="Filter church branches"
-              />
-              <div className="sa-field-hint">
-                {branchChurchOpts.length === 0
-                  ? "No churches listed for this country yet. Add branches via Data Entry or approve a location request first."
-                  : branchChurchHint}
-              </div>
-            </div>
-          ) : null}
-        </>
+              steppedStateOptions.length === 0
+            }
+          />
+        </AdminScopePanel>
       )}
 
       {ROLES_WITH_SATELLITE.includes(form.role) && !showBranchChurchStepFlow && (

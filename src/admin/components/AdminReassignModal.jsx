@@ -7,21 +7,22 @@ import {
   countriesFromCatalog,
   statesFromCatalogAndChurches,
   churchBranchSelectOptions,
-  hqChurchValueFromForm,
-  parseHqChurchValue,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import {
   occupiedCountryCodes,
-  ROLES_WITH_COUNTRY,
-  ROLES_WITH_STATE,
-  ROLES_WITH_SATELLITE,
   ROLES_WITH_BRANCH_CHURCH,
+  ROLES_WITH_COUNTRY,
+  ROLES_WITH_SATELLITE,
+  ROLES_WITH_STATE,
   validateAdminReassignForm,
 } from "../adminAccountForm.js";
 import { occupiedStateCodes } from "../stateAdminForm.js";
 import { roleDisplayLabel } from "../roles.js";
+import { branchCountryLabel } from "../branchRegions.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
+import { AdminScopePanel, adminScopePanelLabel, formatAdminScopeDraft } from "./AdminScopePanel.jsx";
+import { AdminLocationScopeFields } from "./AdminLocationScopeFields.jsx";
 
 const ROLE_OPTIONS = [
   { value: "country_super_admin", label: "Country Admin" },
@@ -252,117 +253,35 @@ export function AdminReassignModal({
       </div>
 
       {locationScoped ? (
-        <>
-          <p className="sa-text-sm sa-fw-600" style={{ margin: "0 0 8px" }}>
-            New scope / location
-          </p>
-          <div className={showBranchChurchStepFlow ? "sa-field" : "sa-form-row"}>
-            <div className="sa-field">
-              <label className="sa-label">
-                Country <span className="sa-required">*</span>
-              </label>
-              <select
-                className="sa-field-select"
-                value={form.branch_country}
-                onChange={(e) => {
-                  const branch_country = e.target.value;
-                  setForm((f) => ({
-                    ...f,
-                    branch_country,
-                    branch_state: "",
-                    satellite_site: "",
-                  }));
-                }}
-              >
-                <option value="">Select country</option>
-                {allCountryOptions.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {!showBranchChurchStepFlow && ROLES_WITH_STATE.includes(form.role) ? (
-              <div className="sa-field">
-                <label className="sa-label">
-                  {form.role === "country_super_admin" ? "Headquarters state" : "State / region"}{" "}
-                  <span className="sa-required">*</span>
-                </label>
-                <select
-                  className="sa-field-select"
-                  value={form.branch_state}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      branch_state: e.target.value,
-                      satellite_site: "",
-                    }))
-                  }
-                  disabled={!form.branch_country}
-                >
-                  <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
-                  {(form.role === "state_super_admin" || form.role === "country_super_admin"
-                    ? stateOptions
-                    : allStateOptions
-                  ).map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-          </div>
-
-          {showBranchStateStep && form.branch_country ? (
-            <div className="sa-field">
-              <label className="sa-label">
-                {branchStateLabel} <span className="sa-required">*</span>
-              </label>
-              <select
-                className="sa-field-select"
-                value={form.branch_state}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    branch_state: e.target.value,
-                    satellite_site: "",
-                  }))
-                }
-              >
-                <option value="">Select state</option>
-                {steppedStateOptions.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          {showChurchPicker ? (
-            <div className="sa-field">
-              <label className="sa-label">
-                {form.role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
-                <span className="sa-required">*</span>
-              </label>
-              <SearchableSelect
-                value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
-                onChange={(e) => {
-                  const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
-                  setForm((f) => ({ ...f, branch_state, satellite_site }));
-                }}
-                options={branchChurchOpts}
-                placeholder={
-                  branchChurchOpts.length ? "Select church branch" : "No churches in this country yet"
-                }
-                searchPlaceholder="Search church branches…"
-                emptyMessage="No churches match your search"
-                ariaLabel="Church branch"
-              />
-            </div>
-          ) : null}
-        </>
+        <AdminScopePanel
+          label={adminScopePanelLabel(form.role)}
+          summary={formatAdminScopeDraft(form)}
+          hint="New assignment for this administrator."
+          defaultOpen
+        >
+          <AdminLocationScopeFields
+            form={form}
+            setForm={setForm}
+            isEdit={false}
+            countryOptions={allCountryOptions}
+            allCountryOptions={allCountryOptions}
+            allStateOptions={allStateOptions}
+            stateOptions={stateOptions}
+            showBranchChurchStepFlow={showBranchChurchStepFlow}
+            showBranchStateStep={showBranchStateStep}
+            branchStateLabelText={branchStateLabel}
+            branchChurchHint={
+              form.role === "country_super_admin"
+                ? "Select the satellite church where this Country Admin is headquartered."
+                : form.role === "state_super_admin"
+                  ? "Select the satellite church for this State Branch Admin."
+                  : "Pastor admin is scoped to this satellite within the selected state."
+            }
+            branchChurchOpts={branchChurchOpts}
+            showChurchPicker={showChurchPicker}
+            steppedStateOptions={steppedStateOptions}
+          />
+        </AdminScopePanel>
       ) : null}
 
       {ROLES_WITH_SATELLITE.includes(form.role) && !showBranchChurchStepFlow ? (
