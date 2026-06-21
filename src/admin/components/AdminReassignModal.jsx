@@ -130,10 +130,10 @@ export function AdminReassignModal({
     return allStateOptions.filter((s) => !takenStates.has(String(s.code).toUpperCase()));
   }, [allStateOptions, takenStates]);
 
-  const satelliteOptions = useMemo(
-    () => satellitesFromChurches(churches, form?.branch_country, form?.branch_state),
-    [churches, form?.branch_country, form?.branch_state],
-  );
+  const satelliteOptions = useMemo(() => {
+    if (!form?.branch_country || !form?.branch_state) return [];
+    return satellitesFromChurches(churches, form.branch_country, form.branch_state);
+  }, [churches, form?.branch_country, form?.branch_state]);
 
   const showBranchChurchStepFlow =
     isGlobalAdmin && form?.role && ROLES_WITH_BRANCH_CHURCH.includes(form.role);

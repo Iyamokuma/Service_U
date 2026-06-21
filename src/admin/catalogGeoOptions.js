@@ -121,12 +121,8 @@ export function satellitesFromChurches(churches, countryCode, stateCode = "") {
   const cc = normUp(countryCode);
   if (!cc) return [];
   const st = normUp(stateCode);
-  if (st) {
-    const inState = satelliteSitesForBranch(churches, cc, st);
-    if (inState.length) return inState;
-    return [];
-  }
-  return satelliteSitesForCountry(churches, cc, "");
+  if (!st) return [];
+  return satelliteSitesForBranch(churches, cc, st);
 }
 
 const HQ_CHURCH_SEP = "::";

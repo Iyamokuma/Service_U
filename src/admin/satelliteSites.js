@@ -1,6 +1,19 @@
-import { branchStateLabel } from "./branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 
 const HQ_CHURCH_SEP = "::";
+
+export function branchCountryMatches(churchCountry, filterCountry) {
+  const cc = String(churchCountry || "").trim().toUpperCase();
+  const fc = String(filterCountry || "").trim().toUpperCase();
+  if (!cc || !fc) return false;
+  if (cc === fc) return true;
+  const churchName = branchCountryLabel(cc);
+  const filterName = branchCountryLabel(fc);
+  if (churchName && filterName && churchName.toUpperCase() === filterName.toUpperCase()) return true;
+  if (churchName && fc === String(churchName).trim().toUpperCase()) return true;
+  if (filterName && cc === String(filterName).trim().toUpperCase()) return true;
+  return false;
+}
 
 export function branchStateMatches(countryCode, churchState, filterState) {
   const cc = String(countryCode || "").trim().toUpperCase();
@@ -9,7 +22,11 @@ export function branchStateMatches(countryCode, churchState, filterState) {
   if (!cc || !st || !fs) return false;
   if (st === fs) return true;
   const filterLabel = branchStateLabel(cc, fs);
-  return filterLabel && st === String(filterLabel).trim().toUpperCase();
+  if (filterLabel && st === String(filterLabel).trim().toUpperCase()) return true;
+  const churchLabel = branchStateLabel(cc, st);
+  if (churchLabel && fs === String(churchLabel).trim().toUpperCase()) return true;
+  if (filterLabel && churchLabel && filterLabel.toUpperCase() === churchLabel.toUpperCase()) return true;
+  return false;
 }
 
 export function satelliteSitesForBranch(churches, branchCountry, branchState) {
@@ -18,7 +35,7 @@ export function satelliteSitesForBranch(churches, branchCountry, branchState) {
   if (!cc || !st) return [];
   const names = new Set();
   for (const ch of churches || []) {
-    if (String(ch.branch_country || "").toUpperCase() !== cc) continue;
+    if (!branchCountryMatches(ch.branch_country, cc)) continue;
     if (!branchStateMatches(cc, ch.branch_state, st)) continue;
     const n = String(ch.name || "").trim();
     if (n) names.add(n);
@@ -33,7 +50,7 @@ export function satelliteSitesForCountry(churches, branchCountry, branchState = 
   if (!cc) return [];
   const names = new Set();
   for (const ch of churches || []) {
-    if (String(ch.branch_country || "").toUpperCase() !== cc) continue;
+    if (!branchCountryMatches(ch.branch_country, cc)) continue;
     if (st && !branchStateMatches(cc, ch.branch_state, st)) continue;
     const n = String(ch.name || "").trim();
     if (n) names.add(n);
@@ -47,7 +64,7 @@ export function churchesInBranch(churches, branchCountry, branchState) {
   const st = String(branchState || "").trim().toUpperCase();
   if (!cc || !st) return [];
   return (churches || []).filter((ch) => {
-    if (String(ch.branch_country || "").toUpperCase() !== cc) return false;
+    if (!branchCountryMatches(ch.branch_country, cc)) return false;
     return branchStateMatches(cc, ch.branch_state, st);
   });
 }

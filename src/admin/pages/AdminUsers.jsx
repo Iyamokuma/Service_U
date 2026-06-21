@@ -1422,10 +1422,10 @@ function AdminModal({
     dbStateOptions,
   ]);
 
-  const satelliteOptions = useMemo(
-    () => satellitesFromChurches(churches, form.branch_country, form.branch_state),
-    [churches, form.branch_country, form.branch_state],
-  );
+  const satelliteOptions = useMemo(() => {
+    if (!form.branch_country || !form.branch_state) return [];
+    return satellitesFromChurches(churches, form.branch_country, form.branch_state);
+  }, [churches, form.branch_country, form.branch_state]);
 
   const branchStateLabelText =
     form.role === "country_super_admin" ? "Headquarters state" : "State / region";

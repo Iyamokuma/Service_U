@@ -61,21 +61,25 @@ export function AdminLocationScopeFields({
   }
 
   function pickState(branch_state) {
-    setForm((f) => ({ ...f, branch_state, satellite_site: "" }));
+    const raw = String(branch_state || "").trim();
+    const match = (stateFieldOptions || []).find(
+      (s) =>
+        String(s.code || "").toUpperCase() === raw.toUpperCase() ||
+        String(s.name || "").toUpperCase() === raw.toUpperCase(),
+    );
+    const canonical = match?.code ? String(match.code).toUpperCase() : raw.toUpperCase();
+    setForm((f) => ({ ...f, branch_state: canonical, satellite_site: "" }));
   }
+
+  const scopedChurchOpts = useMemo(() => {
+    if (!form.branch_country || !form.branch_state) return [];
+    return churchSelectOptionsForBranch(churches || [], form.branch_country, form.branch_state);
+  }, [churches, form.branch_country, form.branch_state]);
 
   const stateDropdownOptions = useMemo(
     () => (stateFieldOptions || []).map((s) => ({ value: s.code, label: s.name })),
     [stateFieldOptions],
   );
-
-  const scopedChurchOpts = useMemo(() => {
-    if (!form.branch_country || !form.branch_state) return [];
-    if (churches?.length) {
-      return churchSelectOptionsForBranch(churches, form.branch_country, form.branch_state);
-    }
-    return branchChurchOpts;
-  }, [churches, form.branch_country, form.branch_state, branchChurchOpts]);
 
   const countryDisabled = disableCountry || (role === "country_super_admin" && isEdit);
 
@@ -181,6 +185,7 @@ export function AdminLocationScopeFields({
 
         <Field label="Church / branch" required span="2" hint={churchFieldHint}>
           <SearchableDropdown
+            key={`${form.branch_country}-${form.branch_state}`}
             value={churchValue}
             onChange={(value) => {
               const { branch_state, satellite_site } = parseHqChurchValue(value);
