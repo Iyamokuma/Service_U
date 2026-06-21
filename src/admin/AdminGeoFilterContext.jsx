@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
 import { fetchAdminChurchesCatalog } from "./churchesCatalog.js";
-import { countriesFromCatalog } from "./catalogGeoOptions.js";
-import { geoFilterApiParams, hasGeoFilters, satelliteOptionsForGeoFilter, stateOptionsForGeoFilter } from "./geoFilterUtils.js";
+import { countriesFromCatalog, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { hydrateBranchLabelsFromCatalog } from "./branchRegions.js";
+import { geoFilterApiParams, hasGeoFilters, satelliteOptionsForGeoFilter } from "./geoFilterUtils.js";
 import { isGlobalAdminRole } from "./roles.js";
 
 const AdminGeoFilterContext = createContext(null);
@@ -34,11 +35,35 @@ export function AdminGeoFilterProvider({ admin, children }) {
   const [churches, setChurches] = useState([]);
   const [catalog, setCatalog] = useState(null);
 
-  useEffect(() => {
+  const reloadCatalog = useCallback(() => {
     if (!enabled) return;
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
+    api
+      .catalogList()
+      .then((r) => {
+        setCatalog(r);
+        hydrateBranchLabelsFromCatalog(r);
+      })
+      .catch(() => setCatalog(null));
   }, [enabled]);
+
+  useEffect(() => {
+    reloadCatalog();
+  }, [reloadCatalog]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      reloadCatalog();
+    };
+    window.addEventListener("focus", onVis);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onVis);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [enabled, reloadCatalog]);
 
   const clear = useCallback(() => {
     setCountry("");
@@ -71,7 +96,12 @@ export function AdminGeoFilterProvider({ admin, children }) {
       churches,
       catalog,
       countryOptions: countriesFromCatalog(catalog || { countries: [] }),
-      stateOptions: country ? stateOptionsForGeoFilter(churches, country) : [],
+      stateOptions: country
+        ? statesFromCatalogAndChurches(catalog, country, churches).map((s) => ({
+            value: s.code,
+            label: s.name,
+          }))
+        : [],
       satelliteOptions:
         country && state ? satelliteOptionsForGeoFilter(churches, country, state) : [],
       country,

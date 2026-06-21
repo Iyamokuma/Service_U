@@ -5,7 +5,7 @@ import {
   fetchLgasOrCities,
   fetchStatesForCountryName,
 } from "../../lib/geoApi.js";
-import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel, hydrateBranchLabelsFromCatalog } from "../branchRegions.js";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 
@@ -60,10 +60,26 @@ export function DataEntryLocationForm() {
   const selectedCatalogState = catalogStateOptions.find((s) => s.code === catalogStateCode);
 
   useEffect(() => {
-    api
-      .catalogList()
-      .then((r) => setCatalog(r))
-      .catch(() => setCatalog(null));
+    const loadCatalog = () => {
+      api
+        .catalogList()
+        .then((r) => {
+          setCatalog(r);
+          hydrateBranchLabelsFromCatalog(r);
+        })
+        .catch(() => setCatalog(null));
+    };
+    loadCatalog();
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      loadCatalog();
+    };
+    window.addEventListener("focus", onVis);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onVis);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   const filteredCountries = countries.filter((c) => {

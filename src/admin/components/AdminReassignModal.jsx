@@ -6,9 +6,9 @@ import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
   statesFromCatalogAndChurches,
-  churchBranchSelectOptions,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
+import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import {
   occupiedCountryCodes,
   ROLES_WITH_BRANCH_CHURCH,
@@ -142,11 +142,8 @@ export function AdminReassignModal({
     form?.role === "country_super_admin" ? "Headquarters state" : "State / region";
 
   const branchChurchOpts = useMemo(() => {
-    if (!showBranchChurchStepFlow || !form?.branch_country) return [];
-    if (!form?.branch_state) return [];
-    return churchBranchSelectOptions(churches, form.branch_country, {
-      allowedStateCodes: [form.branch_state],
-    });
+    if (!showBranchChurchStepFlow || !form?.branch_country || !form?.branch_state) return [];
+    return churchSelectOptionsForBranch(churches, form.branch_country, form.branch_state);
   }, [showBranchChurchStepFlow, churches, form?.branch_country, form?.branch_state]);
 
   const showChurchPicker = showBranchChurchStepFlow;
@@ -287,6 +284,7 @@ export function AdminReassignModal({
                   : "Pastor admin is scoped to this satellite within the selected state."
             }
             branchChurchOpts={branchChurchOpts}
+            churches={churches}
             showChurchPicker={showChurchPicker}
             stateFieldOptions={stateFieldOptions}
             steppedStateOptions={stateFieldOptions}

@@ -7,6 +7,7 @@ import {
   ROLES_WITH_STATE,
 } from "../adminAccountForm.js";
 import { branchStateLabel } from "../branchRegions.js";
+import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import { hqChurchValueFromForm, parseHqChurchValue } from "../catalogGeoOptions.js";
 
 /**
@@ -25,6 +26,7 @@ export function AdminLocationScopeFields({
   branchStateLabelText = "State / region",
   branchChurchHint = "",
   branchChurchOpts = [],
+  churches = [],
   showChurchPicker = false,
   stateFieldOptions = [],
   steppedStateOptions = [],
@@ -67,6 +69,14 @@ export function AdminLocationScopeFields({
     [stateFieldOptions],
   );
 
+  const scopedChurchOpts = useMemo(() => {
+    if (!form.branch_country || !form.branch_state) return [];
+    if (churches?.length) {
+      return churchSelectOptionsForBranch(churches, form.branch_country, form.branch_state);
+    }
+    return branchChurchOpts;
+  }, [churches, form.branch_country, form.branch_state, branchChurchOpts]);
+
   const countryDisabled = disableCountry || (role === "country_super_admin" && isEdit);
 
   const churchHint = (() => {
@@ -76,7 +86,7 @@ export function AdminLocationScopeFields({
     if (!form.branch_country) {
       return "Select a country first.";
     }
-    if (branchChurchOpts.length === 0) {
+    if (scopedChurchOpts.length === 0) {
       return "No churches listed for this country yet. Add branches via Data Entry or approve a location request first.";
     }
     return branchChurchHint || "Pick the branch name as listed in the directory.";
@@ -112,11 +122,11 @@ export function AdminLocationScopeFields({
       if (!form.branch_state) {
         return "Select a state first.";
       }
-      if (branchChurchOpts.length === 0) {
-        return "No churches listed for this state yet. Add branches via Data Entry or approve a location request first.";
-      }
-      return branchChurchHint || "Pick the branch name as listed in the directory.";
-    })();
+    if (scopedChurchOpts.length === 0) {
+      return "No churches listed for this state yet. Add branches via Data Entry or approve a location request first.";
+    }
+    return branchChurchHint || "Pick the branch name as listed in the directory.";
+  })();
 
     const churchValue = hqChurchValueFromForm(form.branch_state, form.satellite_site);
     const churchPlaceholder = !form.branch_country
@@ -125,7 +135,7 @@ export function AdminLocationScopeFields({
         ? "Select state first"
         : churchesLoading
           ? "Loading churches…"
-          : branchChurchOpts.length
+          : scopedChurchOpts.length
             ? "Select"
             : "No branches found for this state";
 
@@ -176,7 +186,7 @@ export function AdminLocationScopeFields({
               const { branch_state, satellite_site } = parseHqChurchValue(value);
               setForm((f) => ({ ...f, branch_state, satellite_site }));
             }}
-            options={branchChurchOpts}
+            options={scopedChurchOpts}
             disabled={!form.branch_country || !form.branch_state || churchesLoading}
             placeholder={churchPlaceholder}
             searchPlaceholder="Search by name or address"
@@ -307,16 +317,18 @@ export function AdminLocationScopeFields({
               const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
               setForm((f) => ({ ...f, branch_state, satellite_site }));
             }}
-            options={branchChurchOpts}
-            disabled={!form.branch_country || churchesLoading}
+            options={scopedChurchOpts}
+            disabled={!form.branch_country || !form.branch_state || churchesLoading}
             placeholder={
               !form.branch_country
                 ? "Select country first"
-                : churchesLoading
-                  ? "Loading churches…"
-                  : branchChurchOpts.length
-                    ? "Select church branch"
-                    : "No churches in this country yet"
+                : !form.branch_state
+                  ? "Select state first"
+                  : churchesLoading
+                    ? "Loading churches…"
+                    : scopedChurchOpts.length
+                      ? "Select church branch"
+                      : "No churches in this state yet"
             }
             searchPlaceholder="Search church branches…"
             emptyMessage="No churches match your search"

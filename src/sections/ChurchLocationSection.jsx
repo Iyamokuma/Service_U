@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { Field } from "../components/Field.jsx";
 import { SearchableDropdown } from "../components/SearchableDropdown.jsx";
 import { SectionHead } from "./SectionHead.jsx";
-import { branchCountryLabel, mergeStateOptions } from "../admin/branchRegions.js";
+import { branchCountryLabel, mergeStateOptions, hydrateBranchLabelsFromDirectoryCountries, hydrateBranchLabelsFromDirectoryStates } from "../admin/branchRegions.js";
 import { fetchChurchesCatalog } from "../lib/churchesCatalog.js";
 import { fetchDirectoryCountries, fetchDirectoryStates } from "../lib/directoryCatalog.js";
 
@@ -145,9 +145,14 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   }, [form.branchCountry, effectiveState, dirStatesLoading, loadChurches]);
 
   useEffect(() => {
-    if (!norm(form.branchCountry)) return;
-    reloadDirectoryCountries();
-  }, [form.branchCountry, reloadDirectoryCountries]);
+    if (dirCountries.length) hydrateBranchLabelsFromDirectoryCountries(dirCountries);
+  }, [dirCountries]);
+
+  useEffect(() => {
+    if (form.branchCountry && dirStates.length) {
+      hydrateBranchLabelsFromDirectoryStates(form.branchCountry, dirStates);
+    }
+  }, [form.branchCountry, dirStates]);
 
   useEffect(() => {
     if (!form.branchCountry) {

@@ -6,10 +6,10 @@ import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
   statesFromCatalogAndChurches,
-  churchBranchSelectOptions,
   satellitesFromChurches,
   directoryStateOptionsFromRows,
 } from "../catalogGeoOptions.js";
+import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
@@ -19,6 +19,7 @@ import {
   branchCountryLabel,
   branchStateLabel,
   coerceStateForCountry,
+  hydrateBranchLabelsFromCatalog,
 } from "../branchRegions.js";
 import {
   isRootSuperAdmin,
@@ -224,6 +225,31 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   useEffect(() => {
     if (!isGlobalAdmin) return;
     fetchAdminChurchesCatalog().then(setChurchesCatalog).catch(() => setChurchesCatalog([]));
+    api
+      .catalogList()
+      .then((r) => hydrateBranchLabelsFromCatalog(r))
+      .catch(() => {});
+  }, [isGlobalAdmin]);
+
+  useEffect(() => {
+    if (!isGlobalAdmin) return;
+    const reload = () => {
+      fetchAdminChurchesCatalog().then(setChurchesCatalog).catch(() => setChurchesCatalog([]));
+      api
+        .catalogList()
+        .then((r) => hydrateBranchLabelsFromCatalog(r))
+        .catch(() => {});
+    };
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      reload();
+    };
+    window.addEventListener("focus", onVis);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onVis);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [isGlobalAdmin]);
 
   const scopedAdmins = (data?.data ?? []).filter((a) => {
@@ -1339,7 +1365,10 @@ function AdminModal({
       setCatalogLoading(true);
       api
         .catalogList()
-        .then(setCatalog)
+        .then((r) => {
+          setCatalog(r);
+          hydrateBranchLabelsFromCatalog(r);
+        })
         .catch(() => setCatalog(null))
         .finally(() => setCatalogLoading(false));
     }
@@ -1478,11 +1507,8 @@ function AdminModal({
   });
 
   const branchChurchOpts = useMemo(() => {
-    if (!showBranchChurchStepFlow || !form.branch_country) return [];
-    if (!form.branch_state) return [];
-    return churchBranchSelectOptions(churches, form.branch_country, {
-      allowedStateCodes: [form.branch_state],
-    });
+    if (!showBranchChurchStepFlow || !form.branch_country || !form.branch_state) return [];
+    return churchSelectOptionsForBranch(churches, form.branch_country, form.branch_state);
   }, [showBranchChurchStepFlow, churches, form.branch_country, form.branch_state]);
 
   const showChurchPicker = showBranchChurchStepFlow;
@@ -1548,6 +1574,7 @@ function AdminModal({
       branchStateLabelText={branchStateLabelText}
       branchChurchHint={branchChurchHint}
       branchChurchOpts={branchChurchOpts}
+      churches={churches}
       showChurchPicker={showChurchPicker}
       stateFieldOptions={stateFieldOptions}
       steppedStateOptions={steppedStateOptions}

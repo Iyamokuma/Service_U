@@ -2,8 +2,49 @@
 
 export const BRANCH_COUNTRIES = [];
 
+const countryLabels = new Map();
+const stateLabels = new Map();
+
 function normCode(v) {
   return String(v ?? "").trim().toUpperCase();
+}
+
+/** Populate human-readable labels from admin catalogList() payload. */
+export function hydrateBranchLabelsFromCatalog(catalog) {
+  if (!catalog) return;
+  for (const c of catalog.countries || []) {
+    const code = normCode(c.branch_country_code);
+    const name = String(c.name || "").trim();
+    if (code && name) countryLabels.set(code, name);
+  }
+  const countryById = new Map(
+    (catalog.countries || []).map((c) => [Number(c.id), normCode(c.branch_country_code)]),
+  );
+  for (const s of catalog.states || []) {
+    const cc = countryById.get(Number(s.country_id)) || "";
+    const sc = normCode(s.branch_state_code);
+    const name = String(s.name || "").trim();
+    if (cc && sc && name) stateLabels.set(`${cc}|${sc}`, name);
+  }
+}
+
+/** Populate labels from public directory_countries rows. */
+export function hydrateBranchLabelsFromDirectoryCountries(rows) {
+  for (const c of rows || []) {
+    const code = normCode(c.branch_country_code);
+    const name = String(c.name || "").trim();
+    if (code && name) countryLabels.set(code, name);
+  }
+}
+
+/** Populate labels from public directory_states rows for one country. */
+export function hydrateBranchLabelsFromDirectoryStates(countryCode, rows) {
+  const cc = normCode(countryCode);
+  for (const s of rows || []) {
+    const sc = normCode(s.branch_state_code);
+    const name = String(s.name || "").trim();
+    if (cc && sc && name) stateLabels.set(`${cc}|${sc}`, name);
+  }
 }
 
 export function branchStatesForCountry(countryCode) {
@@ -20,8 +61,8 @@ export function isStateValidForCountry(countryCode, stateCode) {
   const sc = normCode(stateCode);
   const cc = normCode(countryCode);
   if (!cc || !sc) return false;
-  if (cc === "US" && sc !== "US" && /^[A-Z0-9]{2,12}$/.test(sc)) return true;
-  return false;
+  if (stateLabels.has(`${cc}|${sc}`)) return true;
+  return /^[A-Z0-9]{1,12}$/.test(sc);
 }
 
 export function assertStateBelongsToCountry(countryCode, stateCode) {
@@ -42,13 +83,15 @@ export function coerceStateForCountry(countryCode, stateCode) {
 
 export function branchCountryLabel(code) {
   if (!code) return "—";
-  return code;
+  const cc = normCode(code);
+  return countryLabels.get(cc) || cc;
 }
 
 export function branchStateLabel(countryCode, stateCode) {
-  void countryCode;
   if (!stateCode) return "—";
-  return stateCode;
+  const cc = normCode(countryCode);
+  const sc = normCode(stateCode);
+  return stateLabels.get(`${cc}|${sc}`) || sc;
 }
 
 export function resolveStateCodeByName(countryCode, stateName) {
@@ -64,9 +107,10 @@ export function canonicalStateOption(countryCode, codeOrName, displayName) {
   const rawName = String(displayName ?? codeOrName ?? "").trim();
   const canonical = resolveStateCodeByName(cc, rawName) || rawCode;
   if (!cc || !canonical) return null;
+  const labelFromCache = stateLabels.get(`${cc}|${canonical}`);
   return {
     code: canonical,
-    name: String(displayName || "").trim() || canonical,
+    name: labelFromCache || String(displayName || "").trim() || canonical,
   };
 }
 
@@ -94,6 +138,7 @@ export function branchStateCodeForLocationPublish(countryCode, stateName) {
 export function branchCountryCodeFromIso2(iso2) {
   const c = normCode(iso2);
   if (!c) return "";
-  if (/^[A-Z]{2}$/.test(c)) return c;
+  if (countryLabels.has(c)) return c;
+  if (/^[A-Z]{2,8}$/.test(c)) return c;
   return "";
 }

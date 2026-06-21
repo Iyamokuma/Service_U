@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel, hydrateBranchLabelsFromCatalog } from "../branchRegions.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { api } from "../api.js";
 import { countriesFromCatalog } from "../catalogGeoOptions.js";
@@ -186,7 +186,10 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     }
     setForm(base);
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
+    api.catalogList().then((r) => {
+      setCatalog(r);
+      hydrateBranchLabelsFromCatalog(r);
+    }).catch(() => setCatalog(null));
   }, [open, admin, policy]);
 
   const countryOptions = useMemo(

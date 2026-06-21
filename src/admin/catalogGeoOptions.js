@@ -3,23 +3,14 @@
  */
 
 import { branchCountryLabel, branchStateLabel, mergeStateOptions } from "./branchRegions.js";
-import { satelliteSitesForBranch, satelliteSitesForCountry } from "./satelliteSites.js";
+import { churchesInBranch, satelliteSitesForBranch, satelliteSitesForCountry } from "./satelliteSites.js";
 
 function normUp(s) {
   return String(s ?? "").trim().toUpperCase();
 }
 
-/** Countries whose admin flow picks a church directly (no regional state dropdown). */
-const REGIONAL_STATE_COUNTRIES = new Set(["US"]);
-
-export function isRegionalBranchCountry(countryCode) {
-  return REGIONAL_STATE_COUNTRIES.has(normUp(countryCode));
-}
-
 function statesFromChurchesForDropdown(countryCode, churches) {
-  const cc = normUp(countryCode);
-  if (REGIONAL_STATE_COUNTRIES.has(cc)) return [];
-  return statesFromChurches(churches, cc);
+  return statesFromChurches(churches, countryCode);
 }
 
 /** All countries: catalog first, then any static entries not yet in the directory. */
@@ -63,7 +54,7 @@ function statesFromChurches(churches, countryCode) {
 }
 
 /**
- * States from directory + live church rows (e.g. US churches under TX while directory shows North America).
+ * States from directory + live church rows.
  */
 export function statesFromCatalogAndChurches(catalog, countryCode, churches = []) {
   const cc = normUp(countryCode);
@@ -133,8 +124,6 @@ export function satellitesFromChurches(churches, countryCode, stateCode = "") {
   if (st) {
     const inState = satelliteSitesForBranch(churches, cc, st);
     if (inState.length) return inState;
-    // Regional directory bucket (e.g. US / "North America" while churches use TX, CA, …)
-    if (st === cc) return satelliteSitesForCountry(churches, cc, "");
     return [];
   }
   return satelliteSitesForCountry(churches, cc, "");
@@ -146,21 +135,22 @@ const HQ_CHURCH_SEP = "::";
 export function churchBranchSelectOptions(churches, countryCode, { allowedStateCodes, countryWide = false } = {}) {
   const cc = normUp(countryCode);
   if (!cc) return [];
-  const listAllInCountry = countryWide || isRegionalBranchCountry(cc);
-  const allowed = listAllInCountry
-    ? null
-    : allowedStateCodes?.length
-      ? new Set(allowedStateCodes.map((c) => normUp(c)))
-      : null;
+  const scopedChurches =
+    allowedStateCodes?.length && !countryWide
+      ? allowedStateCodes.flatMap((code) => churchesInBranch(churches, cc, code))
+      : countryWide
+        ? (churches || []).filter((ch) => normUp(ch.branch_country) === cc)
+        : [];
+  const seen = new Set();
+  const listAllInCountry = countryWide && !allowedStateCodes?.length;
   const rows = [];
-  for (const ch of churches || []) {
-    if (normUp(ch.branch_country) !== cc) continue;
+  for (const ch of scopedChurches) {
     const st = normUp(ch.branch_state);
     const name = String(ch.name || "").trim();
     if (!st || !name) continue;
-    if (allowed && !allowed.has(st)) {
-      if (!allowed.has(cc)) continue;
-    }
+    const key = `${st}:${name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const stateLabel = branchStateLabel(cc, st);
     rows.push({
       value: `${st}${HQ_CHURCH_SEP}${name}`,
