@@ -305,25 +305,18 @@ export function getAnnouncementDestinationLabels(policy) {
   return {
     destinationTabs: DESTINATION_TABS_DEFAULT,
     typePrefix: {
-      members: "Members",
+      members: "Unit members",
       leaders: "Leaders",
-      admins: "Admins",
+      admins: "Pastors",
     },
     pastorsSubtitle: "",
-    broadcastSubtitle: "Broadcast to members, leaders, or admins by email and/or push notification.",
-    leaderModeOptions: LEADER_MODES_DEFAULT,
-    leaderModeDisplay: {
-      all: "All leaders",
-      service_unit: "Service unit leaders",
-      sub_unit: "Sub-unit leaders",
-    },
+    broadcastSubtitle: "Broadcast to unit members, leaders, or pastors by email and/or push notification.",
+    leaderModeOptions: LEADER_MODES_SATELLITE,
+    leaderModeDisplay: SATELLITE_LEADER_DISPLAY,
     allRolesLabel: "All admins",
     adminRolesSectionTitle: "Admin roles",
     adminRolesHint: "",
-    leaderTypeTitle: "Leader type",
-    leaderTypeLabel: "Leaders",
-    leaderTypeHint:
-      "Service unit only: unit leaders. Sub-unit: pick a unit and sub-unit for sub-unit leaders.",
+    ...SATELLITE_LEADER_UI,
     usesBranchAudienceLabels: false,
   };
 }
