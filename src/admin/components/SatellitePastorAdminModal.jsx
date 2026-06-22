@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Field } from "../../components/Field.jsx";
 import { Modal } from "./Modal.jsx";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { SearchableDropdown } from "./SearchableDropdown.jsx";
+import { branchCountryLabel } from "../branchRegions.js";
 import {
   availableSatellitesForState,
   occupiedSatelliteSites,
@@ -9,8 +9,9 @@ import {
   validateSatellitePastorAdminForm,
 } from "../stateSatelliteForm.js";
 import { usesAdminInviteCreate } from "../adminAccountForm.js";
-import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
 import { adminCreateButtonLabel } from "../adminInviteUi.js";
+import { AdminAccountIdentityFields } from "./AdminAccountIdentityFields.jsx";
+import { AdminLocationScopeFields } from "./AdminLocationScopeFields.jsx";
 
 function shouldAutoFillUsername(username) {
   const u = String(username || "").trim().toLowerCase();
@@ -34,13 +35,16 @@ export function SatellitePastorAdminModal({
   const isEdit = !!editData?.id;
   const inviteCreate = usesAdminInviteCreate(isEdit);
   const cc = String(countryCode || "").toUpperCase();
-  const st = String(stateCode || "").toUpperCase();
+  const st = String(stateCode || "").trim();
 
   const [form, setForm] = useState({
+    role: "satellite_church_admin",
     full_name: "",
     username: "",
     email: "",
     password: "",
+    branch_country: cc,
+    branch_state: st,
     satellite_site: "",
     is_active: 1,
   });
@@ -51,15 +55,23 @@ export function SatellitePastorAdminModal({
     [churches, cc, st, existingAdmins, pendingRequests, isEdit, editData?.id],
   );
 
+  const churchDropdownOptions = useMemo(
+    () => satelliteOptions.map((s) => ({ value: s.name, label: s.name })),
+    [satelliteOptions],
+  );
+
   useEffect(() => {
     if (!open) return;
     if (editData?.id) {
       setForm({
+        role: "satellite_church_admin",
         id: editData.id,
         full_name: editData.full_name || "",
         username: editData.username || "",
         email: editData.email || "",
         password: "",
+        branch_country: cc,
+        branch_state: editData.branch_state || st,
         satellite_site: editData.satellite_site || "",
         is_active: editData.is_active ?? 1,
       });
@@ -67,25 +79,17 @@ export function SatellitePastorAdminModal({
     }
     const site = initialSatellite || "";
     setForm({
+      role: "satellite_church_admin",
       full_name: "",
       username: site ? suggestedSatellitePastorUsername(cc, st, site) : "",
       email: "",
       password: "",
+      branch_country: cc,
+      branch_state: st,
       satellite_site: site,
       is_active: 1,
     });
   }, [open, editData, initialSatellite, cc, st]);
-
-  const set = (k) => (e) => {
-    const v = k === "is_active" ? Number(e.target.value) : e.target.value;
-    setForm((f) => {
-      const next = { ...f, [k]: v };
-      if (k === "satellite_site" && shouldAutoFillUsername(f.username)) {
-        next.username = suggestedSatellitePastorUsername(cc, st, v);
-      }
-      return next;
-    });
-  };
 
   function submit() {
     const takenSites = occupiedSatelliteSites(existingAdmins, pendingRequests, cc, st, isEdit ? editData?.id : null);
@@ -101,15 +105,20 @@ export function SatellitePastorAdminModal({
       ...form,
       role: "satellite_church_admin",
       branch_country: cc,
-      branch_state: st,
+      branch_state: form.branch_state || st,
       satellite_site: form.satellite_site,
     });
   }
 
-  const dropdownOptions = useMemo(
-    () => satelliteOptions.map((s) => ({ value: s.name, label: s.name })),
-    [satelliteOptions],
-  );
+  const countryLabel = branchCountryLabel(cc);
+  const useSteppedLocation = !isEdit || reassignOnly;
+  const showChurchInStepFlow = !reassignOnly && !isEdit;
+  const stateReadOnly = true;
+  const satelliteReadOnly = isEdit && !reassignOnly;
+
+  const branchChurchHint = "Pastor admin is scoped to this satellite within the selected state.";
+
+  const createBlocked = !isEdit && satelliteOptions.length === 0 && !initialSatellite;
 
   return (
     <Modal
@@ -128,7 +137,7 @@ export function SatellitePastorAdminModal({
             type="button"
             className="sa-btn sa-btn-primary"
             onClick={submit}
-            disabled={saving || (!isEdit && satelliteOptions.length === 0 && !initialSatellite)}
+            disabled={saving || createBlocked}
           >
             {adminCreateButtonLabel({ saving, isEdit, reassignOnly })}
           </button>
@@ -136,109 +145,56 @@ export function SatellitePastorAdminModal({
       }
     >
       {reassignOnly && isEdit ? (
-        <div className="sa-field" style={{ marginBottom: 16 }}>
-          <label className="sa-label">Admin</label>
-          <input className="sa-input" value={form.full_name} disabled readOnly />
-        </div>
+        <Field label="Admin">
+          <input className="input" value={form.full_name} disabled readOnly />
+        </Field>
       ) : null}
+
       {!reassignOnly ? (
-        <div className="sa-form-row">
-          <div className="sa-field">
-            <label className="sa-label">Country</label>
-            <input className="sa-input" value={branchCountryLabel(cc) || cc} disabled readOnly />
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">State / region</label>
-            <input className="sa-input" value={branchStateLabel(cc, st) || st} disabled readOnly />
-          </div>
-        </div>
+        <AdminAccountIdentityFields
+          form={form}
+          setForm={setForm}
+          isEdit={isEdit}
+          inviteCreate={inviteCreate}
+          usernamePlaceholder="ng.la.ikeja.pastor"
+          showStatus={isEdit}
+        />
       ) : null}
-      <div className="sa-field">
-        <label className="sa-label">
-          Satellite church <span className="sa-required">*</span>
-        </label>
-        {isEdit && !reassignOnly ? (
-          <input className="sa-input" value={form.satellite_site} disabled readOnly />
-        ) : (
-          <SearchableDropdown
-            value={form.satellite_site}
-            onChange={(site) =>
-              setForm((f) => {
-                const next = { ...f, satellite_site: site };
-                if (shouldAutoFillUsername(f.username)) {
-                  next.username = suggestedSatellitePastorUsername(cc, st, site);
-                }
-                return next;
-              })
+
+      <div style={{ marginTop: reassignOnly ? 0 : 16 }}>
+        <AdminLocationScopeFields
+          form={form}
+          setForm={setForm}
+          isEdit={isEdit}
+          countryOptions={[{ code: cc, name: countryLabel || cc }]}
+          allCountryOptions={[{ code: cc, name: countryLabel || cc }]}
+          allStateOptions={[]}
+          stateOptions={[]}
+          stateFieldOptions={[]}
+          showBranchChurchStepFlow={useSteppedLocation}
+          showBranchStateStep={false}
+          branchStateLabelText="State / region"
+          branchChurchHint={branchChurchHint}
+          showChurchPicker={showChurchInStepFlow}
+          disableCountry
+          countryReadOnly
+          countryReadOnlyLabel={countryLabel || cc}
+          disableState
+          stateReadOnly={stateReadOnly}
+          showChurchInStepFlow={showChurchInStepFlow}
+          satelliteReadOnly={satelliteReadOnly}
+          churchFieldLabel="Satellite church"
+          churchPickerMode="satellite"
+          churchOptionsOverride={churchDropdownOptions}
+          churches={churches}
+          onSatelliteChange={(next, site, prev) => {
+            if (shouldAutoFillUsername(prev.username)) {
+              return { ...next, username: suggestedSatellitePastorUsername(cc, st, site) };
             }
-            options={dropdownOptions}
-            placeholder={satelliteOptions.length ? "Select satellite" : "No vacant satellites"}
-            searchPlaceholder="Search satellite churches…"
-            emptyMessage="No satellites available"
-            ariaLabel="Satellite church"
-          />
-        )}
-        {!isEdit && satelliteOptions.length === 0 && (
-          <div className="sa-field-hint">Every satellite in this state already has a pastor admin assigned.</div>
-        )}
+            return next;
+          }}
+        />
       </div>
-      {!reassignOnly ? (
-        <>
-          {inviteCreate ? <AdminInviteBanner /> : null}
-          <div className="sa-form-row">
-            <div className="sa-field">
-              <label className="sa-label">
-                Full name <span className="sa-required">*</span>
-              </label>
-              <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="Jane Doe" />
-            </div>
-            {!inviteCreate ? (
-              <div className="sa-field">
-                <label className="sa-label">
-                  Username {!isEdit && <span className="sa-required">*</span>}
-                </label>
-                <input
-                  className="sa-input"
-                  value={form.username}
-                  onChange={set("username")}
-                  placeholder="ng.la.ikeja.pastor"
-                  disabled={isEdit}
-                />
-              </div>
-            ) : null}
-          </div>
-          <div className="sa-field">
-            <label className="sa-label">
-              Email <span className="sa-required">*</span>
-            </label>
-            <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="pastor@church.org" />
-          </div>
-          {!inviteCreate ? (
-            <div className="sa-field">
-              <label className="sa-label">
-                {isEdit ? "New password (optional)" : "Password"}{" "}
-                {!isEdit && <span className="sa-required">*</span>}
-              </label>
-              <input
-                className="sa-input"
-                type="password"
-                value={form.password}
-                onChange={set("password")}
-                placeholder="Min 8 characters"
-              />
-            </div>
-          ) : null}
-          {isEdit ? (
-            <div className="sa-field">
-              <label className="sa-label">Status</label>
-              <select className="sa-field-select" value={form.is_active} onChange={set("is_active")}>
-                <option value={1}>Active</option>
-                <option value={0}>Inactive</option>
-              </select>
-            </div>
-          ) : null}
-        </>
-      ) : null}
     </Modal>
   );
 }

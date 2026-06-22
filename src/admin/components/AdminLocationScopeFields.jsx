@@ -7,7 +7,7 @@ import {
   ROLES_WITH_SATELLITE,
   ROLES_WITH_STATE,
 } from "../adminAccountForm.js";
-import { branchStateLabel } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import {
   hqChurchValueFromForm,
@@ -16,6 +16,14 @@ import {
   stateSelectOptionsForDropdown,
   stateSelectionValueForCode,
 } from "../catalogGeoOptions.js";
+
+function countryDisplayName(form, countrySelectOptions, countryReadOnlyLabel) {
+  if (countryReadOnlyLabel) return countryReadOnlyLabel;
+  const cc = String(form.branch_country || "").trim();
+  if (!cc) return "";
+  const opt = (countrySelectOptions || []).find((c) => String(c.value).toUpperCase() === cc.toUpperCase());
+  return opt?.label || branchCountryLabel(cc) || cc;
+}
 
 /**
  * Country / state / HQ church fields for global admin create & reassign flows.
@@ -47,7 +55,15 @@ export function AdminLocationScopeFields({
   churchesLoading = false,
   statesLoading = false,
   stateReadOnly = false,
+  countryReadOnly = false,
+  countryReadOnlyLabel = "",
   showChurchInStepFlow = true,
+  churchFieldLabel = "Church / branch",
+  churchPickerMode = "hq",
+  churchOptionsOverride = null,
+  churchFieldHintOverride = "",
+  satelliteReadOnly = false,
+  onSatelliteChange,
 }) {
   const role = form?.role || "";
   const countryList =
@@ -60,6 +76,11 @@ export function AdminLocationScopeFields({
   const countrySelectOptions = useMemo(
     () => (countryList || []).map((c) => ({ value: c.code, label: c.name })),
     [countryList],
+  );
+
+  const lockedCountryLabel = useMemo(
+    () => countryDisplayName(form, countrySelectOptions, countryReadOnlyLabel),
+    [form.branch_country, countrySelectOptions, countryReadOnlyLabel],
   );
 
   function pickCountry(branch_country) {
@@ -90,13 +111,16 @@ export function AdminLocationScopeFields({
   );
 
   const scopedChurchOpts = useMemo(() => {
+    if (churchOptionsOverride) return churchOptionsOverride;
     if (!form.branch_country || !form.branch_state) return [];
     return churchSelectOptionsForBranch(churches || [], form.branch_country, form.branch_state);
-  }, [churches, form.branch_country, form.branch_state]);
+  }, [churchOptionsOverride, churches, form.branch_country, form.branch_state]);
 
   const countryDisabled = disableCountry || (role === "country_super_admin" && isEdit);
+  const showLockedCountry = countryReadOnly || (countryDisabled && !!form.branch_country);
 
   const churchHint = (() => {
+    if (churchFieldHintOverride) return churchFieldHintOverride;
     if (churchesLoading && form.branch_country) {
       return "Loading churches from the directory…";
     }
@@ -130,6 +154,7 @@ export function AdminLocationScopeFields({
       return "State where this branch is located.";
     })();
     const churchFieldHint = (() => {
+      if (churchFieldHintOverride) return churchFieldHintOverride;
       if (churchesLoading && form.branch_country) {
         return "Loading churches from the directory…";
       }
@@ -139,13 +164,18 @@ export function AdminLocationScopeFields({
       if (!form.branch_state) {
         return "Select a state first.";
       }
-    if (scopedChurchOpts.length === 0) {
-      return "No churches listed for this state yet. Add branches via Data Entry or approve a location request first.";
-    }
-    return branchChurchHint || "Pick the branch name as listed in the directory.";
-  })();
+      if (scopedChurchOpts.length === 0) {
+        return churchPickerMode === "satellite"
+          ? "Every satellite in this state already has a pastor admin assigned."
+          : "No churches listed for this state yet. Add branches via Data Entry or approve a location request first.";
+      }
+      return branchChurchHint || "Pick the branch name as listed in the directory.";
+    })();
 
-    const churchValue = hqChurchValueFromForm(form.branch_state, form.satellite_site);
+    const churchValue =
+      churchPickerMode === "satellite"
+        ? String(form.satellite_site || "")
+        : hqChurchValueFromForm(form.branch_state, form.satellite_site);
     const churchPlaceholder = !form.branch_country
       ? "Select country first"
       : !form.branch_state
@@ -154,24 +184,35 @@ export function AdminLocationScopeFields({
           ? "Loading churches…"
           : scopedChurchOpts.length
             ? "Select"
-            : "No branches found for this state";
+            : churchPickerMode === "satellite"
+              ? "No vacant satellites"
+              : "No branches found for this state";
 
     return (
       <div className="grid">
-        <Field label="Country" required hint={countryHint}>
-          <select
-            className="select"
-            value={form.branch_country}
-            onChange={(e) => pickCountry(e.target.value)}
-            disabled={countryDisabled}
-          >
-            <option value="">Select country</option>
-            {countrySelectOptions.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+        <Field label="Country" required hint={countryHint} labelStrong>
+          {showLockedCountry ? (
+            <input
+              className="input input-scope-emphasis"
+              value={lockedCountryLabel}
+              disabled
+              readOnly
+            />
+          ) : (
+            <select
+              className="select select-scope-emphasis"
+              value={form.branch_country}
+              onChange={(e) => pickCountry(e.target.value)}
+              disabled={countryDisabled}
+            >
+              <option value="">Select country</option>
+              {countrySelectOptions.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
 
         <Field label={stateLabel} required hint={stateHint}>
@@ -207,25 +248,37 @@ export function AdminLocationScopeFields({
 
         {showChurchInStepFlow ? (
           <>
-            <Field label="Church / branch" required span="2" hint={churchFieldHint}>
+            <Field label={churchFieldLabel} required span="2" hint={churchFieldHint}>
               <SearchableDropdown
-                key={`${form.branch_country}-${form.branch_state}`}
+                key={`${form.branch_country}-${form.branch_state}-${churchPickerMode}`}
                 value={churchValue}
                 onChange={(value) => {
+                  if (churchPickerMode === "satellite") {
+                    setForm((f) => {
+                      const next = { ...f, satellite_site: value };
+                      if (onSatelliteChange) return onSatelliteChange(next, value, f) || next;
+                      return next;
+                    });
+                    return;
+                  }
                   const { branch_state, satellite_site } = parseHqChurchValue(value);
                   setForm((f) => ({ ...f, branch_state, satellite_site }));
                 }}
                 options={scopedChurchOpts}
                 disabled={!form.branch_country || !form.branch_state || churchesLoading}
                 placeholder={churchPlaceholder}
-                searchPlaceholder="Search by name or address"
-                emptyMessage="No branches match your search"
+                searchPlaceholder={
+                  churchPickerMode === "satellite" ? "Search satellite churches…" : "Search by name or address"
+                }
+                emptyMessage={
+                  churchPickerMode === "satellite" ? "No satellites available" : "No branches match your search"
+                }
                 valid={!!churchValue && !churchesLoading}
-                ariaLabel="Church / branch"
+                ariaLabel={churchFieldLabel}
               />
             </Field>
 
-            {form.satellite_site ? (
+            {form.satellite_site && churchPickerMode === "hq" ? (
               <div className="field col-span-2">
                 <div className="field-hint" style={{ marginTop: -4 }}>
                   Selected: <strong>{form.satellite_site}</strong>
@@ -235,6 +288,12 @@ export function AdminLocationScopeFields({
             ) : null}
           </>
         ) : null}
+
+        {satelliteReadOnly && form.satellite_site ? (
+          <Field label={churchFieldLabel} span="2">
+            <input className="input" value={form.satellite_site} disabled readOnly />
+          </Field>
+        ) : null}
       </div>
     );
   }
@@ -243,19 +302,23 @@ export function AdminLocationScopeFields({
     <>
       <div className="sa-form-row">
         <div className="sa-field">
-          <label className="sa-label">
+          <label className="sa-label sa-label--strong">
             Country <span className="sa-required">*</span>
           </label>
-          <SearchableSelect
-            value={form.branch_country}
-            onChange={(e) => pickCountry(e.target.value)}
-            options={countrySelectOptions}
-            disabled={countryDisabled}
-            placeholder="Select country"
-            searchPlaceholder="Search countries…"
-            emptyMessage="No countries match"
-            searchAriaLabel="Filter countries"
-          />
+          {showLockedCountry ? (
+            <input className="sa-input sa-input--emphasis" value={lockedCountryLabel} disabled readOnly />
+          ) : (
+            <SearchableSelect
+              value={form.branch_country}
+              onChange={(e) => pickCountry(e.target.value)}
+              options={countrySelectOptions}
+              disabled={countryDisabled}
+              placeholder="Select country"
+              searchPlaceholder="Search countries…"
+              emptyMessage="No countries match"
+              searchAriaLabel="Filter countries"
+            />
+          )}
           {showCountryVacantHint ? (
             <div className="sa-field-hint">
               Every country already has a Country Admin (or one pending approval).
@@ -328,13 +391,26 @@ export function AdminLocationScopeFields({
       {showChurchPicker ? (
         <div className="sa-field">
           <label className="sa-label">
-            {role === "country_super_admin" ? "Headquarters church" : "Church branch"}{" "}
+            {role === "country_super_admin" ? "Headquarters church" : churchFieldLabel}{" "}
             <span className="sa-required">*</span>
           </label>
           <SearchableSelect
-            value={hqChurchValueFromForm(form.branch_state, form.satellite_site)}
+            value={
+              churchPickerMode === "satellite"
+                ? form.satellite_site
+                : hqChurchValueFromForm(form.branch_state, form.satellite_site)
+            }
             onChange={(e) => {
-              const { branch_state, satellite_site } = parseHqChurchValue(e.target.value);
+              const raw = e.target.value;
+              if (churchPickerMode === "satellite") {
+                setForm((f) => {
+                  const next = { ...f, satellite_site: raw };
+                  if (onSatelliteChange) return onSatelliteChange(next, raw, f) || next;
+                  return next;
+                });
+                return;
+              }
+              const { branch_state, satellite_site } = parseHqChurchValue(raw);
               setForm((f) => ({ ...f, branch_state, satellite_site }));
             }}
             options={scopedChurchOpts}

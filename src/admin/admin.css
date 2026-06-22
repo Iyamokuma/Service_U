@@ -2145,6 +2145,15 @@
   display: block; font-size: 12px; font-weight: 600;
   color: var(--sa-text-2); margin-bottom: 5px;
 }
+.sa-label--strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sa-text);
+}
+.sa-input--emphasis {
+  font-weight: 600;
+  color: var(--sa-text);
+}
 .sa-required { color: var(--sa-danger); margin-left: 2px; }
 .sa-input, .sa-textarea, .sa-field-select {
   width: 100%; padding: 9px 12px;

@@ -226,6 +226,8 @@ export function StateBranchAdminModal({
         stateFieldOptions={stateFieldOptions}
         steppedStateOptions={stateFieldOptions}
         disableCountry
+        countryReadOnly
+        countryReadOnlyLabel={countryLabel || cc}
         disableState={stateReadOnly}
         stateReadOnly={stateReadOnly}
         showChurchInStepFlow={showChurchInStepFlow}

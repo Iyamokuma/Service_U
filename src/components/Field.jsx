@@ -1,5 +1,6 @@
-export function Field({ label, hint, error, required, optional, children, span, embedded }) {
+export function Field({ label, hint, error, required, optional, children, span, embedded, labelStrong = false }) {
   const cls = span ? `field col-span-${span}` : "field";
+  const labelCls = labelStrong ? "field-label field-label--strong" : "field-label";
   const labelInner = (
     <>
       <span>{label}</span>
@@ -36,7 +37,7 @@ export function Field({ label, hint, error, required, optional, children, span, 
 
   return (
     <div className={cls}>
-      <div className="field-label">{labelInner}</div>
+      <div className={labelCls}>{labelInner}</div>
       {children}
       {hint && !error && <div className="field-hint">{hint}</div>}
       {error && (
