@@ -27,17 +27,15 @@ const LEADER_MODES_COUNTRY = [
   { value: "sub_unit", label: "Sub-unit heads (select unit + sub-unit)" },
 ];
 
-const DESTINATION_TABS_DEFAULT = [
-  { id: "members", label: "For Members" },
-  { id: "leaders", label: "For Leaders" },
-  { id: "admins", label: "For Admins" },
+const DESTINATION_TABS_BROADCAST = [
+  { id: "members", label: "Unit members" },
+  { id: "leaders", label: "Leaders" },
+  { id: "admins", label: "Admins" },
 ];
 
-const DESTINATION_TABS_COUNTRY = [
-  { id: "members", label: "Service Unit Members" },
-  { id: "leaders", label: "Service Unit Heads" },
-  { id: "admins", label: "Pastors" },
-];
+const DESTINATION_TABS_DEFAULT = DESTINATION_TABS_BROADCAST;
+
+const DESTINATION_TABS_COUNTRY = DESTINATION_TABS_BROADCAST;
 
 /** Satellite Pastor — members + service unit heads only (no admins destination). */
 const DESTINATION_TABS_SATELLITE = [
@@ -63,11 +61,7 @@ const SATELLITE_LEADER_UI = {
   defaultLeaderMode: "service_unit",
 };
 
-const DESTINATION_TABS_STATE_BRANCH = [
-  { id: "members", label: "Service Unit Members" },
-  { id: "leaders", label: "Service Unit Heads" },
-  { id: "admins", label: "Satellite Pastors" },
-];
+const DESTINATION_TABS_STATE_BRANCH = DESTINATION_TABS_BROADCAST;
 
 /** State Branch Admin → Satellite Pastors tab (within assigned state only). */
 const ADMIN_ROLES_STATE_BRANCH = [{ value: "satellite_church_admin", label: "Satellite Pastor" }];
