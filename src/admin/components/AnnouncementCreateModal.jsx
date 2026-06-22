@@ -14,7 +14,6 @@ import { unitHasSubUnits } from "../../serviceUnitUtils.js";
 import { AnnouncementAudienceGeoScope, LockedGeoField } from "./AnnouncementAudienceGeoScope.jsx";
 import { AnnouncementDestinationPicker } from "./AnnouncementDestinationPicker.jsx";
 import { AnnouncementSendAllScope } from "./AnnouncementSendAllScope.jsx";
-import { AnnouncementLeaderTypeField } from "./AnnouncementLeaderTypeField.jsx";
 
 const emptyForm = () => ({
   title: "",
@@ -173,13 +172,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     () => sharedGeoFromForm(form, form.destination_type),
     [form, form.destination_type],
   );
-  const showLeaderTypePicker =
-    form.destination_type === "leaders" &&
-    (policy.isServiceUnitLeader ||
-      !useUnifiedGeo ||
-      policy.isSatellitePastor ||
-      !policy.isGlobal ||
-      Boolean(sharedGeoScope.satellite_site));
 
   const leaderModeOptions = useMemo(
     () => destLabels.leaderModeOptions.map((m) => ({ value: m.value, label: m.label })),
@@ -254,13 +246,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return `Select a country for ${destLabels.typePrefix.members.toLowerCase()} announcements.`;
     }
     if (form.destination_type === "leaders") {
-      if (policy.isGlobal && useUnifiedGeo && !sharedGeoScope.satellite_site) {
-        return "Select a satellite in audience scope for leader announcements.";
-      }
-      if (
-        (policy.isSatellitePastor || (useUnifiedGeo && policy.isGlobal)) &&
-        !["service_unit", "sub_unit"].includes(form.leaders.mode)
-      ) {
+      if (policy.isSatellitePastor && !["service_unit", "sub_unit"].includes(form.leaders.mode)) {
         return "Select service unit leaders or sub unit leaders.";
       }
       if (!useUnifiedGeo && !form.leaders.branch_country && !policy.lockedCountry) {
@@ -334,7 +320,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         };
       }
       if (
-        (policy.isSatellitePastor || useUnifiedGeo) &&
+        policy.isSatellitePastor &&
         type === "leaders" &&
         !["service_unit", "sub_unit"].includes(next.leaders.mode)
       ) {
@@ -614,36 +600,39 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             {scopeHint}
           </p>
           ) : null}
-          {policy.isGlobal && useUnifiedGeo && !sharedGeoScope.satellite_site ? (
-            <p className="sa-field-hint" style={{ marginTop: 0, marginBottom: 0 }}>
-              Select a satellite in audience scope above to choose a leader type.
-            </p>
-          ) : null}
-          {(policy.visibility.unit || policy.isServiceUnitLeader) && showLeaderTypePicker ? (
+          {(policy.visibility.unit || policy.isServiceUnitLeader) && (
             <>
               {!useUnifiedGeo ? <div className="sa-ann-scope-title">{destLabels.leaderTypeTitle}</div> : null}
-              <AnnouncementLeaderTypeField
-                value={form.leaders.mode}
-                onChange={(mode) =>
-                  setForm((f) => ({
-                    ...f,
-                    leaders: { ...f.leaders, mode, service_unit_id: policy.lockedServiceUnitId || "", sub_unit: "" },
-                  }))
-                }
-                options={leaderModeOptions}
-                label={destLabels.leaderTypeLabel}
-                hint={destLabels.leaderTypeHint}
-                placeholder={
-                  policy.isSatellitePastor || useUnifiedGeo
-                    ? "Select leader type"
-                    : policy.isServiceUnitLeader
-                      ? "Select sub-unit leaders"
-                      : "Select audience"
-                }
-                ariaLabel={
-                  policy.isSatellitePastor || useUnifiedGeo ? "Leader type" : "Leader audience type"
-                }
-              />
+              <div className="sa-field" style={{ marginBottom: useUnifiedGeo ? 0 : 14 }}>
+                <label className="sa-label">{destLabels.leaderTypeLabel}</label>
+                <SearchableDropdown
+                  value={form.leaders.mode}
+                  onChange={(mode) =>
+                    setForm((f) => ({
+                      ...f,
+                      leaders: { ...f.leaders, mode, service_unit_id: policy.lockedServiceUnitId || "", sub_unit: "" },
+                    }))
+                  }
+                  options={leaderModeOptions}
+                  placeholder={
+                    policy.isSatellitePastor
+                      ? "Select service unit head role"
+                      : policy.isServiceUnitLeader
+                        ? "Select sub-unit leaders"
+                        : "Select audience"
+                  }
+                  searchPlaceholder="Search option"
+                  emptyMessage="No options"
+                  ariaLabel={
+                    policy.isSatellitePastor
+                      ? "Service unit head role"
+                      : policy.isServiceUnitLeader
+                        ? "Sub Unit Leaders"
+                        : "Leader audience type"
+                  }
+                />
+                <div className="sa-field-hint">{destLabels.leaderTypeHint}</div>
+              </div>
               {!useUnifiedGeo && (policy.isServiceUnitLeader ? form.leaders.mode === "sub_unit" : form.leaders.mode !== "all") && (
                 <div className="sa-ann-scope-grid">
                   {!policy.isServiceUnitLeader ? (
