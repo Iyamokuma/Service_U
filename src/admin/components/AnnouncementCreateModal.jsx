@@ -213,6 +213,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     form.destination_type === "admins" &&
     policy.isCountryAdmin &&
     !policy.actingAsState;
+  const showPastorRoleFixedInScope =
+    useUnifiedGeo &&
+    form.destination_type === "admins" &&
+    policy.isStateBranchAudience;
+  const showPastorRoleSectionInScope = showPastorRoleInScope || showPastorRoleFixedInScope;
   const pastorRoleSelection = useMemo(
     () => pastorRoleSelectionFromAdminRoles(form.admins.roles),
     [form.admins.roles],
@@ -459,6 +464,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           pastorRoleLabel={destLabels.adminRolesSectionTitle}
           pastorRolePlaceholder="Select pastors"
           pastorRoleAriaLabel="Pastor types"
+          showPastorRoleFixed={showPastorRoleFixedInScope}
+          pastorRoleFixedLabel={destLabels.adminRolesSectionTitle}
+          pastorRoleFixedValue={
+            policy.adminRoleOptions[0]?.label || destLabels.allRolesLabel || "Satellite Pastor"
+          }
         />
       )}
 
@@ -733,7 +743,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </section>
       )}
 
-      {!policy.membersOnly && !policy.isSatellitePastor && form.destination_type === "admins" && !showPastorRoleInScope && (
+      {!policy.membersOnly && !policy.isSatellitePastor && form.destination_type === "admins" && !showPastorRoleSectionInScope && (
         <section
           className="sa-ann-scope"
           aria-label={

@@ -17,7 +17,7 @@ const ADMIN_ROLES_COUNTRY = [
 
 /** Country admin Pastors destination — single-select maps to admins.roles array. */
 export const COUNTRY_PASTOR_ROLE_OPTIONS = [
-  { value: "all", label: "All pastors" },
+  { value: "all", label: "All pastors (State Branch Pastor and Satellite Pastor)" },
   ...ADMIN_ROLES_COUNTRY,
 ];
 

@@ -50,6 +50,9 @@ export function AnnouncementAudienceGeoScope({
   pastorRoleHint = "",
   pastorRolePlaceholder = "Select pastors",
   pastorRoleAriaLabel = "Pastor types",
+  showPastorRoleFixed = false,
+  pastorRoleFixedLabel = "Pastors",
+  pastorRoleFixedValue = "",
 }) {
   const v = vis || { country: true, state: true, satellite: true };
   const cc = lockedCountryCode || scope.branch_country;
@@ -169,6 +172,12 @@ export function AnnouncementAudienceGeoScope({
           onChange={onPastorRoleChange}
           placeholder={pastorRolePlaceholder}
           ariaLabel={pastorRoleAriaLabel}
+        />
+      ) : null}
+      {showPastorRoleFixed ? (
+        <LockedGeoField
+          label={pastorRoleFixedLabel}
+          value={pastorRoleFixedValue}
         />
       ) : null}
     </div>
