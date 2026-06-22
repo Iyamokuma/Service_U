@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { Field } from "../components/Field.jsx";
 import { SearchableDropdown } from "../components/SearchableDropdown.jsx";
 import { SectionHead } from "./SectionHead.jsx";
-import { branchCountryLabel, mergeStateOptions, hydrateBranchLabelsFromDirectoryCountries, hydrateBranchLabelsFromDirectoryStates } from "../admin/branchRegions.js";
+import {
+  branchCountryLabel,
+  branchStateLabel,
+  hydrateBranchLabelsFromDirectoryCountries,
+  hydrateBranchLabelsFromDirectoryStates,
+} from "../admin/branchRegions.js";
+import { churchesInBranch } from "../admin/satelliteSites.js";
 import { fetchChurchesCatalog } from "../lib/churchesCatalog.js";
 import { fetchDirectoryCountries, fetchDirectoryStates } from "../lib/directoryCatalog.js";
 
@@ -10,15 +16,27 @@ function norm(s) {
   return String(s ?? "").trim().toUpperCase();
 }
 
+function stateRowsFromCtx(ctx) {
+  return Array.isArray(ctx?.stateRows) ? ctx.stateRows : [];
+}
+
+/** Resolve a dropdown selection (state name or legacy code) to branch_state code. */
+export function branchStateCodeFromSelection(form) {
+  const ctx = form.churchLocationCtx;
+  if (ctx?.pending) return "";
+  const rows = stateRowsFromCtx(ctx);
+  if (rows.length <= 1) return norm(rows[0]?.code);
+  const sel = String(form.branchState || "").trim();
+  if (!sel) return "";
+  const match = rows.find((r) => norm(r.name) === norm(sel) || norm(r.code) === norm(sel));
+  return match?.code ? norm(match.code) : norm(sel);
+}
+
 /** Effective branch_state code for payloads (single-state countries). */
 export function effectiveBranchStateForPayload(form) {
   const cc = norm(form.branchCountry);
   if (!cc) return "";
-  const ctx = form.churchLocationCtx;
-  if (ctx?.pending) return "";
-  const codes = (ctx?.stateCodes || []).map((c) => norm(c)).filter(Boolean);
-  if (codes.length <= 1) return codes[0] || "";
-  return norm(form.branchState);
+  return branchStateCodeFromSelection(form);
 }
 
 export function ChurchLocationSection({ form, set, setSilent, errors }) {
@@ -119,30 +137,51 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   const stateList = useMemo(() => {
     const cc = norm(form.branchCountry);
     if (!cc) return [];
-    const fromDir = dirStates.map((s) => ({ code: s.branch_state_code, name: s.name }));
-    const fromChurches = catalog
-      .filter((ch) => norm(ch.branch_country) === cc)
-      .map((ch) => ({ code: ch.branch_state, name: ch.branch_state }));
-    return mergeStateOptions(cc, fromDir, fromChurches);
+    const fromDir = dirStates
+      .filter((s) => String(s.name || "").trim() && String(s.branch_state_code || "").trim())
+      .map((s) => ({
+        code: norm(s.branch_state_code),
+        name: String(s.name || "").trim(),
+      }));
+    if (fromDir.length) {
+      return fromDir.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const seen = new Set();
+    const fromChurches = [];
+    for (const ch of catalog) {
+      if (norm(ch.branch_country) !== cc) continue;
+      const code = norm(ch.branch_state);
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      fromChurches.push({
+        code,
+        name: branchStateLabel(cc, code) || code,
+      });
+    }
+    return fromChurches.sort((a, b) => a.name.localeCompare(b.name));
   }, [dirStates, form.branchCountry, catalog]);
 
   const singleStateMode = stateList.length <= 1;
 
   useEffect(() => {
     if (!form.branchCountry) return;
-    if (stateList.length === 1 && stateList[0]?.code && form.branchState !== stateList[0].code) {
-      set("branchState", stateList[0].code);
+    if (stateList.length === 1 && stateList[0]?.name && form.branchState !== stateList[0].name) {
+      set("branchState", stateList[0].name);
     }
   }, [form.branchCountry, form.branchState, stateList, set]);
 
-  const effectiveState = singleStateMode ? stateList[0]?.code || "" : form.branchState;
+  const effectiveStateCode = singleStateMode
+    ? stateList[0]?.code || ""
+    : stateList.find(
+        (s) => norm(s.name) === norm(form.branchState) || norm(s.code) === norm(form.branchState),
+      )?.code || "";
 
   useEffect(() => {
     const cc = norm(form.branchCountry);
-    const st = norm(effectiveState);
+    const st = norm(effectiveStateCode);
     if (!cc || !st || dirStatesLoading) return;
     loadChurches();
-  }, [form.branchCountry, effectiveState, dirStatesLoading, loadChurches]);
+  }, [form.branchCountry, effectiveStateCode, dirStatesLoading, loadChurches]);
 
   useEffect(() => {
     if (dirCountries.length) hydrateBranchLabelsFromDirectoryCountries(dirCountries);
@@ -159,22 +198,22 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
       silent("churchLocationCtx", null);
       return;
     }
-    const codes = stateList.map((s) => norm(s.code)).filter(Boolean);
     silent("churchLocationCtx", {
       source: "directory",
-      stateCodes: codes,
+      stateCodes: stateList.map((s) => norm(s.code)).filter(Boolean),
+      stateRows: stateList.map((s) => ({ code: s.code, name: s.name })),
       pending: dirStatesLoading,
     });
   }, [form.branchCountry, stateList, silent, dirStatesLoading]);
 
   const churchesForPick = useMemo(() => {
     const cc = norm(form.branchCountry);
-    const st = norm(effectiveState);
+    const st = norm(effectiveStateCode);
     if (!cc || !st) return [];
-    return catalog
-      .filter((c) => norm(c.branch_country) === cc && norm(c.branch_state) === st)
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  }, [catalog, form.branchCountry, effectiveState]);
+    return churchesInBranch(catalog, cc, st).sort((a, b) =>
+      String(a.name).localeCompare(String(b.name)),
+    );
+  }, [catalog, form.branchCountry, effectiveStateCode]);
 
   const churchOptions = useMemo(
     () =>
@@ -187,7 +226,7 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
   );
 
   const stateOptions = useMemo(
-    () => stateList.map((s) => ({ value: s.code, label: s.name })),
+    () => stateList.map((s) => ({ value: s.name, label: s.name })),
     [stateList],
   );
 
@@ -199,8 +238,8 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     set("satelliteSite", "");
   };
 
-  const onStateChange = (code) => {
-    set("branchState", code);
+  const onStateChange = (stateName) => {
+    set("branchState", stateName);
     set("churchId", "");
     set("satelliteSite", "");
   };
@@ -213,16 +252,21 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
     }
     const row = catalog.find((c) => String(c.id) === String(id));
     if (!row) return;
+    const cc = norm(row.branch_country);
+    const stCode = norm(row.branch_state);
+    const stateRow = stateList.find((s) => norm(s.code) === stCode);
     set("churchId", id);
-    set("branchCountry", norm(row.branch_country));
-    set("branchState", norm(row.branch_state));
+    set("branchCountry", cc);
+    set("branchState", stateRow?.name || branchStateLabel(cc, stCode) || stCode);
     set("satelliteSite", String(row.name || "").trim());
   };
 
   const stateLineLabel = useMemo(() => {
-    const row = stateList.find((s) => norm(s.code) === norm(effectiveState));
-    return row?.name || effectiveState;
-  }, [stateList, effectiveState]);
+    const row = stateList.find(
+      (s) => norm(s.code) === norm(effectiveStateCode) || norm(s.name) === norm(form.branchState),
+    );
+    return row?.name || form.branchState || effectiveStateCode;
+  }, [stateList, effectiveStateCode, form.branchState]);
 
   const noCountriesYet = !dirErr && dirCountries.length === 0;
 
@@ -273,7 +317,7 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
               searchPlaceholder="Search state"
               emptyMessage="No states match your search"
               invalid={!!errors.churchState}
-              valid={!!effectiveState && !errors.churchState}
+              valid={!!effectiveStateCode && !errors.churchState}
               ariaLabel="State / region"
             />
           </Field>
@@ -322,7 +366,7 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
           <div className="field col-span-2">
             <div className="field-hint" style={{ marginTop: -4 }}>
               Selected: <strong>{form.satelliteSite}</strong>
-              {effectiveState ? (
+              {stateLineLabel ? (
                 <>
                   {" "}
                   · {stateLineLabel}
@@ -363,13 +407,14 @@ export function validateChurchLocation(form) {
     e.churchState = "Loading regions for this country…";
     return e;
   }
-  const codes = (ctx?.stateCodes || []).map((c) => norm(c)).filter(Boolean);
+  const rows = stateRowsFromCtx(ctx);
+  const codes = rows.map((r) => norm(r.code)).filter(Boolean);
   if (cc && codes.length === 0) {
     e.churchState = "No states or regions are listed for this country yet. Please contact the office.";
   }
   const single = codes.length <= 1;
-  const st = single ? codes[0] || "" : norm(form.branchState);
-  if (cc && !single && !norm(form.branchState)) {
+  const st = single ? codes[0] || "" : branchStateCodeFromSelection(form);
+  if (cc && !single && !String(form.branchState || "").trim()) {
     e.churchState = "Select the state / region for your branch.";
   }
   if (cc && st && codes.length > 0 && !codes.includes(norm(st))) {

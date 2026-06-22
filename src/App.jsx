@@ -6,6 +6,7 @@ import { FaithSection } from "./sections/FaithSection.jsx";
 import { ChurchMembershipSection } from "./sections/ChurchMembershipSection.jsx";
 import {
   ChurchLocationSection,
+  branchStateCodeFromSelection,
   effectiveBranchStateForPayload,
   validateChurchLocation,
 } from "./sections/ChurchLocationSection.jsx";
@@ -148,7 +149,9 @@ export default function App() {
   const locationLabel = useMemo(() => {
     const parts = [];
     const country = branchCountryLabel(form.branchCountry);
-    const state = branchStateLabel(form.branchCountry, form.branchState);
+    const state =
+      String(form.branchState || "").trim() ||
+      branchStateLabel(form.branchCountry, branchStateCodeFromSelection(form));
     if (country) parts.push(country);
     if (state) parts.push(state);
     if (form.satelliteSite) parts.push(form.satelliteSite);
