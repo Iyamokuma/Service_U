@@ -37,11 +37,8 @@ const DESTINATION_TABS_DEFAULT = DESTINATION_TABS_BROADCAST;
 
 const DESTINATION_TABS_COUNTRY = DESTINATION_TABS_BROADCAST;
 
-/** Satellite Pastor — unit members, leaders, and Send all. */
-const DESTINATION_TABS_SATELLITE = [
-  { id: "members", label: "Unit members" },
-  { id: "leaders", label: "Leaders" },
-];
+/** Satellite Pastor — unit members + Send all (same tab style as broadcast admins). */
+const DESTINATION_TABS_SATELLITE = [{ id: "members", label: "Unit members" }];
 
 const LEADER_MODES_SATELLITE = [
   { value: "service_unit", label: "Service unit leaders" },

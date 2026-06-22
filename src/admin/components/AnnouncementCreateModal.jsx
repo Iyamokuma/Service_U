@@ -86,7 +86,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         : admin
           ? {
               branch_country: policy.lockedCountry || admin.branch_country || "",
-              branch_state: policy.lockedState || admin.branch_state || "",
+              branch_state: policy.lockedState || "",
               satellite_site: policy.lockedSatellite || admin.satellite_site || "",
             }
           : { branch_country: "", branch_state: "", satellite_site: "" };
@@ -98,13 +98,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       };
       if (!policy.isGlobal && admin) {
         base.members = { ...base.members, ...geo };
-        base.leaders = {
-          ...base.leaders,
-          ...geo,
-          mode: policy.isSatellitePastor
-            ? policy.destinationLabels?.defaultLeaderMode || "service_unit"
-            : base.leaders.mode,
-        };
+        base.leaders = { ...base.leaders, ...geo };
         base.admins = { ...base.admins, ...geo, roles: [...policy.defaultAdminRoles] };
       }
     } else if (!policy.isGlobal && admin) {
@@ -246,9 +240,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return `Select a country for ${destLabels.typePrefix.members.toLowerCase()} announcements.`;
     }
     if (form.destination_type === "leaders") {
-      if (policy.isSatellitePastor && !["service_unit", "sub_unit"].includes(form.leaders.mode)) {
-        return "Select service unit leaders or sub unit leaders.";
-      }
       if (!useUnifiedGeo && !form.leaders.branch_country && !policy.lockedCountry) {
         return `Select a country for ${destLabels.typePrefix.leaders.toLowerCase()} announcements.`;
       }
@@ -318,13 +309,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             audiences: sendAllAudienceOptions.map((a) => a.value),
           },
         };
-      }
-      if (
-        policy.isSatellitePastor &&
-        type === "leaders" &&
-        !["service_unit", "sub_unit"].includes(next.leaders.mode)
-      ) {
-        next.leaders = { ...next.leaders, mode: destLabels.defaultLeaderMode || "service_unit" };
       }
       return next;
     });
