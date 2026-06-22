@@ -2,7 +2,7 @@ import { AnnouncementAudienceCheckboxes } from "./AnnouncementAudienceCheckboxes
 
 /**
  * Reusable destination tabs for create-announcement flows.
- * Global and country admins include a Send all tab with audience checkboxes.
+ * Global, country, and state branch admins include a Send all tab with audience checkboxes.
  */
 export function AnnouncementDestinationPicker({
   tabs,

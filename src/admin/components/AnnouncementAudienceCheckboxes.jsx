@@ -1,4 +1,4 @@
-/** Audience tick boxes for Send all (super admin and country admin). */
+/** Audience tick boxes for Send all (global, country, and state branch admin). */
 export function AnnouncementAudienceCheckboxes({
   options,
   selected = [],

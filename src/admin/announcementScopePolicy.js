@@ -122,7 +122,7 @@ const DESTINATION_TABS_SUB_UNIT_MEMBERS_ONLY = [{ id: "members", label: "Service
 
 export const DESTINATION_TAB_SEND_ALL = { id: "send_all", label: "Send all" };
 
-/** Send-all audience checkboxes (global admin Send all tab). */
+/** Send-all audience checkboxes (Send all destination tab). */
 export const SEND_ALL_AUDIENCE_OPTIONS = [
   { value: "members", label: "Unit members" },
   { value: "service_unit_leaders", label: "Service unit leaders" },
@@ -135,11 +135,12 @@ export function usesSendAllDestination(_policy) {
   return false;
 }
 
-/** Global and country admin: Send all appears as a fourth destination tab. */
+/** Global, country, and state branch admin: Send all as a fourth destination tab. */
 export function showSendAllDestinationTab(policy) {
   if (policy?.membersOnly) return false;
   if (policy?.isGlobal) return true;
   if (policy?.isCountryAdmin && !policy?.actingAsState) return true;
+  if (policy?.isStateBranchAudience) return true;
   return false;
 }
 
@@ -157,20 +158,11 @@ export function announcementDestinationTabsForPolicy(policy) {
 }
 
 export function sendAllAudienceOptionsForPolicy(policy) {
-  if (policy?.isGlobal) {
+  if (policy?.isGlobal || (policy?.isCountryAdmin && !policy?.actingAsState)) {
     return SEND_ALL_AUDIENCE_OPTIONS;
   }
-  if (policy?.isCountryAdmin && !policy?.actingAsState) {
-    return SEND_ALL_AUDIENCE_OPTIONS;
-  }
-  if (policy?.isStateBranchAudience && !policy?.isCountryAdmin) {
+  if (policy?.isStateBranchAudience) {
     return SEND_ALL_AUDIENCE_OPTIONS.filter((a) => a.value !== "state_branch_pastors");
-  }
-  if (policy?.isCountryAdmin && policy?.actingAsState) {
-    return SEND_ALL_AUDIENCE_OPTIONS.filter((a) => a.value !== "state_branch_pastors");
-  }
-  if (policy?.isCountryAdmin) {
-    return SEND_ALL_AUDIENCE_OPTIONS;
   }
   return SEND_ALL_AUDIENCE_OPTIONS;
 }
@@ -442,7 +434,7 @@ function buildScopeHint(ctx) {
     return `Scoped to your satellite: ${ctx.lockedSatellite} (${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}).`;
   }
   if (ctx.isStateBranchAudience && ctx.lockedState) {
-    return `All audiences are limited to ${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}, ${branchCountryLabel(ctx.lockedCountry) || ctx.lockedCountry}. Optionally narrow by satellite church within this state.`;
+    return `All audiences are limited to ${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}, ${branchCountryLabel(ctx.lockedCountry) || ctx.lockedCountry}. Narrow by satellite or use Send all with audience checkboxes.`;
   }
   if (ctx.isCountryAdmin && ctx.actingAsState) {
     return `Scoped to your headquarters state only (${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}).`;
