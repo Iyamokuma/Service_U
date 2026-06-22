@@ -1,20 +1,13 @@
-import { AnnouncementAudienceCheckboxes } from "./AnnouncementAudienceCheckboxes.jsx";
-
 /**
  * Reusable destination tabs for create-announcement flows.
- * Global and country admins include a Send all tab with shared audience checkboxes.
+ * Global and country admins include a Send all tab alongside Members, Leaders, and Admins.
  */
 export function AnnouncementDestinationPicker({
   tabs,
   destinationType,
   onDestinationChange,
   adminsSubtitle = "",
-  sendAllAudiences = null,
-  selectedAudiences = [],
-  onAudiencesChange,
 }) {
-  const showSendAllAudiences = destinationType === "send_all" && sendAllAudiences?.length > 0;
-
   return (
     <div className="sa-field">
       <label className="sa-label">Destination</label>
@@ -35,15 +28,6 @@ export function AnnouncementDestinationPicker({
         <p className="sa-field-hint" style={{ marginTop: 8, marginBottom: 0 }}>
           {adminsSubtitle}
         </p>
-      ) : null}
-      {showSendAllAudiences ? (
-        <div style={{ marginTop: 12 }}>
-          <AnnouncementAudienceCheckboxes
-            options={sendAllAudiences}
-            selected={selectedAudiences}
-            onChange={onAudiencesChange}
-          />
-        </div>
       ) : null}
     </div>
   );
