@@ -129,9 +129,8 @@ export const SEND_ALL_AUDIENCE_OPTIONS = [
   { value: "state_branch_pastors", label: "State branch pastors" },
 ];
 
-export function usesSendAllDestination(policy) {
-  if (!policy || policy.isServiceUnitLeader || policy.isSubUnitLeader || policy.membersOnly) return false;
-  return Boolean(policy.isCountryAdmin || policy.isStateBranchAudience);
+export function usesSendAllDestination(_policy) {
+  return false;
 }
 
 export function sendAllAudienceOptionsForPolicy(policy) {
