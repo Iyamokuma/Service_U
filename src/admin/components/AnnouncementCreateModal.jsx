@@ -4,25 +4,16 @@ import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import {
-  announcementCountryOptions,
-  announcementSatelliteOptions,
-  announcementStateOptions,
+  announcementDestinationTabsForPolicy,
   applyAnnouncementScopeLocks,
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
   sendAllAudienceOptionsForPolicy,
 } from "../announcementScopePolicy.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
-
-function LockedGeoField({ label, value, hint }) {
-  return (
-    <div className="sa-field" style={{ marginBottom: 0 }}>
-      <label className="sa-label">{label}</label>
-      <input className="sa-input" value={value || "—"} readOnly disabled />
-      {hint ? <div className="sa-field-hint">{hint}</div> : null}
-    </div>
-  );
-}
+import { AnnouncementAudienceGeoScope, LockedGeoField } from "./AnnouncementAudienceGeoScope.jsx";
+import { AnnouncementDestinationPicker } from "./AnnouncementDestinationPicker.jsx";
+import { AnnouncementSendAllScope } from "./AnnouncementSendAllScope.jsx";
 
 const emptyForm = () => ({
   title: "",
@@ -44,110 +35,6 @@ const emptyForm = () => ({
   },
 });
 
-function AudienceGeoScope({
-  scope,
-  onScopeChange,
-  churches,
-  countryOptions,
-  requireCountry,
-  vis,
-  lockedCountryCode,
-  lockedStateCode,
-  lockedSatelliteSite,
-}) {
-  const v = vis || { country: true, state: true, satellite: true };
-  const cc = lockedCountryCode || scope.branch_country;
-
-  const stateOptions = useMemo(
-    () => announcementStateOptions(churches, cc, lockedStateCode),
-    [churches, cc, lockedStateCode],
-  );
-
-  const satelliteOptions = useMemo(() => {
-    const st = lockedStateCode || scope.branch_state;
-    return announcementSatelliteOptions(churches, cc, st, lockedSatelliteSite);
-  }, [churches, cc, scope.branch_state, lockedStateCode, lockedSatelliteSite]);
-
-  return (
-    <div className="sa-ann-scope-grid">
-      {lockedCountryCode ? (
-        <LockedGeoField
-          label="Country"
-          value={branchCountryLabel(lockedCountryCode) || lockedCountryCode}
-          hint="Announcements are limited to this country."
-        />
-      ) : v.country ? (
-        <div className="sa-field" style={{ marginBottom: 0 }}>
-          <label className="sa-label">
-            Country {requireCountry ? <span className="sa-required">*</span> : null}
-          </label>
-          <SearchableDropdown
-            value={scope.branch_country}
-            onChange={(code) => onScopeChange({ branch_country: code, branch_state: "", satellite_site: "" })}
-            options={countryOptions}
-            placeholder="Select country"
-            searchPlaceholder="Search country"
-            emptyMessage="No countries match"
-            ariaLabel="Country"
-          />
-        </div>
-      ) : null}
-      {(v.state || lockedStateCode) && (
-        <div className="sa-field" style={{ marginBottom: 0 }}>
-          <label className="sa-label">State / region</label>
-          {lockedStateCode ? (
-            <LockedGeoField
-              label=""
-              value={branchStateLabel(cc, lockedStateCode) || lockedStateCode}
-              hint="State is fixed to your assigned branch."
-            />
-          ) : (
-            <SearchableDropdown
-              value={scope.branch_state}
-              onChange={(code) => onScopeChange({ branch_state: code, satellite_site: "" })}
-              options={stateOptions}
-              disabled={!cc}
-              placeholder={cc ? "All states" : "Select country first"}
-              searchPlaceholder="Search state"
-              emptyMessage="No states match"
-              ariaLabel="State / region"
-            />
-          )}
-        </div>
-      )}
-      {(v.satellite || lockedSatelliteSite) && (
-        <div className="sa-field" style={{ marginBottom: 0 }}>
-          <label className="sa-label">Satellite / branch</label>
-          {lockedSatelliteSite ? (
-            <LockedGeoField
-              label=""
-              value={lockedSatelliteSite}
-              hint="Satellite is fixed to your assigned church site."
-            />
-          ) : (
-            <SearchableDropdown
-              value={scope.satellite_site}
-              onChange={(site) => onScopeChange({ satellite_site: site })}
-              options={satelliteOptions}
-              disabled={!cc || !(lockedStateCode || scope.branch_state)}
-              placeholder={
-                !cc
-                  ? "Select country first"
-                  : !(lockedStateCode || scope.branch_state)
-                    ? "Select state first"
-                    : "All satellites"
-              }
-              searchPlaceholder="Search by name or address"
-              emptyMessage="No branches match"
-              ariaLabel="Satellite / branch"
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitList = [], admin, viewMode }) {
   const policy = useMemo(() => getAnnouncementScopePolicy(admin, viewMode), [admin, viewMode]);
   const [form, setForm] = useState(emptyForm);
@@ -162,20 +49,23 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     }
     const base = emptyForm();
     const audienceOptions = sendAllAudienceOptionsForPolicy(policy);
-    if (policy.usesSendAll) {
-      base.destination_type = "send_all";
-      const geo = !policy.isGlobal && admin ? initialAnnouncementGeoForm(admin, policy) : {};
-      base.send_all = {
-        audiences: audienceOptions.map((a) => a.value),
-        ...geo,
-      };
-    } else if (policy.membersOnly) {
+    if (policy.membersOnly) {
       base.destination_type = "members";
     } else if (policy.isSatellitePastor) {
       base.destination_type = "members";
       base.leaders.mode = policy.destinationLabels?.defaultLeaderMode || "service_unit";
     }
-    if (!policy.usesSendAll && !policy.isGlobal && admin) {
+    if (policy.showSendAllTab) {
+      base.send_all = {
+        audiences: audienceOptions.map((a) => a.value),
+        branch_country: "",
+        branch_state: "",
+        satellite_site: "",
+        service_unit_id: "",
+        sub_unit: "",
+      };
+    }
+    if (!policy.isGlobal && admin) {
       const geo = initialAnnouncementGeoForm(admin, policy);
       base.members = { ...base.members, ...geo };
       base.leaders = { ...base.leaders, ...geo };
@@ -197,9 +87,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       .map(([code, name]) => ({ code, name }));
   }, [churches]);
 
-  const countryOptions = useMemo(
-    () => announcementCountryOptions(policy.lockedCountry, branchCountries),
-    [policy.lockedCountry, branchCountries],
+  const destinationTabs = useMemo(
+    () => announcementDestinationTabsForPolicy(policy),
+    [policy],
   );
 
   const scopedUnitList = useMemo(() => {
@@ -293,12 +183,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     if (!form.medium_email && !form.medium_push) {
       return "Select at least one medium: Email or Push notification.";
     }
-    if (policy.usesSendAll && form.destination_type === "send_all") {
+    if (form.destination_type === "send_all") {
       if (!form.send_all.audiences?.length) {
         return "Select at least one audience under Send all.";
-      }
-      if (!form.send_all.branch_country && !policy.lockedCountry) {
-        return "Select a country for this announcement.";
       }
       return "";
     }
@@ -375,6 +262,12 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   const setDest = (type) =>
     setForm((f) => {
       const next = { ...f, destination_type: type };
+      if (type === "send_all" && !f.send_all.audiences?.length) {
+        next.send_all = {
+          ...f.send_all,
+          audiences: sendAllAudienceOptions.map((a) => a.value),
+        };
+      }
       if (
         policy.isSatellitePastor &&
         type === "leaders" &&
@@ -439,137 +332,36 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         />
       </div>
 
-      {!policy.membersOnly && !policy.usesSendAll ? (
-        <div className="sa-field">
-          <label className="sa-label">Destination</label>
-          <div className="sa-radio-row" style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
-            {destLabels.destinationTabs.map((opt) => (
-              <label key={opt.id} className="sa-field-toggle" style={{ cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="ann-dest"
-                  checked={form.destination_type === opt.id}
-                  onChange={() => setDest(opt.id)}
-                />
-                <span className="sa-field-toggle-label">{opt.label}</span>
-              </label>
-            ))}
-          </div>
-          {form.destination_type === "admins" && destLabels.pastorsSubtitle ? (
-            <p className="sa-field-hint" style={{ marginTop: 8, marginBottom: 0 }}>
-              {destLabels.pastorsSubtitle}
-            </p>
-          ) : null}
-        </div>
-      ) : policy.usesSendAll ? (
-        <div className="sa-field">
-          <label className="sa-label">Destination</label>
-          <div className="sa-radio-row" style={{ marginTop: 8 }}>
-            <label className="sa-field-toggle" style={{ cursor: "default" }}>
-              <input type="radio" name="ann-dest" checked readOnly />
-              <span className="sa-field-toggle-label">Send all</span>
-            </label>
-          </div>
-          <p className="sa-field-hint" style={{ marginTop: 8, marginBottom: 12 }}>
-            Choose one or more groups to include in this announcement.
-          </p>
-          <div className="sa-ann-admin-role-row" role="group" aria-label="Send all audiences">
-            {sendAllAudienceOptions.map((opt) => (
-              <label key={opt.value} className="sa-field-toggle sa-ann-admin-role-item" style={{ cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={form.send_all.audiences.includes(opt.value)}
-                  onChange={(e) => {
-                    setForm((f) => {
-                      const audiences = new Set(f.send_all.audiences);
-                      if (e.target.checked) audiences.add(opt.value);
-                      else audiences.delete(opt.value);
-                      return { ...f, send_all: { ...f.send_all, audiences: [...audiences] } };
-                    });
-                  }}
-                />
-                <span className="sa-field-toggle-label">{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+      {!policy.membersOnly ? (
+        <AnnouncementDestinationPicker
+          tabs={destinationTabs}
+          destinationType={form.destination_type}
+          onDestinationChange={setDest}
+          adminsSubtitle={form.destination_type === "admins" ? destLabels.pastorsSubtitle : ""}
+          sendAllAudiences={policy.showSendAllTab ? sendAllAudienceOptions : null}
+          selectedAudiences={form.send_all.audiences}
+          onAudiencesChange={(audiences) =>
+            setForm((f) => ({ ...f, send_all: { ...f.send_all, audiences } }))
+          }
+        />
       ) : (
         <p className="sa-field-hint" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
           {scopeHint}
         </p>
       )}
 
-      {policy.usesSendAll && form.destination_type === "send_all" && (
-        <section className="sa-ann-scope" aria-label="Send all audience scope">
-          <div className="sa-ann-scope-title">Audience scope</div>
-          <AudienceGeoScope
-            scope={form.send_all}
-            onScopeChange={(patch) => setForm((f) => ({ ...f, send_all: { ...f.send_all, ...patch } }))}
-            churches={churches}
-            countryOptions={countryOptions}
-            requireCountry
-            vis={policy.visibility}
-            lockedCountryCode={policy.lockedCountry}
-            lockedStateCode={policy.lockedState}
-            lockedSatelliteSite={policy.lockedSatellite}
-          />
-          {policy.visibility.unit && (
-            <div className="sa-ann-scope-grid" style={{ marginTop: 14 }}>
-              <div className="sa-field" style={{ marginBottom: 0 }}>
-                <label className="sa-label">Service unit</label>
-                {policy.lockedServiceUnitId ? (
-                  <LockedGeoField
-                    label=""
-                    value={scopedUnitList[0]?.name || `Unit #${policy.lockedServiceUnitId}`}
-                    hint="Service unit is fixed to your assignment."
-                  />
-                ) : (
-                  <SearchableDropdown
-                    value={form.send_all.service_unit_id ? String(form.send_all.service_unit_id) : ""}
-                    onChange={(id) =>
-                      setForm((f) => ({
-                        ...f,
-                        send_all: { ...f.send_all, service_unit_id: id, sub_unit: "" },
-                      }))
-                    }
-                    options={unitOptions}
-                    placeholder="All units"
-                    searchPlaceholder="Search service unit"
-                    emptyMessage="No units match"
-                    ariaLabel="Service unit"
-                  />
-                )}
-              </div>
-              {policy.visibility.subunit && (form.send_all.service_unit_id || policy.lockedServiceUnitId) ? (
-                <div className="sa-field" style={{ marginBottom: 0 }}>
-                  <label className="sa-label">Sub-unit</label>
-                  {policy.lockedSubUnit ? (
-                    <LockedGeoField label="" value={policy.lockedSubUnit} hint="Sub-unit is fixed to your assignment." />
-                  ) : (
-                    <SearchableDropdown
-                      value={form.send_all.sub_unit}
-                      onChange={(name) => setForm((f) => ({ ...f, send_all: { ...f.send_all, sub_unit: name } }))}
-                      options={[
-                        { value: "", label: "All sub-units" },
-                        ...(scopedUnitList
-                          .find((u) => Number(u.id) === Number(form.send_all.service_unit_id))
-                          ?.sub_units || []
-                        ).map((s) => ({ value: s.name, label: s.name })),
-                      ]}
-                      placeholder="All sub-units"
-                      searchPlaceholder="Search sub-unit"
-                      emptyMessage="No sub-units match"
-                      ariaLabel="Sub-unit"
-                    />
-                  )}
-                </div>
-              ) : null}
-            </div>
-          )}
-          <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            {scopeHint}
-          </p>
-        </section>
+      {form.destination_type === "send_all" && policy.showSendAllTab && (
+        <AnnouncementSendAllScope
+          scope={form.send_all}
+          onScopeChange={(patch) => setForm((f) => ({ ...f, send_all: { ...f.send_all, ...patch } }))}
+          churches={churches}
+          branchCountries={branchCountries}
+          allowAllCountries
+          scopeHint={scopeHint}
+          lockedCountryCode={policy.lockedCountry}
+          lockedStateCode={policy.lockedState}
+          lockedSatelliteSite={policy.lockedSatellite}
+        />
       )}
 
       {form.destination_type === "members" && (
@@ -620,11 +412,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             </div>
           ) : null}
           {!policy.membersOnly && !policy.isServiceUnitLeader ? (
-            <AudienceGeoScope
+            <AnnouncementAudienceGeoScope
               scope={form.members}
               onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
               churches={churches}
-              countryOptions={countryOptions}
+              branchCountries={branchCountries}
               requireCountry
               vis={policy.visibility}
               lockedCountryCode={policy.lockedCountry}
@@ -736,11 +528,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             </div>
           ) : null}
           {!policy.isServiceUnitLeader ? (
-            <AudienceGeoScope
+            <AnnouncementAudienceGeoScope
             scope={form.leaders}
             onScopeChange={(patch) => setForm((f) => ({ ...f, leaders: { ...f.leaders, ...patch } }))}
             churches={churches}
-            countryOptions={countryOptions}
+            branchCountries={branchCountries}
             requireCountry
             vis={policy.visibility}
             lockedCountryCode={policy.lockedCountry}
@@ -851,11 +643,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           }
         >
           <div className="sa-ann-scope-title">Audience scope</div>
-          <AudienceGeoScope
+          <AnnouncementAudienceGeoScope
             scope={form.admins}
             onScopeChange={(patch) => setForm((f) => ({ ...f, admins: { ...f.admins, ...patch } }))}
             churches={churches}
-            countryOptions={countryOptions}
+            branchCountries={branchCountries}
             requireCountry
             vis={policy.visibility}
             lockedCountryCode={policy.lockedCountry}

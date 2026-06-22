@@ -2406,6 +2406,17 @@
   margin-top: 8px;
 }
 
+/* Destination tabs — Members, Leaders, Admins, Send all */
+.sa-ann-dest-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 8px;
+}
+.sa-ann-dest-tab {
+  margin-bottom: 0;
+}
+
 /* Admin destination: checkbox row on one horizontal line */
 .sa-ann-admin-role-row {
   display: flex;

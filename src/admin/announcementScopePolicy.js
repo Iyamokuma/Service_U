@@ -120,7 +120,9 @@ const DEFAULT_ADMIN_ROLES_BY_SENDER = {
 
 const DESTINATION_TABS_SUB_UNIT_MEMBERS_ONLY = [{ id: "members", label: "Service Unit Members" }];
 
-/** Send-all audience checkboxes (country / state branch announcements). */
+export const DESTINATION_TAB_SEND_ALL = { id: "send_all", label: "Send all" };
+
+/** Send-all audience checkboxes (global admin Send all tab). */
 export const SEND_ALL_AUDIENCE_OPTIONS = [
   { value: "members", label: "Unit members" },
   { value: "service_unit_leaders", label: "Service unit leaders" },
@@ -133,7 +135,23 @@ export function usesSendAllDestination(_policy) {
   return false;
 }
 
+/** Global admin: Send all appears as a fourth destination tab (not a replacement UI). */
+export function showSendAllDestinationTab(policy) {
+  return Boolean(policy?.isGlobal && !policy?.membersOnly);
+}
+
+export function announcementDestinationTabsForPolicy(policy) {
+  const tabs = getAnnouncementDestinationLabels(policy).destinationTabs;
+  if (showSendAllDestinationTab(policy)) {
+    return [...tabs, DESTINATION_TAB_SEND_ALL];
+  }
+  return tabs;
+}
+
 export function sendAllAudienceOptionsForPolicy(policy) {
+  if (policy?.isGlobal) {
+    return SEND_ALL_AUDIENCE_OPTIONS;
+  }
   if (policy?.isStateBranchAudience && !policy?.isCountryAdmin) {
     return SEND_ALL_AUDIENCE_OPTIONS.filter((a) => a.value !== "state_branch_pastors");
   }
@@ -397,12 +415,16 @@ export function getAnnouncementScopePolicy(admin, viewMode) {
     }),
   };
   const withSendAll = { ...base, usesSendAll: usesSendAllDestination(base) };
-  return { ...withSendAll, destinationLabels: getAnnouncementDestinationLabels(withSendAll) };
+  return {
+    ...withSendAll,
+    showSendAllTab: showSendAllDestinationTab(withSendAll),
+    destinationLabels: getAnnouncementDestinationLabels(withSendAll),
+  };
 }
 
 function buildScopeHint(ctx) {
   if (ctx.isGlobal) {
-    return "You can target any country, state, or satellite from the church directory.";
+    return "Target all countries or narrow by country, state, and satellite. Send all reaches every selected audience tier within the scope you set.";
   }
   if (ctx.role === "satellite_church_admin" && ctx.lockedSatellite) {
     return `Scoped to your satellite: ${ctx.lockedSatellite} (${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}).`;
@@ -426,8 +448,8 @@ function buildScopeHint(ctx) {
   return "Your announcement is limited to your assigned jurisdiction.";
 }
 
-/** Country dropdown options (global = all branch countries). */
-export function announcementCountryOptions(lockedCountry, branchCountries) {
+/** Country dropdown options (global = all branch countries; optional all-countries row). */
+export function announcementCountryOptions(lockedCountry, branchCountries, { allowAllCountries = false } = {}) {
   if (lockedCountry) {
     const c = branchCountries.find((x) => x.code === lockedCountry);
     return [
@@ -437,7 +459,11 @@ export function announcementCountryOptions(lockedCountry, branchCountries) {
       },
     ];
   }
-  return branchCountries.map((c) => ({ value: c.code, label: c.name }));
+  const options = branchCountries.map((c) => ({ value: c.code, label: c.name }));
+  if (allowAllCountries) {
+    return [{ value: "", label: "All countries" }, ...options];
+  }
+  return options;
 }
 
 /** State dropdown from church directory for locked country. */
