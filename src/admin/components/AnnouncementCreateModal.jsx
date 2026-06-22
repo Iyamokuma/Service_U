@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
-import { branchCountryLabel, branchStateLabel, hydrateBranchLabelsFromCatalog } from "../branchRegions.js";
+import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
-import { api } from "../api.js";
-import { countriesFromCatalog, resolveStateCodeFromSelection, stateSelectionValueForCode } from "../catalogGeoOptions.js";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import {
   announcementCountryOptions,
   announcementSatelliteOptions,
   announcementStateOptions,
-  announcementStateRows,
   applyAnnouncementScopeLocks,
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
@@ -57,19 +54,13 @@ function AudienceGeoScope({
   lockedCountryCode,
   lockedStateCode,
   lockedSatelliteSite,
-  catalog = null,
 }) {
   const v = vis || { country: true, state: true, satellite: true };
   const cc = lockedCountryCode || scope.branch_country;
 
-  const stateRows = useMemo(
-    () => announcementStateRows(churches, cc, catalog),
-    [churches, cc, catalog],
-  );
-
   const stateOptions = useMemo(
-    () => announcementStateOptions(churches, cc, lockedStateCode, catalog),
-    [churches, cc, lockedStateCode, catalog],
+    () => announcementStateOptions(churches, cc, lockedStateCode),
+    [churches, cc, lockedStateCode],
   );
 
   const satelliteOptions = useMemo(() => {
@@ -112,13 +103,8 @@ function AudienceGeoScope({
             />
           ) : (
             <SearchableDropdown
-              value={stateSelectionValueForCode(scope.branch_state, stateRows, cc)}
-              onChange={(name) =>
-                onScopeChange({
-                  branch_state: resolveStateCodeFromSelection(name, stateRows),
-                  satellite_site: "",
-                })
-              }
+              value={scope.branch_state}
+              onChange={(code) => onScopeChange({ branch_state: code, satellite_site: "" })}
               options={stateOptions}
               disabled={!cc}
               placeholder={cc ? "All states" : "Select country first"}
@@ -166,7 +152,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   const policy = useMemo(() => getAnnouncementScopePolicy(admin, viewMode), [admin, viewMode]);
   const [form, setForm] = useState(emptyForm);
   const [churches, setChurches] = useState([]);
-  const [catalog, setCatalog] = useState(null);
   const [scheduleLater, setScheduleLater] = useState(false);
 
   useEffect(() => {
@@ -198,15 +183,23 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     }
     setForm(base);
     fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    api.catalogList().then((r) => {
-      setCatalog(r);
-      hydrateBranchLabelsFromCatalog(r);
-    }).catch(() => setCatalog(null));
   }, [open, admin, policy]);
 
+  const branchCountries = useMemo(() => {
+    const map = new Map();
+    for (const ch of churches || []) {
+      const code = String(ch.branch_country || "").trim().toUpperCase();
+      if (!code || map.has(code)) continue;
+      map.set(code, branchCountryLabel(code) || code);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([code, name]) => ({ code, name }));
+  }, [churches]);
+
   const countryOptions = useMemo(
-    () => announcementCountryOptions(policy.lockedCountry, countriesFromCatalog(catalog || { countries: [] })),
-    [policy.lockedCountry, catalog],
+    () => announcementCountryOptions(policy.lockedCountry, branchCountries),
+    [policy.lockedCountry, branchCountries],
   );
 
   const scopedUnitList = useMemo(() => {
@@ -513,7 +506,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             scope={form.send_all}
             onScopeChange={(patch) => setForm((f) => ({ ...f, send_all: { ...f.send_all, ...patch } }))}
             churches={churches}
-            catalog={catalog}
             countryOptions={countryOptions}
             requireCountry
             vis={policy.visibility}
@@ -632,7 +624,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               scope={form.members}
               onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
               churches={churches}
-              catalog={catalog}
               countryOptions={countryOptions}
               requireCountry
               vis={policy.visibility}
@@ -749,7 +740,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             scope={form.leaders}
             onScopeChange={(patch) => setForm((f) => ({ ...f, leaders: { ...f.leaders, ...patch } }))}
             churches={churches}
-            catalog={catalog}
             countryOptions={countryOptions}
             requireCountry
             vis={policy.visibility}
@@ -865,7 +855,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             scope={form.admins}
             onScopeChange={(patch) => setForm((f) => ({ ...f, admins: { ...f.admins, ...patch } }))}
             churches={churches}
-            catalog={catalog}
             countryOptions={countryOptions}
             requireCountry
             vis={policy.visibility}
