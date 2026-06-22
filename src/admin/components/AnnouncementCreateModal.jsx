@@ -619,7 +619,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               Select a satellite in audience scope above to choose a leader type.
             </p>
           ) : null}
-          {(policy.visibility.unit || policy.isServiceUnitLeader) && showLeaderTypePicker && (
+          {(policy.visibility.unit || policy.isServiceUnitLeader) && showLeaderTypePicker ? (
             <>
               {!useUnifiedGeo ? <div className="sa-ann-scope-title">{destLabels.leaderTypeTitle}</div> : null}
               <AnnouncementLeaderTypeField
