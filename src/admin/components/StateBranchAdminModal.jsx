@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
-import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import {
+  branchCountryLabel,
+  branchStateLabel,
+  hydrateBranchLabelsFromDirectoryStates,
+} from "../branchRegions.js";
 import { SearchableSelect } from "./SearchableSelect.jsx";
 import { api } from "../api.js";
 import {
@@ -61,7 +65,10 @@ export function StateBranchAdminModal({
     api
       .catalogStatesForCountry(cc)
       .then((res) => {
-        if (!cancelled) setDirectoryStates(Array.isArray(res?.states) ? res.states : []);
+        if (cancelled) return;
+        const rows = Array.isArray(res?.states) ? res.states : [];
+        hydrateBranchLabelsFromDirectoryStates(cc, rows);
+        setDirectoryStates(rows);
       })
       .catch(() => {
         if (!cancelled) setDirectoryStates([]);

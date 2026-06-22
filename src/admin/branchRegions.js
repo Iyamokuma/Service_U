@@ -105,12 +105,13 @@ export function canonicalStateOption(countryCode, codeOrName, displayName) {
   const cc = normCode(countryCode);
   const rawCode = normCode(codeOrName);
   const rawName = String(displayName ?? codeOrName ?? "").trim();
-  const canonical = resolveStateCodeByName(cc, rawName) || rawCode;
+  const canonical = rawCode || resolveStateCodeByName(cc, rawName);
   if (!cc || !canonical) return null;
   const labelFromCache = stateLabels.get(`${cc}|${canonical}`);
+  const display = String(displayName || "").trim();
   return {
     code: canonical,
-    name: labelFromCache || String(displayName || "").trim() || canonical,
+    name: labelFromCache || display || branchStateLabel(cc, canonical) || canonical,
   };
 }
 
