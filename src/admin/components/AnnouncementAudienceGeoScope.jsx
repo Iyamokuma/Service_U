@@ -28,6 +28,7 @@ export function AnnouncementAudienceGeoScope({
   branchCountries = [],
   requireCountry = false,
   allowAllCountries = false,
+  allowAllSatellites = false,
   vis,
   lockedCountryCode = "",
   lockedStateCode = "",
@@ -53,7 +54,7 @@ export function AnnouncementAudienceGeoScope({
   }, [churches, cc, scope.branch_state, lockedStateCode, lockedSatelliteSite]);
 
   const canPickState = Boolean(cc);
-  const canPickSatellite = Boolean(cc && (lockedStateCode || scope.branch_state));
+  const canPickSatellite = allowAllSatellites ? Boolean(cc) : Boolean(cc && (lockedStateCode || scope.branch_state));
 
   return (
     <div className="sa-ann-scope-grid">
@@ -77,9 +78,6 @@ export function AnnouncementAudienceGeoScope({
             emptyMessage="No countries match"
             ariaLabel="Country"
           />
-          {allowAllCountries && !scope.branch_country ? (
-            <div className="sa-field-hint">Leave as all countries to broadcast everywhere, or pick one country to narrow.</div>
-          ) : null}
         </div>
       ) : null}
       {(v.state || lockedStateCode) && (
@@ -123,9 +121,9 @@ export function AnnouncementAudienceGeoScope({
               placeholder={
                 !canPickState
                   ? "Select a country first"
-                  : !canPickSatellite
-                    ? "Select a state first"
-                    : "All satellites"
+                  : allowAllSatellites || lockedStateCode || scope.branch_state
+                    ? "All satellites"
+                    : "Select a state first"
               }
               searchPlaceholder="Search by name or address"
               emptyMessage="No branches match"

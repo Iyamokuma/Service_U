@@ -135,9 +135,17 @@ export function usesSendAllDestination(_policy) {
   return false;
 }
 
-/** Global admin: Send all appears as a fourth destination tab (not a replacement UI). */
+/** Global and country admin: Send all appears as a fourth destination tab. */
 export function showSendAllDestinationTab(policy) {
-  return Boolean(policy?.isGlobal && !policy?.membersOnly);
+  if (policy?.membersOnly) return false;
+  if (policy?.isGlobal) return true;
+  if (policy?.isCountryAdmin && !policy?.actingAsState) return true;
+  return false;
+}
+
+/** Shared audience scope (country / state / satellite only — no units) across destination tabs. */
+export function usesUnifiedAnnouncementGeo(policy) {
+  return showSendAllDestinationTab(policy);
 }
 
 export function announcementDestinationTabsForPolicy(policy) {
@@ -150,6 +158,9 @@ export function announcementDestinationTabsForPolicy(policy) {
 
 export function sendAllAudienceOptionsForPolicy(policy) {
   if (policy?.isGlobal) {
+    return SEND_ALL_AUDIENCE_OPTIONS;
+  }
+  if (policy?.isCountryAdmin && !policy?.actingAsState) {
     return SEND_ALL_AUDIENCE_OPTIONS;
   }
   if (policy?.isStateBranchAudience && !policy?.isCountryAdmin) {
@@ -418,6 +429,7 @@ export function getAnnouncementScopePolicy(admin, viewMode) {
   return {
     ...withSendAll,
     showSendAllTab: showSendAllDestinationTab(withSendAll),
+    useUnifiedGeo: usesUnifiedAnnouncementGeo(withSendAll),
     destinationLabels: getAnnouncementDestinationLabels(withSendAll),
   };
 }
@@ -436,7 +448,7 @@ function buildScopeHint(ctx) {
     return `Scoped to your headquarters state only (${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}).`;
   }
   if (ctx.isCountryAdmin && ctx.lockedCountry) {
-    return `Scoped to ${branchCountryLabel(ctx.lockedCountry) || ctx.lockedCountry}. Optionally narrow by state or satellite using church data.`;
+    return `Scoped to ${branchCountryLabel(ctx.lockedCountry) || ctx.lockedCountry}. Narrow by state or satellite, or use Send all with audience checkboxes.`;
   }
   if (ctx.role === "service_unit_leader") {
     const sat = ctx.lockedSatellite ? ` at ${ctx.lockedSatellite}` : "";
@@ -501,18 +513,20 @@ export function announcementSatelliteOptions(churches, lockedCountry, lockedStat
   }
   const cc = String(lockedCountry || "").trim().toUpperCase();
   const st = String(lockedState || "").trim().toUpperCase();
-  if (!cc || !st) return [];
+  if (!cc) return [];
   const byName = new Map();
   for (const ch of churches || []) {
     if (String(ch.branch_country || "").toUpperCase() !== cc) continue;
-    if (String(ch.branch_state || "").toUpperCase() !== st) continue;
+    if (st && String(ch.branch_state || "").trim().toUpperCase() !== st) continue;
     const name = String(ch.name || "").trim();
     if (!name || byName.has(name)) continue;
     byName.set(name, String(ch.address || "").trim());
   }
-  const sites = satelliteSitesForBranch(churches, cc, st);
-  for (const name of sites) {
-    if (!byName.has(name)) byName.set(name, "");
+  if (st) {
+    const sites = satelliteSitesForBranch(churches, cc, st);
+    for (const name of sites) {
+      if (!byName.has(name)) byName.set(name, "");
+    }
   }
   return [
     { value: "", label: "All satellites" },

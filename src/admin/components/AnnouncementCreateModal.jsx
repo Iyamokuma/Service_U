@@ -35,6 +35,34 @@ const emptyForm = () => ({
   },
 });
 
+function sharedGeoFromForm(form, destinationType) {
+  const key =
+    destinationType === "send_all"
+      ? "send_all"
+      : destinationType === "leaders"
+        ? "leaders"
+        : destinationType === "admins"
+          ? "admins"
+          : "members";
+  const bucket = form[key];
+  return {
+    branch_country: bucket.branch_country || "",
+    branch_state: bucket.branch_state || "",
+    satellite_site: bucket.satellite_site || "",
+  };
+}
+
+function applySharedGeoPatch(form, patch) {
+  const geo = { ...patch };
+  return {
+    ...form,
+    members: { ...form.members, ...geo },
+    leaders: { ...form.leaders, ...geo },
+    admins: { ...form.admins, ...geo },
+    send_all: { ...form.send_all, ...geo },
+  };
+}
+
 export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitList = [], admin, viewMode }) {
   const policy = useMemo(() => getAnnouncementScopePolicy(admin, viewMode), [admin, viewMode]);
   const [form, setForm] = useState(emptyForm);
@@ -56,16 +84,27 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       base.leaders.mode = policy.destinationLabels?.defaultLeaderMode || "service_unit";
     }
     if (policy.showSendAllTab) {
+      const geo = policy.isGlobal
+        ? { branch_country: "", branch_state: "", satellite_site: "" }
+        : admin
+          ? {
+              branch_country: policy.lockedCountry || admin.branch_country || "",
+              branch_state: policy.lockedState || "",
+              satellite_site: policy.lockedSatellite || admin.satellite_site || "",
+            }
+          : { branch_country: "", branch_state: "", satellite_site: "" };
       base.send_all = {
         audiences: audienceOptions.map((a) => a.value),
-        branch_country: "",
-        branch_state: "",
-        satellite_site: "",
+        ...geo,
         service_unit_id: "",
         sub_unit: "",
       };
-    }
-    if (!policy.isGlobal && admin) {
+      if (!policy.isGlobal && admin) {
+        base.members = { ...base.members, ...geo };
+        base.leaders = { ...base.leaders, ...geo };
+        base.admins = { ...base.admins, ...geo, roles: [...policy.defaultAdminRoles] };
+      }
+    } else if (!policy.isGlobal && admin) {
       const geo = initialAnnouncementGeoForm(admin, policy);
       base.members = { ...base.members, ...geo };
       base.leaders = { ...base.leaders, ...geo };
@@ -125,6 +164,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   );
 
   const destLabels = policy.destinationLabels;
+  const useUnifiedGeo = Boolean(policy.useUnifiedGeo);
+  const sharedGeoScope = useMemo(
+    () => sharedGeoFromForm(form, form.destination_type),
+    [form, form.destination_type],
+  );
 
   const leaderModeOptions = useMemo(
     () => destLabels.leaderModeOptions.map((m) => ({ value: m.value, label: m.label })),
@@ -195,22 +239,22 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     if (policy.membersOnly && !policy.lockedSubUnit) {
       return "Your sub-unit assignment is not configured. Update your profile or contact an administrator.";
     }
-    if (form.destination_type === "members" && !form.members.branch_country && !policy.lockedCountry) {
+    if (form.destination_type === "members" && !useUnifiedGeo && !form.members.branch_country && !policy.lockedCountry) {
       return `Select a country for ${destLabels.typePrefix.members.toLowerCase()} announcements.`;
     }
     if (form.destination_type === "leaders") {
       if (policy.isSatellitePastor && !["service_unit", "sub_unit"].includes(form.leaders.mode)) {
         return "Select Service unit leaders or Sub unit leaders.";
       }
-      if (!form.leaders.branch_country && !policy.lockedCountry) {
+      if (!useUnifiedGeo && !form.leaders.branch_country && !policy.lockedCountry) {
         return `Select a country for ${destLabels.typePrefix.leaders.toLowerCase()} announcements.`;
       }
-      if (form.leaders.mode === "service_unit" && !form.leaders.service_unit_id && !policy.lockedServiceUnitId) {
+      if (form.leaders.mode === "service_unit" && !useUnifiedGeo && !form.leaders.service_unit_id && !policy.lockedServiceUnitId) {
         return destLabels.usesBranchAudienceLabels
           ? "Select a service unit for service unit head targeting."
           : "Select a service unit for leader targeting.";
       }
-      if (form.leaders.mode === "sub_unit") {
+      if (form.leaders.mode === "sub_unit" && !useUnifiedGeo) {
         if (!form.leaders.service_unit_id && !policy.lockedServiceUnitId) return "Select a service unit.";
         const leaderUnit = scopedUnitList.find(
           (u) => Number(u.id) === Number(form.leaders.service_unit_id || policy.lockedServiceUnitId),
@@ -230,7 +274,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       }
     }
     if (form.destination_type === "admins") {
-      if (!form.admins.branch_country && !policy.lockedCountry) {
+      if (!useUnifiedGeo && !form.admins.branch_country && !policy.lockedCountry) {
         return `Select a country for ${destLabels.typePrefix.admins.toLowerCase()} announcements.`;
       }
       if (!form.admins.roles || form.admins.roles.length === 0) {
@@ -261,11 +305,15 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
 
   const setDest = (type) =>
     setForm((f) => {
-      const next = { ...f, destination_type: type };
-      if (type === "send_all" && !f.send_all.audiences?.length) {
-        next.send_all = {
-          ...f.send_all,
-          audiences: sendAllAudienceOptions.map((a) => a.value),
+      const geo = sharedGeoFromForm(f, f.destination_type);
+      let next = applySharedGeoPatch({ ...f, destination_type: type }, geo);
+      if (type === "send_all" && !next.send_all.audiences?.length) {
+        next = {
+          ...next,
+          send_all: {
+            ...next.send_all,
+            audiences: sendAllAudienceOptions.map((a) => a.value),
+          },
         };
       }
       if (
@@ -273,7 +321,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         type === "leaders" &&
         !["service_unit", "sub_unit"].includes(f.leaders.mode)
       ) {
-        next.leaders = { ...f.leaders, mode: destLabels.defaultLeaderMode || "service_unit" };
+        next.leaders = { ...next.leaders, mode: destLabels.defaultLeaderMode || "service_unit" };
       }
       return next;
     });
@@ -350,13 +398,15 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </p>
       )}
 
-      {form.destination_type === "send_all" && policy.showSendAllTab && (
+      {useUnifiedGeo && (
         <AnnouncementSendAllScope
-          scope={form.send_all}
-          onScopeChange={(patch) => setForm((f) => ({ ...f, send_all: { ...f.send_all, ...patch } }))}
+          scope={sharedGeoScope}
+          onScopeChange={(patch) => setForm((f) => applySharedGeoPatch(f, patch))}
           churches={churches}
           branchCountries={branchCountries}
-          allowAllCountries
+          allowAllCountries={policy.isGlobal}
+          allowAllSatellites
+          vis={policy.visibility}
           scopeHint={scopeHint}
           lockedCountryCode={policy.lockedCountry}
           lockedStateCode={policy.lockedState}
@@ -364,7 +414,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         />
       )}
 
-      {form.destination_type === "members" && (
+      {form.destination_type === "members" && (!useUnifiedGeo || policy.membersOnly || policy.isServiceUnitLeader) && (
         <section
           className="sa-ann-scope"
           aria-label={destLabels.usesBranchAudienceLabels ? "Service unit member audience" : "Member audience"}
@@ -411,7 +461,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               ) : null}
             </div>
           ) : null}
-          {!policy.membersOnly && !policy.isServiceUnitLeader ? (
+          {!policy.membersOnly && !policy.isServiceUnitLeader && !useUnifiedGeo ? (
             <AnnouncementAudienceGeoScope
               scope={form.members}
               onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
@@ -424,7 +474,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               lockedSatelliteSite={policy.lockedSatellite}
             />
           ) : null}
-          {!policy.membersOnly && policy.visibility.unit && (
+          {!policy.membersOnly && policy.visibility.unit && !useUnifiedGeo && (
             <div className="sa-ann-scope-grid" style={{ marginTop: 14 }}>
               <div className="sa-field" style={{ marginBottom: 0 }}>
                 <label className="sa-label">Service unit</label>
@@ -497,6 +547,8 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               ? "Sub Unit Leaders"
               : policy.isSatellitePastor
                 ? destLabels.leaderScopeSectionTitle || "Service unit heads"
+                : useUnifiedGeo
+                  ? destLabels.leaderTypeTitle || "Leader type"
                 : destLabels.usesBranchAudienceLabels
                   ? destLabels.leaderScopeSectionTitle || "Service unit heads"
                   : "Audience scope"}
@@ -527,7 +579,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               ) : null}
             </div>
           ) : null}
-          {!policy.isServiceUnitLeader ? (
+          {!policy.isServiceUnitLeader && !useUnifiedGeo ? (
             <AnnouncementAudienceGeoScope
             scope={form.leaders}
             onScopeChange={(patch) => setForm((f) => ({ ...f, leaders: { ...f.leaders, ...patch } }))}
@@ -540,13 +592,15 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             lockedSatelliteSite={policy.lockedSatellite}
             />
           ) : null}
+          {!useUnifiedGeo ? (
           <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 14 }}>
             {scopeHint}
           </p>
+          ) : null}
           {(policy.visibility.unit || policy.isServiceUnitLeader) && (
             <>
-              <div className="sa-ann-scope-title">{destLabels.leaderTypeTitle}</div>
-              <div className="sa-field" style={{ marginBottom: 14 }}>
+              {!useUnifiedGeo ? <div className="sa-ann-scope-title">{destLabels.leaderTypeTitle}</div> : null}
+              <div className="sa-field" style={{ marginBottom: useUnifiedGeo ? 0 : 14 }}>
                 <label className="sa-label">{destLabels.leaderTypeLabel}</label>
                 <SearchableDropdown
                   value={form.leaders.mode}
@@ -576,7 +630,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
                 />
                 <div className="sa-field-hint">{destLabels.leaderTypeHint}</div>
               </div>
-              {(policy.isServiceUnitLeader ? form.leaders.mode === "sub_unit" : form.leaders.mode !== "all") && (
+              {!useUnifiedGeo && (policy.isServiceUnitLeader ? form.leaders.mode === "sub_unit" : form.leaders.mode !== "all") && (
                 <div className="sa-ann-scope-grid">
                   {!policy.isServiceUnitLeader ? (
                     <div className="sa-field" style={{ marginBottom: 0 }}>
@@ -642,7 +696,8 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
                 : "Admin audience"
           }
         >
-          <div className="sa-ann-scope-title">Audience scope</div>
+          {!useUnifiedGeo ? <div className="sa-ann-scope-title">Audience scope</div> : null}
+          {!useUnifiedGeo ? (
           <AnnouncementAudienceGeoScope
             scope={form.admins}
             onScopeChange={(patch) => setForm((f) => ({ ...f, admins: { ...f.admins, ...patch } }))}
@@ -654,16 +709,21 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             lockedStateCode={policy.lockedState}
             lockedSatelliteSite={policy.lockedSatellite}
           />
+          ) : null}
+          {!useUnifiedGeo ? (
           <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 14 }}>
             {scopeHint}
           </p>
+          ) : null}
           <div className="sa-ann-scope-title">{destLabels.adminRolesSectionTitle}</div>
+          {!useUnifiedGeo ? (
           <p className="sa-field-hint" style={{ marginTop: 0, marginBottom: 12 }}>
             {destLabels.adminRolesHint ||
               (policy.isGlobal
                 ? "Tick all boxes to reach every admin tier, or limit to selected roles only."
                 : "Only admin tiers within your jurisdiction are available.")}
           </p>
+          ) : null}
           <div className="sa-ann-admin-role-row" role="group" aria-label="Admin roles">
             {policy.adminRoleOptions.map((r) => (
               <label key={r.value} className="sa-field-toggle sa-ann-admin-role-item" style={{ cursor: "pointer" }}>

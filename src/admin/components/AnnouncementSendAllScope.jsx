@@ -11,9 +11,11 @@ export function AnnouncementSendAllScope({
   lockedStateCode = "",
   lockedSatelliteSite = "",
   allowAllCountries = false,
+  allowAllSatellites = false,
+  vis,
 }) {
   return (
-    <section className="sa-ann-scope" aria-label="Send all audience scope">
+    <section className="sa-ann-scope" aria-label="Announcement audience scope">
       <div className="sa-ann-scope-title">Audience scope</div>
       <AnnouncementAudienceGeoScope
         scope={scope}
@@ -22,7 +24,8 @@ export function AnnouncementSendAllScope({
         branchCountries={branchCountries}
         requireCountry={false}
         allowAllCountries={allowAllCountries}
-        vis={{ country: true, state: true, satellite: true }}
+        allowAllSatellites={allowAllSatellites}
+        vis={vis || { country: true, state: true, satellite: true }}
         lockedCountryCode={lockedCountryCode}
         lockedStateCode={lockedStateCode}
         lockedSatelliteSite={lockedSatelliteSite}
