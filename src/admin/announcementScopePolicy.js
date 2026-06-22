@@ -15,6 +15,35 @@ const ADMIN_ROLES_COUNTRY = [
   { value: "satellite_church_admin", label: "Satellite Pastor" },
 ];
 
+/** Country admin Pastors destination — single-select maps to admins.roles array. */
+export const COUNTRY_PASTOR_ROLE_OPTIONS = [
+  { value: "all", label: "All pastors" },
+  ...ADMIN_ROLES_COUNTRY,
+];
+
+export function pastorRoleSelectionFromAdminRoles(
+  roles,
+  roleOptions = COUNTRY_PASTOR_ROLE_OPTIONS,
+) {
+  const available = roleOptions.filter((o) => o.value !== "all").map((o) => o.value);
+  const set = new Set((roles || []).map(String));
+  if (available.length > 0 && available.every((r) => set.has(r))) return "all";
+  for (const role of available) {
+    if (set.has(role) && set.size === 1) return role;
+  }
+  return "all";
+}
+
+export function adminRolesFromPastorRoleSelection(
+  selection,
+  roleOptions = COUNTRY_PASTOR_ROLE_OPTIONS,
+) {
+  if (selection === "all") {
+    return roleOptions.filter((o) => o.value !== "all").map((o) => o.value);
+  }
+  return [selection];
+}
+
 const LEADER_MODES_DEFAULT = [
   { value: "all", label: "All leaders (service unit & sub-unit)" },
   { value: "service_unit", label: "Service unit leaders only" },

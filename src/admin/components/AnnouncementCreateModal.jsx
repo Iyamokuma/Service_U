@@ -6,8 +6,11 @@ import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import {
   announcementDestinationTabsForPolicy,
   applyAnnouncementScopeLocks,
+  adminRolesFromPastorRoleSelection,
+  COUNTRY_PASTOR_ROLE_OPTIONS,
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
+  pastorRoleSelectionFromAdminRoles,
   sendAllAudienceOptionsForPolicy,
 } from "../announcementScopePolicy.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
@@ -205,6 +208,19 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       ? "Sub Unit Leaders"
       : "Leader audience type";
   const showLeaderTypeInScope = useUnifiedGeo && form.destination_type === "leaders";
+  const showPastorRoleInScope =
+    useUnifiedGeo &&
+    form.destination_type === "admins" &&
+    policy.isCountryAdmin &&
+    !policy.actingAsState;
+  const pastorRoleSelection = useMemo(
+    () => pastorRoleSelectionFromAdminRoles(form.admins.roles),
+    [form.admins.roles],
+  );
+  const pastorRoleOptions = useMemo(
+    () => COUNTRY_PASTOR_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+    [],
+  );
 
   function buildPayload(workflow_action) {
     const destination_type = form.destination_type;
@@ -428,6 +444,21 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           leaderTypeHint={destLabels.leaderTypeHint}
           leaderTypePlaceholder={leaderTypePlaceholder}
           leaderTypeAriaLabel={leaderTypeAriaLabel}
+          showPastorRole={showPastorRoleInScope}
+          pastorRole={pastorRoleSelection}
+          pastorRoleOptions={pastorRoleOptions}
+          onPastorRoleChange={(selection) =>
+            setForm((f) => ({
+              ...f,
+              admins: {
+                ...f.admins,
+                roles: adminRolesFromPastorRoleSelection(selection),
+              },
+            }))
+          }
+          pastorRoleLabel={destLabels.adminRolesSectionTitle}
+          pastorRolePlaceholder="Select pastors"
+          pastorRoleAriaLabel="Pastor types"
         />
       )}
 
@@ -702,7 +733,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </section>
       )}
 
-      {!policy.membersOnly && !policy.isSatellitePastor && form.destination_type === "admins" && (
+      {!policy.membersOnly && !policy.isSatellitePastor && form.destination_type === "admins" && !showPastorRoleInScope && (
         <section
           className="sa-ann-scope"
           aria-label={

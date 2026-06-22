@@ -21,6 +21,14 @@ export function AnnouncementSendAllScope({
   leaderTypeHint = "",
   leaderTypePlaceholder = "Select audience",
   leaderTypeAriaLabel = "Leader type",
+  showPastorRole = false,
+  pastorRole = "",
+  pastorRoleOptions = [],
+  onPastorRoleChange,
+  pastorRoleLabel = "Pastors",
+  pastorRoleHint = "",
+  pastorRolePlaceholder = "Select pastors",
+  pastorRoleAriaLabel = "Pastor types",
 }) {
   return (
     <section className="sa-ann-scope" aria-label="Announcement audience scope">
@@ -45,6 +53,14 @@ export function AnnouncementSendAllScope({
         leaderTypeHint={leaderTypeHint}
         leaderTypePlaceholder={leaderTypePlaceholder}
         leaderTypeAriaLabel={leaderTypeAriaLabel}
+        showPastorRole={showPastorRole}
+        pastorRole={pastorRole}
+        pastorRoleOptions={pastorRoleOptions}
+        onPastorRoleChange={onPastorRoleChange}
+        pastorRoleLabel={pastorRoleLabel}
+        pastorRoleHint={pastorRoleHint}
+        pastorRolePlaceholder={pastorRolePlaceholder}
+        pastorRoleAriaLabel={pastorRoleAriaLabel}
       />
       {scopeHint ? (
         <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>

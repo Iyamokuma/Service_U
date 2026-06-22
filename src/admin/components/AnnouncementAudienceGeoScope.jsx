@@ -42,6 +42,14 @@ export function AnnouncementAudienceGeoScope({
   leaderTypeHint = "",
   leaderTypePlaceholder = "Select audience",
   leaderTypeAriaLabel = "Leader type",
+  showPastorRole = false,
+  pastorRole = "",
+  pastorRoleOptions = [],
+  onPastorRoleChange,
+  pastorRoleLabel = "Pastors",
+  pastorRoleHint = "",
+  pastorRolePlaceholder = "Select pastors",
+  pastorRoleAriaLabel = "Pastor types",
 }) {
   const v = vis || { country: true, state: true, satellite: true };
   const cc = lockedCountryCode || scope.branch_country;
@@ -150,6 +158,17 @@ export function AnnouncementAudienceGeoScope({
           onChange={onLeaderModeChange}
           placeholder={leaderTypePlaceholder}
           ariaLabel={leaderTypeAriaLabel}
+        />
+      ) : null}
+      {showPastorRole ? (
+        <AnnouncementLeaderTypeField
+          label={pastorRoleLabel}
+          hint={pastorRoleHint}
+          value={pastorRole}
+          options={pastorRoleOptions}
+          onChange={onPastorRoleChange}
+          placeholder={pastorRolePlaceholder}
+          ariaLabel={pastorRoleAriaLabel}
         />
       ) : null}
     </div>
