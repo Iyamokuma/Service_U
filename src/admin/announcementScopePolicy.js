@@ -2,7 +2,7 @@ import { isActingAsStateAdmin } from "./adminViewMode.js";
 import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 import { isCountrySuperAdmin, isGlobalAdminRole, isStateSuperAdmin } from "./roles.js";
 import { satelliteSitesForBranch } from "./satelliteSites.js";
-import { stateSelectOptionsForDropdown, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { stateSelectOptionsForDropdown, statesForCountryPicker } from "./catalogGeoOptions.js";
 
 const ADMIN_ROLES_GLOBAL = [
   { value: "general_admin", label: "General Admin" },
@@ -455,15 +455,15 @@ export function announcementStateOptions(churches, lockedCountry, lockedState, c
   }
   const cc = String(lockedCountry || "").trim().toUpperCase();
   if (!cc) return [];
-  const rows = statesFromCatalogAndChurches(catalog, cc, churches || []);
-  return [{ value: "", label: "All states" }, ...stateSelectOptionsForDropdown(rows)];
+  const rows = statesForCountryPicker(cc, { catalog, churches: churches || [] });
+  return [{ value: "", label: "All states" }, ...stateSelectOptionsForDropdown(rows, cc)];
 }
 
 /** State rows for resolving announcement scope picks back to branch_state codes. */
 export function announcementStateRows(churches, lockedCountry, catalog = null) {
   const cc = String(lockedCountry || "").trim().toUpperCase();
   if (!cc) return [];
-  return statesFromCatalogAndChurches(catalog, cc, churches || []);
+  return statesForCountryPicker(cc, { catalog, churches: churches || [] });
 }
 
 export function announcementSatelliteOptions(churches, lockedCountry, lockedState, lockedSatellite) {

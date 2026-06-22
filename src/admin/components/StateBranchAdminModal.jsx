@@ -3,12 +3,9 @@ import { Modal } from "./Modal.jsx";
 import {
   branchCountryLabel,
   branchStateLabel,
-  hydrateBranchLabelsFromDirectoryStates,
 } from "../branchRegions.js";
 import { SearchableSelect } from "./SearchableSelect.jsx";
-import { api } from "../api.js";
 import {
-  allStatesInCountry,
   availableStatesForCountryAdmin,
   occupiedStateCodes,
   suggestedStateAdminUsername,
@@ -17,7 +14,7 @@ import {
 import { usesAdminInviteCreate } from "../adminAccountForm.js";
 import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
 import { adminCreateButtonLabel } from "../adminInviteUi.js";
-import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import { parseHqChurchValue } from "../catalogGeoOptions.js";
 import { StateRegionSelect } from "./StateRegionSelect.jsx";
@@ -46,57 +43,16 @@ export function StateBranchAdminModal({
   const cc = String(countryCode || "").toUpperCase();
 
   const hasExternalCatalog = catalogProp != null;
-  const { churches: loadedChurches, catalog: loadedCatalog, loading: catalogLoading } = useAdminLocationCatalog({
-    enabled: open && !hasExternalCatalog,
-  });
+  const {
+    churches: loadedChurches,
+    catalog: loadedCatalog,
+    loading: catalogLoading,
+    directoryStates,
+    stateRows: allCountryStates,
+  } = useCountryStateRows(cc, { enabled: open && !hasExternalCatalog });
   const catalog = hasExternalCatalog ? catalogProp : loadedCatalog;
   const churches = churchesProp?.length ? churchesProp : loadedChurches;
-
-  const [directoryStates, setDirectoryStates] = useState([]);
-  const [statesLoading, setStatesLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !cc) {
-      setDirectoryStates([]);
-      setStatesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setStatesLoading(true);
-    api
-      .catalogStatesForCountry(cc)
-      .then((res) => {
-        if (cancelled) return;
-        const rows = Array.isArray(res?.states) ? res.states : [];
-        hydrateBranchLabelsFromDirectoryStates(cc, rows);
-        setDirectoryStates(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setDirectoryStates([]);
-      })
-      .finally(() => {
-        if (!cancelled) setStatesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, cc]);
-
-  const allCountryStates = useMemo(() => {
-    const effectiveDirectoryStates =
-      directoryStates.length > 0
-        ? directoryStates
-        : (() => {
-            const country = (catalog?.countries || []).find(
-              (c) => String(c.branch_country_code || "").toUpperCase() === cc,
-            );
-            if (!country) return [];
-            return (catalog?.states || []).filter(
-              (s) => Number(s.country_id) === Number(country.id),
-            );
-          })();
-    return allStatesInCountry(cc, { catalog, churches, directoryStates: effectiveDirectoryStates });
-  }, [cc, catalog, churches, directoryStates]);
+  const statesLoading = catalogLoading;
 
   const [form, setForm] = useState({
     full_name: "",

@@ -6,7 +6,8 @@ import { useToast } from "../components/Toast.jsx";
 import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
 import { AddSatellitesModal } from "../components/AddSatellitesModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
-import { countriesFromCatalog, statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { countriesFromCatalog } from "../catalogGeoOptions.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 import {
@@ -116,6 +117,9 @@ export function BranchCatalog({ variant = "catalog" }) {
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
   const viewTabs = isBranchDirectory ? BRANCH_DIRECTORY_TABS : TABS;
+  const { stateRows: branchOptions } = useCountryStateRows(filters.country, {
+    enabled: Boolean(filters.country),
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -157,12 +161,6 @@ export function BranchCatalog({ variant = "catalog" }) {
     () => countriesFromCatalog(catalog || { countries: [] }),
     [catalog],
   );
-
-  const branchOptions = useMemo(() => {
-    const cc = filters.country;
-    if (!cc) return [];
-    return statesFromCatalogAndChurches(catalog, cc, catalog?.churches || []);
-  }, [catalog, filters.country]);
 
   const filterSearch = String(filters?.search ?? "");
 

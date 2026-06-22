@@ -25,7 +25,7 @@ export function GlobalAdminGeoFilterBar({ className = "" }) {
     satelliteOptions,
   } = geo;
 
-  const stateDisplay = stateSelectionValueForCode(state, stateRows);
+  const stateDisplay = stateSelectionValueForCode(state, stateRows, country);
 
   return (
     <div

@@ -24,7 +24,7 @@ export function StateRegionSelect({
     () => ensureStateRowForCode(stateRows, countryCode, value),
     [stateRows, countryCode, value],
   );
-  const displayValue = stateSelectionValueForCode(value, rows);
+  const displayValue = stateSelectionValueForCode(value, rows, countryCode);
 
   return (
     <select
@@ -37,10 +37,11 @@ export function StateRegionSelect({
     >
       {allowEmpty ? <option value="">{emptyOption}</option> : null}
       {rows.map((s) => {
+        const code = String(s.code || "").trim();
         const name = String(s.name || "").trim();
-        if (!name) return null;
+        if (!code || !name) return null;
         return (
-          <option key={s.code} value={name}>
+          <option key={code} value={name}>
             {name}
           </option>
         );

@@ -5,7 +5,7 @@ import { api } from "../api.js";
 import { isCountrySuperAdmin, countryAdminHomeState } from "../roles.js";
 import { CountryAdminHqSettings } from "../components/CountryAdminHqSettings.jsx";
 import { AdminTotpSecurity } from "../components/AdminTotpSecurity.jsx";
-import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { availableHomeStatesForCountryAdmin } from "../stateAdminForm.js";
 
 export function ProfileSettings() {
@@ -18,7 +18,9 @@ export function ProfileSettings() {
   });
   const [saving, setSaving] = useState(false);
   const [allAdmins, setAllAdmins] = useState([]);
-  const [churches, setChurches] = useState([]);
+  const { churches, catalog, directoryStates } = useCountryStateRows(countryCode, {
+    enabled: isCountryAdmin,
+  });
   const [homeStateDraft, setHomeStateDraft] = useState(admin?.branch_state || "");
   const [savingHome, setSavingHome] = useState(false);
   const [hqOpenSignal, setHqOpenSignal] = useState(0);
@@ -38,9 +40,6 @@ export function ProfileSettings() {
 
   useEffect(() => {
     loadAdmins();
-    if (isCountryAdmin) {
-      fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    }
   }, [loadAdmins, isCountryAdmin]);
 
   useEffect(() => {
@@ -49,7 +48,11 @@ export function ProfileSettings() {
   }, [admin?.branch_state, admin?.satellite_site, churches, admin]);
 
   const homeStateOptions = isCountryAdmin
-    ? availableHomeStatesForCountryAdmin(countryCode, allAdmins, [], admin?.id, { churches })
+    ? availableHomeStatesForCountryAdmin(countryCode, allAdmins, [], admin?.id, {
+        churches,
+        catalog,
+        directoryStates,
+      })
     : [];
 
   async function saveHomeState() {

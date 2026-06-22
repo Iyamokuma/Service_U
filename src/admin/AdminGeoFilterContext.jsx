@@ -1,5 +1,7 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { countriesFromCatalog, stateSelectOptionsForDropdown, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { api } from "./api.js";
+import { hydrateBranchLabelsFromDirectoryStates } from "./branchRegions.js";
+import { countriesFromCatalog, stateSelectOptionsForDropdown, statesForCountryPicker } from "./catalogGeoOptions.js";
 import { geoFilterApiParams, hasGeoFilters, satelliteOptionsForGeoFilter } from "./geoFilterUtils.js";
 import { useAdminLocationCatalog } from "./hooks/useAdminLocationCatalog.js";
 import { isGlobalAdminRole } from "./roles.js";
@@ -55,9 +57,36 @@ export function AdminGeoFilterProvider({ admin, children }) {
     [country, state, satellite],
   );
 
+  const [directoryStates, setDirectoryStates] = useState([]);
+
+  useEffect(() => {
+    if (!enabled || !country) {
+      setDirectoryStates([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .catalogStatesForCountry(country)
+      .then((res) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res?.states) ? res.states : [];
+        hydrateBranchLabelsFromDirectoryStates(country, rows);
+        setDirectoryStates(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setDirectoryStates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, country]);
+
   const stateRows = useMemo(
-    () => (country ? statesFromCatalogAndChurches(catalog, country, churches) : []),
-    [country, catalog, churches],
+    () =>
+      country
+        ? statesForCountryPicker(country, { catalog, churches, directoryStates })
+        : [],
+    [country, catalog, churches, directoryStates],
   );
 
   const value = useMemo(
@@ -70,7 +99,7 @@ export function AdminGeoFilterProvider({ admin, children }) {
       catalog,
       countryOptions: countriesFromCatalog(catalog || { countries: [] }),
       stateRows,
-      stateOptions: stateSelectOptionsForDropdown(stateRows),
+      stateOptions: stateSelectOptionsForDropdown(stateRows, country),
       satelliteOptions:
         country && state ? satelliteOptionsForGeoFilter(churches, country, state) : [],
       country,

@@ -5,7 +5,7 @@ import { api } from "../api.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
-  statesFromCatalogAndChurches,
+  statesForCountryPicker,
   satellitesFromChurches,
 } from "../catalogGeoOptions.js";
 import { churchSelectOptionsForBranch } from "../satelliteSites.js";
@@ -96,7 +96,7 @@ export function AdminReassignModal({
   const allStateOptions = useMemo(() => {
     const cc = String(form?.branch_country || "").toUpperCase();
     if (!cc) return [];
-    return statesFromCatalogAndChurches(catalog, cc, churches);
+    return statesForCountryPicker(cc, { catalog, churches });
   }, [catalog, form?.branch_country, churches]);
 
   useEffect(() => {
@@ -371,7 +371,9 @@ export function AdminReassignModal({
       {form.role === "country_super_admin" || form.role === "state_super_admin" || form.role === "general_admin" || form.role === "data_entry_admin" ? (
         <p className="sa-text-muted sa-text-sm" style={{ margin: "12px 0 0", lineHeight: 1.5 }}>
           Previous assignment: {branchCountryLabel(admin?.branch_country) || "—"}
-          {admin?.branch_state ? ` · ${admin.branch_state}` : ""}
+          {admin?.branch_state
+            ? ` · ${branchStateLabel(admin.branch_country, admin.branch_state) || admin.branch_state}`
+            : ""}
           {admin?.satellite_site ? ` · ${admin.satellite_site}` : ""}
         </p>
       ) : null}

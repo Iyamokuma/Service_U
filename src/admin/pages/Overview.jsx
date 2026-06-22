@@ -5,8 +5,9 @@ import { leaderScopeLabel } from "../leaderScope.js";
 import { isGlobalAdminRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStateLabel, branchCountryLabel } from "../branchRegions.js";
-import { countriesFromCatalog, resolveStateCodeFromSelection, statesFromCatalogAndChurches, stateSelectionValueForCode } from "../catalogGeoOptions.js";
+import { countriesFromCatalog, resolveStateCodeFromSelection, stateSelectionValueForCode } from "../catalogGeoOptions.js";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
 import { CategoryHistogram, GenderHistogram, StatusPieChart } from "../components/charts/DashboardCharts.jsx";
@@ -55,10 +56,10 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
   const [sex, setSex] = useState("");
   const [submittedDate, setSubmittedDate] = useState("");
   const { churches, catalog } = useAdminLocationCatalog();
+  const { stateRows: stateOpts } = useCountryStateRows(country, { enabled: Boolean(country) });
 
   const countryOptions = useMemo(() => countriesFromCatalog(catalog || { countries: [] }), [catalog]);
   const unitOpts = units?.data ?? [];
-  const stateOpts = country ? statesFromCatalogAndChurches(catalog, country, churches) : [];
   const selectedUnit = unitOpts.find((u) => String(u.id) === String(unitId));
   const subOpts = selectedUnit?.sub_units ?? [];
 
@@ -159,7 +160,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
             id="dash-filter-state"
             className="sa-select sa-dash-filter-compact"
             title={state ? (stateOpts.find((s) => s.code === state)?.name || "") : ""}
-            value={stateSelectionValueForCode(state, stateOpts)}
+            value={stateSelectionValueForCode(state, stateOpts, country)}
             disabled={!country}
             onChange={(e) => {
               setState(resolveStateCodeFromSelection(e.target.value, stateOpts));

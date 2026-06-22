@@ -6,9 +6,8 @@ import { isCountrySuperAdmin, isStateSuperAdmin, isGlobalAdminRole } from "../ro
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
-import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
@@ -50,7 +49,9 @@ export function UnitMembers({
   const [pag, setPag] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const needsCountryCatalog = isCountryAdmin || isCountryGeo;
-  const { churches, catalog } = useAdminLocationCatalog({ enabled: needsCountryCatalog });
+  const { stateRows: stateOptions, churches } = useCountryStateRows(countryCode, {
+    enabled: needsCountryCatalog,
+  });
   const [filters, setFilters] = useState({
     search: "",
     unit_id: "",
@@ -58,11 +59,6 @@ export function UnitMembers({
     filter_branch_state: "",
     filter_satellite: "",
   });
-
-  const stateOptions = useMemo(
-    () => statesFromCatalogAndChurches(catalog, countryCode, churches),
-    [catalog, countryCode, churches],
-  );
 
   const satelliteOptions = useMemo(
     () => satelliteSitesForCountry(churches, countryCode, filters.filter_branch_state),

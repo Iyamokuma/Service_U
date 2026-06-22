@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
-import { hydrateBranchLabelsFromCatalog } from "../branchRegions.js";
+import { hydrateBranchLabelsFromCatalog, hydrateBranchLabelsFromDirectoryStates } from "../branchRegions.js";
 
 /**
  * Live directory countries/states + church branches for admin forms (scoped by role on the API).
@@ -23,6 +23,19 @@ export function useAdminLocationCatalog({ enabled = true, refreshOnFocus = true 
         .then((r) => {
           setCatalog(r);
           hydrateBranchLabelsFromCatalog(r);
+          const countries = r?.countries || [];
+          return Promise.all(
+            countries.map((c) => {
+              const cc = String(c.branch_country_code || "").trim().toUpperCase();
+              if (!cc) return Promise.resolve();
+              return api
+                .catalogStatesForCountry(cc)
+                .then((res) => {
+                  hydrateBranchLabelsFromDirectoryStates(cc, res?.states || []);
+                })
+                .catch(() => {});
+            }),
+          );
         })
         .catch(() => setCatalog(null)),
     ]).finally(() => setLoading(false));

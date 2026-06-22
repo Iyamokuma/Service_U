@@ -112,7 +112,7 @@ function AudienceGeoScope({
             />
           ) : (
             <SearchableDropdown
-              value={stateSelectionValueForCode(scope.branch_state, stateRows)}
+              value={stateSelectionValueForCode(scope.branch_state, stateRows, cc)}
               onChange={(name) =>
                 onScopeChange({
                   branch_state: resolveStateCodeFromSelection(name, stateRows),

@@ -73,13 +73,13 @@ export function AdminLocationScopeFields({
   }
 
   const stateDropdownOptions = useMemo(
-    () => stateSelectOptionsForDropdown(stateFieldOptions),
-    [stateFieldOptions],
+    () => stateSelectOptionsForDropdown(stateFieldOptions, form.branch_country),
+    [stateFieldOptions, form.branch_country],
   );
 
   const stateDropdownValue = useMemo(
-    () => stateSelectionValueForCode(form.branch_state, stateFieldOptions),
-    [form.branch_state, stateFieldOptions],
+    () => stateSelectionValueForCode(form.branch_state, stateFieldOptions, form.branch_country),
+    [form.branch_state, stateFieldOptions, form.branch_country],
   );
 
   const scopedChurchOpts = useMemo(() => {

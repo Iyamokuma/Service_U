@@ -6,9 +6,8 @@ import { useToast } from "../components/Toast.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
-import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
-import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 
@@ -56,7 +55,7 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
   const [filterState, setFilterState] = useState("");
   const [filterSatellite, setFilterSatellite] = useState("");
   const [workforcePage, setWorkforcePage] = useState(1);
-  const { churches, catalog } = useAdminLocationCatalog();
+  const { stateRows: stateOptions, churches } = useCountryStateRows(countryCode);
 
   const loadUnits = useCallback(() => {
     setUnitsLoading(true);
@@ -70,11 +69,6 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
   useEffect(() => {
     loadUnits();
   }, [loadUnits]);
-
-  const stateOptions = useMemo(
-    () => statesFromCatalogAndChurches(catalog, countryCode, churches),
-    [catalog, countryCode, churches],
-  );
 
   const satelliteOptions = useMemo(
     () => satelliteSitesForCountry(churches, countryCode, filterState),

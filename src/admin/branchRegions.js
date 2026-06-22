@@ -91,7 +91,9 @@ export function branchStateLabel(countryCode, stateCode) {
   if (!stateCode) return "—";
   const cc = normCode(countryCode);
   const sc = normCode(stateCode);
-  return stateLabels.get(`${cc}|${sc}`) || sc;
+  const cached = stateLabels.get(`${cc}|${sc}`);
+  if (cached) return cached;
+  return sc;
 }
 
 export function resolveStateCodeByName(countryCode, stateName) {

@@ -9,14 +9,45 @@ function normUp(s) {
   return String(s ?? "").trim().toUpperCase();
 }
 
+/** True when a display name is just the branch_state code (abbreviation), not a full region name. */
+export function isAbbreviatedStateName(name, code) {
+  const n = normUp(name);
+  const c = normUp(code);
+  if (!c) return true;
+  if (!n) return true;
+  if (n === c) return true;
+  return false;
+}
+
+/** Resolve a human-readable state name; never prefer bare codes over directory labels. */
+export function resolveStateDisplayName(countryCode, code, nameFromRow, stateRows = []) {
+  const cc = normUp(countryCode);
+  const sc = normUp(code);
+  if (!sc) return "";
+
+  const candidates = [
+    String(nameFromRow || "").trim(),
+    String((stateRows || []).find((s) => normUp(s.code) === sc)?.name || "").trim(),
+    String(branchStateLabel(cc, sc) || "").trim(),
+  ];
+
+  for (const name of candidates) {
+    if (name && !isAbbreviatedStateName(name, sc)) return name;
+  }
+  return candidates.find(Boolean) || "";
+}
+
 /** Dropdown options using full state/region names (not branch_state codes). */
-export function stateSelectOptionsForDropdown(stateRows) {
+export function stateSelectOptionsForDropdown(stateRows, countryCode = "") {
+  const cc = normUp(countryCode);
   return (stateRows || [])
-    .filter((s) => String(s.name || "").trim())
     .map((s) => {
-      const name = String(s.name).trim();
+      const code = normUp(s.code);
+      const name = resolveStateDisplayName(cc, code, s.name, stateRows);
+      if (!name || isAbbreviatedStateName(name, code)) return null;
       return { value: name, label: name };
-    });
+    })
+    .filter(Boolean);
 }
 
 /** Resolve a picked state name (or legacy code) to branch_state code. */
@@ -33,11 +64,12 @@ export function resolveStateCodeFromSelection(selection, stateRows) {
 }
 
 /** Map stored branch_state code to the directory name shown in dropdowns. */
-export function stateSelectionValueForCode(stateCode, stateRows) {
+export function stateSelectionValueForCode(stateCode, stateRows, countryCode = "") {
   const code = normUp(stateCode);
   if (!code) return "";
   const row = (stateRows || []).find((s) => normUp(s.code) === code);
-  return row?.name ? String(row.name).trim() : code;
+  const name = resolveStateDisplayName(countryCode, code, row?.name, stateRows);
+  return name || "";
 }
 
 /** Include a fallback row when editing/filtering with a code missing from directory rows. */
@@ -98,39 +130,27 @@ function statesFromChurches(churches, countryCode, catalog = null) {
     const code = normUp(ch.branch_state);
     if (!code || seen.has(code)) continue;
     seen.add(code);
-    rows.push({
+    const name = resolveStateDisplayName(
+      cc,
       code,
-      name:
-        stateNameFromCatalog(catalog, cc, code) ||
-        branchStateLabel(cc, code) ||
-        code,
-    });
+      stateNameFromCatalog(catalog, cc, code) || branchStateLabel(cc, code),
+      rows,
+    );
+    if (!name || isAbbreviatedStateName(name, code)) continue;
+    rows.push({ code, name });
   }
   return rows;
 }
 
 /**
- * States from directory + live church rows.
+ * States from directory + live church rows (full names in UI; codes stored in DB).
  */
-export function statesFromCatalogAndChurches(catalog, countryCode, churches = []) {
-  const cc = normUp(countryCode);
-  if (!cc) return [];
-
-  const catalogRows = [];
-  const country = (catalog?.countries || []).find((c) => normUp(c.branch_country_code) === cc);
-  if (country) {
-    for (const s of catalog?.states || []) {
-      if (Number(s.country_id) !== Number(country.id)) continue;
-      const code = normUp(s.branch_state_code);
-      if (!code) continue;
-      catalogRows.push({
-        code,
-        name: String(s.name || "").trim() || branchStateLabel(cc, code),
-      });
-    }
-  }
-
-  return mergeStateOptions(cc, catalogRows, statesFromChurchesForDropdown(cc, churches, catalog));
+export function statesFromCatalogAndChurches(catalog, countryCode, churches = [], directoryStates = null) {
+  return statesForCountryPicker(countryCode, {
+    catalog,
+    churches,
+    directoryStates: directoryStates ?? [],
+  });
 }
 
 /** States for admin pickers: directory API/catalog first, churches only as fallback. */
@@ -185,10 +205,14 @@ export function directoryStateOptionsFromRows(countryCode, rows) {
     const code = normUp(s.branch_state_code ?? s.code);
     if (!code || seen.has(code)) continue;
     seen.add(code);
-    out.push({
+    const name = resolveStateDisplayName(
+      cc,
       code,
-      name: String(s.name || "").trim() || branchStateLabel(cc, code) || code,
-    });
+      String(s.name || "").trim() || branchStateLabel(cc, code),
+      out,
+    );
+    if (!name || isAbbreviatedStateName(name, code)) continue;
+    out.push({ code, name });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -8,7 +8,7 @@ import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
-  statesFromCatalogAndChurches,
+  statesForCountryPicker,
   satellitesFromChurches,
   directoryStateOptionsFromRows,
 } from "../catalogGeoOptions.js";
@@ -326,6 +326,13 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   const stateFilterRows = useMemo(() => {
     if (!isGlobalAdmin) return [];
     const currentCountry = countryFilter === "all" ? "" : countryFilter;
+    if (currentCountry && locationCatalog) {
+      const fromCatalog = statesForCountryPicker(currentCountry, {
+        catalog: locationCatalog,
+        churches: churchesCatalog,
+      });
+      if (fromCatalog.length) return fromCatalog;
+    }
     return [...new Set(
       visibilityFiltered
         .filter((a) => !currentCountry || String(a.branch_country || "").toUpperCase() === currentCountry)
@@ -337,8 +344,12 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         const lb = branchStateLabel(currentCountry, b) || b;
         return la.localeCompare(lb);
       })
-      .map((code) => ({ code, name: branchStateLabel(currentCountry, code) || code }));
-  }, [isGlobalAdmin, visibilityFiltered, countryFilter]);
+      .map((code) => ({
+        code,
+        name: branchStateLabel(currentCountry, code) || code,
+      }))
+      .filter((row) => row.name && row.name.toUpperCase() !== row.code);
+  }, [isGlobalAdmin, visibilityFiltered, countryFilter, locationCatalog, churchesCatalog]);
 
   const satelliteFilterOptions = useMemo(() => {
     if (!isGlobalAdmin) return [];
@@ -1358,7 +1369,7 @@ function AdminModal({
     isGlobalAdmin && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
   useEffect(() => {
-    if (!open || !showBranchChurchStepFlow || isEdit || !form.branch_country) {
+    if (!open || !form.branch_country) {
       setDbStateOptions([]);
       setDbStatesLoading(false);
       return;
@@ -1380,13 +1391,14 @@ function AdminModal({
     return () => {
       cancelled = true;
     };
-  }, [open, showBranchChurchStepFlow, isEdit, form.branch_country]);
+  }, [open, form.branch_country]);
 
   const allStateOptions = useMemo(() => {
     if (!form.branch_country) return [];
-    if (!isEdit && showBranchChurchStepFlow) return dbStateOptions;
+    if (!isEdit && showBranchChurchStepFlow && dbStateOptions.length) return dbStateOptions;
     if (catalogLoading && !catalog) return [];
-    return statesFromCatalogAndChurches(catalog, form.branch_country, churches);
+    const picked = statesForCountryPicker(form.branch_country, { catalog, churches });
+    return picked.length ? picked : dbStateOptions;
   }, [
     form.branch_country,
     catalog,

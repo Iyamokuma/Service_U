@@ -5,9 +5,8 @@ import { useToast } from "../components/Toast.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
-import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { isCountrySuperAdmin, isStateSuperAdmin, isSupervisoryBranchRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { leaderScopeLabel } from "../leaderScope.js";
@@ -46,7 +45,8 @@ export function BranchOversight({ units }) {
   const [statusModal, setStatusModal] = useState(null);
   const [acceptVerifyModal, setAcceptVerifyModal] = useState(null);
   const [statusTab, setStatusTab] = useState("all");
-  const { churches, catalog } = useAdminLocationCatalog({ enabled: isCountryActor });
+  const countryCode = String(admin?.branch_country || "").toUpperCase();
+  const { stateRows: stateOptions } = useCountryStateRows(countryCode, { enabled: isCountryActor });
   const [filters, setFilters] = useState({
     search: "",
     unit_id: "",
@@ -57,11 +57,6 @@ export function BranchOversight({ units }) {
     from: "",
     to: "",
   });
-
-  const stateOptions = useMemo(() => {
-    if (!isCountryActor || !admin?.branch_country) return [];
-    return statesFromCatalogAndChurches(catalog, admin.branch_country, churches);
-  }, [isCountryActor, admin?.branch_country, catalog, churches]);
 
   const subUnitOptions = useMemo(() => {
     const u = (units?.data || []).find((x) => Number(x.id) === Number(filters.unit_id));

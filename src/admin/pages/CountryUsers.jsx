@@ -17,10 +17,9 @@ import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
 import { CountryWorkforce } from "./CountryWorkforce.jsx";
 import { UnitMembers } from "./UnitMembers.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { useCountryStateRows } from "../hooks/useCountryStateRows.js";
 import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
-import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import {
   availableStatesForCountryAdmin,
   countStateBranchLeaders,
@@ -87,7 +86,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   const [saving, setSaving] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
-  const { churches, catalog } = useAdminLocationCatalog();
+  const { stateRows: stateOptions, churches, catalog, directoryStates } = useCountryStateRows(countryCode);
   const [workforceStats, setWorkforceStats] = useState({
     total: 0,
     unitLeaders: 0,
@@ -125,11 +124,6 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
 
   const pastorAdminTotal = stateBranchAdmins.length + satellitePastors.length;
 
-  const stateOptions = useMemo(
-    () => statesFromCatalogAndChurches(catalog, countryCode, churches),
-    [catalog, countryCode, churches],
-  );
-
   const satelliteOptions = useMemo(
     () => satelliteSitesForCountry(churches, countryCode, filterState),
     [churches, countryCode, filterState],
@@ -158,8 +152,13 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   }, [loadPending, adminsPayload]);
 
   const vacantStates = useMemo(
-    () => availableStatesForCountryAdmin(countryCode, countryAdmins, pendingRequests, null, { catalog, churches }),
-    [countryCode, countryAdmins, pendingRequests, catalog, churches],
+    () =>
+      availableStatesForCountryAdmin(countryCode, countryAdmins, pendingRequests, null, {
+        catalog,
+        churches,
+        directoryStates,
+      }),
+    [countryCode, countryAdmins, pendingRequests, catalog, churches, directoryStates],
   );
 
   const filtered = useMemo(() => {
