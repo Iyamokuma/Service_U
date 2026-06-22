@@ -9,6 +9,25 @@ function up(s: unknown): string {
   return norm(s).toUpperCase();
 }
 
+/** Case-insensitive match for full state names (and legacy uppercase codes). */
+function branchStatesMatch(a: unknown, b: unknown): boolean {
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return !x && !y;
+  return x.localeCompare(y, undefined, { sensitivity: "accent" }) === 0;
+}
+
+// deno-lint-ignore no-explicit-any
+function applyBranchStateScope(q: any, stateValue: unknown): any {
+  const st = norm(stateValue);
+  if (!st) return q;
+  const legacyCode = st.toUpperCase();
+  if (legacyCode === st && legacyCode.length <= 12 && /^[A-Z0-9]+$/.test(legacyCode)) {
+    return q.or(`branch_state.ilike.${st},branch_state.eq.${legacyCode}`);
+  }
+  return q.ilike("branch_state", st);
+}
+
 /** Leaders may see legacy registrations with no satellite_site yet. */
 function satelliteSiteMatchesScope(adminSat: string, rowSatellite: unknown): boolean {
   const sat = norm(adminSat);
@@ -49,7 +68,7 @@ export function applyRegistrationScopeQuery(q: any, admin: AdminRow, scopeMode?:
     const c = up(admin.branch_country);
     const st = up(admin.branch_state);
     if (c) q2 = q2.eq("branch_country", c);
-    if (st) q2 = q2.eq("branch_state", st);
+    if (st) q2 = applyBranchStateScope(q2, admin.branch_state);
     return q2;
   }
   if (role === "satellite_church_admin") {
@@ -58,7 +77,7 @@ export function applyRegistrationScopeQuery(q: any, admin: AdminRow, scopeMode?:
     const st = up(admin.branch_state);
     const sat = norm(admin.satellite_site);
     if (c) q2 = q2.eq("branch_country", c);
-    if (st) q2 = q2.eq("branch_state", st);
+    if (st) q2 = applyBranchStateScope(q2, admin.branch_state);
     if (sat) q2 = q2.eq("satellite_site", sat);
     return q2;
   }
@@ -74,7 +93,7 @@ export function applyRegistrationScopeQuery(q: any, admin: AdminRow, scopeMode?:
     const st = up(admin.branch_state);
     const sat = norm(admin.satellite_site);
     if (c) q2 = q2.eq("branch_country", c);
-    if (st) q2 = q2.eq("branch_state", st);
+    if (st) q2 = applyBranchStateScope(q2, admin.branch_state);
     q2 = applyLeaderSatelliteSiteScope(q2, sat);
     return q2;
   }
@@ -90,14 +109,14 @@ export function canAccessRegistration(admin: AdminRow, row: Record<string, unkno
     return up(admin.branch_country) === up(row.branch_country);
   }
   if (role === "state_super_admin") {
-    return up(admin.branch_country) === up(row.branch_country) && up(admin.branch_state) === up(row.branch_state);
+    return up(admin.branch_country) === up(row.branch_country) && branchStatesMatch(admin.branch_state, row.branch_state);
   }
   if (role === "satellite_church_admin") {
     const c = up(admin.branch_country);
     const st = up(admin.branch_state);
     const sat = norm(admin.satellite_site);
     if (!c || !st || !sat) return false;
-    return up(row.branch_country) === c && up(row.branch_state) === st && norm(row.satellite_site) === sat;
+    return up(row.branch_country) === c && branchStatesMatch(admin.branch_state, row.branch_state) && norm(row.satellite_site) === sat;
   }
   if (role === "service_unit_leader" || role === "sub_unit_leader") {
     if (Number(row.unit_id) !== Number(admin.service_unit_id)) return false;
@@ -108,7 +127,7 @@ export function canAccessRegistration(admin: AdminRow, row: Record<string, unkno
     const st = up(admin.branch_state);
     const sat = norm(admin.satellite_site);
     if (c && up(row.branch_country) !== c) return false;
-    if (st && up(row.branch_state) !== st) return false;
+    if (st && !branchStatesMatch(admin.branch_state, row.branch_state)) return false;
     if (!satelliteSiteMatchesScope(sat, row.satellite_site)) return false;
     return true;
   }

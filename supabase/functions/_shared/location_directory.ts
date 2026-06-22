@@ -277,31 +277,50 @@ export async function branchCodesFromChurchId(
   };
 }
 
-/** Align submitted branch codes with directory / catalog (fixes ABIASTATE → ABI, etc.). */
+/** Resolve directory_states.name for storage in branch_state columns. */
+export async function resolveBranchStateFullName(
+  supabase: SupabaseClient,
+  branchCountry: string,
+  branchStateInput: string,
+): Promise<string> {
+  const bc = normUp(branchCountry);
+  const raw = String(branchStateInput ?? "").trim();
+  if (!bc || !raw) return raw;
+
+  const country = await resolveExistingDirectoryCountry(supabase, { branchCountryCode: bc });
+  if (!country) return raw;
+
+  const matched = await resolveExistingDirectoryState(supabase, country.id, bc, raw);
+  if (matched) {
+    const { data: row } = await supabase.from("directory_states").select("name").eq("id", matched.id).maybeSingle();
+    if (row?.name) return String(row.name).trim();
+  }
+
+  const { data: byCode } = await supabase.from("directory_states").select("name").eq("country_id", country.id).eq(
+    "branch_state_code",
+    normUp(raw),
+  ).maybeSingle();
+  if (byCode?.name) return String(byCode.name).trim();
+
+  const { data: byName } = await supabase.from("directory_states").select("name").eq("country_id", country.id).ilike(
+    "name",
+    raw,
+  ).maybeSingle();
+  if (byName?.name) return String(byName.name).trim();
+
+  return raw;
+}
+
+/** Align submitted branch with directory — stores full state/region name in branch_state. */
 export async function canonicalizeRegistrationBranch(
   supabase: SupabaseClient,
   branchCountry: string,
   branchState: string,
 ): Promise<{ branch_country: string; branch_state: string }> {
   const bc = normUp(branchCountry);
-  let st = normUp(branchState);
-  if (!bc || !st) return { branch_country: bc, branch_state: st };
+  const raw = String(branchState ?? "").trim();
+  if (!bc || !raw) return { branch_country: bc, branch_state: raw };
 
-  const country = await resolveExistingDirectoryCountry(supabase, { branchCountryCode: bc });
-  if (country) {
-    const matched = await resolveExistingDirectoryState(supabase, country.id, bc, st);
-    if (matched) st = matched.branch_state_code;
-    else {
-      const { data: byCode } = await supabase.from("directory_states").select("branch_state_code").eq(
-        "country_id",
-        country.id,
-      ).eq("branch_state_code", st).maybeSingle();
-      if (byCode?.branch_state_code) st = normUp(byCode.branch_state_code);
-    }
-  }
-
-  const fromCatalog = resolveStateCodeByName(bc, st);
-  if (fromCatalog) st = normUp(fromCatalog);
-
-  return { branch_country: bc, branch_state: st };
+  const fullName = await resolveBranchStateFullName(supabase, bc, raw);
+  return { branch_country: bc, branch_state: fullName || raw };
 }

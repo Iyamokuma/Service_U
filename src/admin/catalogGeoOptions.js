@@ -63,13 +63,18 @@ export function resolveStateCodeFromSelection(selection, stateRows) {
   return up;
 }
 
-/** Map stored branch_state code to the directory name shown in dropdowns. */
+/** Map stored branch_state (full name or legacy code) to the directory name shown in dropdowns. */
 export function stateSelectionValueForCode(stateCode, stateRows, countryCode = "") {
-  const code = normUp(stateCode);
-  if (!code) return "";
+  const raw = String(stateCode ?? "").trim();
+  if (!raw) return "";
+  const byName = (stateRows || []).find(
+    (s) => String(s.name || "").trim().toLowerCase() === raw.toLowerCase(),
+  );
+  if (byName?.name) return String(byName.name).trim();
+  const code = normUp(raw);
   const row = (stateRows || []).find((s) => normUp(s.code) === code);
   const name = resolveStateDisplayName(countryCode, code, row?.name, stateRows);
-  return name || "";
+  return name || raw;
 }
 
 /** Include a fallback row when editing/filtering with a code missing from directory rows. */

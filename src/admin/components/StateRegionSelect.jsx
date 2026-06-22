@@ -32,7 +32,15 @@ export function StateRegionSelect({
       className={className}
       value={displayValue}
       disabled={disabled}
-      onChange={(e) => onChange?.(resolveStateCodeFromSelection(e.target.value, rows))}
+      onChange={(e) => {
+        const picked = String(e.target.value || "").trim();
+        if (!picked) {
+          onChange?.("");
+          return;
+        }
+        const row = rows.find((s) => String(s.name || "").trim() === picked);
+        onChange?.(row?.name ? String(row.name).trim() : picked);
+      }}
       {...rest}
     >
       {allowEmpty ? <option value="">{emptyOption}</option> : null}

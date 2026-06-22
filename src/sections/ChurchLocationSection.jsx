@@ -32,11 +32,21 @@ export function branchStateCodeFromSelection(form) {
   return match?.code ? norm(match.code) : norm(sel);
 }
 
-/** Effective branch_state code for payloads (single-state countries). */
+/** Effective branch_state for payloads — full directory name (not abbreviation). */
 export function effectiveBranchStateForPayload(form) {
-  const cc = norm(form.branchCountry);
-  if (!cc) return "";
-  return branchStateCodeFromSelection(form);
+  const ctx = form.churchLocationCtx;
+  const rows = stateRowsFromCtx(ctx);
+  const selected = String(form.branchState || "").trim();
+  if (selected) {
+    const byName = rows.find((r) => String(r.name || "").trim().toLowerCase() === selected.toLowerCase());
+    if (byName?.name) return String(byName.name).trim();
+    return selected;
+  }
+  if (rows.length === 1 && rows[0]?.name) return String(rows[0].name).trim();
+  const code = branchStateCodeFromSelection(form);
+  if (!code) return "";
+  const row = rows.find((r) => norm(r.code) === norm(code));
+  return row?.name ? String(row.name).trim() : code;
 }
 
 export function ChurchLocationSection({ form, set, setSilent, errors }) {
