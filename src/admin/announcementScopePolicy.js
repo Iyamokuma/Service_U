@@ -74,8 +74,7 @@ const BRANCH_AUDIENCE_LEADER_DISPLAY = {
 const BRANCH_AUDIENCE_LEADER_UI = {
   leaderTypeTitle: "Service unit head type",
   leaderTypeLabel: "Service unit heads",
-  leaderTypeHint:
-    "Service unit only: unit heads. Sub-unit: pick a unit and sub-unit for sub-unit heads.",
+  leaderTypeHint: "",
 };
 
 const ADMIN_ROLES_STATE = [
@@ -319,8 +318,7 @@ export function getAnnouncementDestinationLabels(policy) {
     adminRolesHint: "",
     leaderTypeTitle: "Leader type",
     leaderTypeLabel: "Leaders",
-    leaderTypeHint:
-      "Service unit only: unit leaders. Sub-unit: pick a unit and sub-unit for sub-unit leaders.",
+    leaderTypeHint: "",
     usesBranchAudienceLabels: false,
   };
 }
