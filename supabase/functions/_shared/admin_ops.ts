@@ -4,6 +4,7 @@ import {
   ensureDirectoryCountry,
   ensureDirectoryState,
   publishChurchToDirectory,
+  resolveBranchStateFullName,
   resolveExistingDirectoryCountry,
   resolveExistingDirectoryState,
 } from "./location_directory.ts";
@@ -298,6 +299,13 @@ async function pendingCountryAdminRequestExists(
   });
 }
 
+function branchStatesEquivalent(a: unknown, b: unknown): boolean {
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return !x && !y;
+  return x.localeCompare(y, undefined, { sensitivity: "accent" }) === 0;
+}
+
 async function pendingStateAdminRequestExists(
   supabase: SupabaseClient,
   branchCountry: string,
@@ -305,7 +313,7 @@ async function pendingStateAdminRequestExists(
   excludeRequestId?: number,
 ): Promise<boolean> {
   const cc = normUp(branchCountry);
-  const st = normUp(branchState);
+  const st = norm(branchState);
   if (!cc || !st) return false;
   const { data, error } = await supabase.from("admin_requests").select("id,payload,status").eq(
     "request_type",
@@ -317,7 +325,7 @@ async function pendingStateAdminRequestExists(
     const admin = adminPayloadFromRequest(r as Record<string, unknown>);
     return norm(admin.role) === "state_super_admin" &&
       normUp(admin.branch_country) === cc &&
-      normUp(admin.branch_state) === st;
+      branchStatesEquivalent(admin.branch_state, st);
   });
 }
 
@@ -351,24 +359,30 @@ async function assertUniqueStateAdmin(
   excludeRequestId?: number,
 ): Promise<void> {
   const cc = normUp(branchCountry);
-  const st = normUp(branchState);
+  const st = norm(branchState);
   if (!cc || !st) return;
-  const { data, error } = await supabase.from("admins").select("id,full_name,is_active").eq("role", "state_super_admin")
-    .eq("branch_country", cc).eq("branch_state", st).eq("is_active", 1);
+  const { data, error } = await supabase.from("admins").select("id,full_name,is_active,branch_state").eq(
+    "role",
+    "state_super_admin",
+  ).eq("branch_country", cc).eq("is_active", 1);
   if (error) throw new Error(error.message);
-  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  const taken = (data || []).find(
+    (r) => Number(r.id) !== Number(excludeId ?? 0) &&
+      branchStatesEquivalent((r as { branch_state?: string }).branch_state, st),
+  );
   if (taken) {
     throw new Error(
       `This state already has an active State Branch Admin (${(taken as { full_name?: string }).full_name || "existing account"}). Choose another state or deactivate the existing account first.`,
     );
   }
-  const { data: countryHome, error: countryErr } = await supabase.from("admins").select("id,full_name,is_active")
-    .eq("role", "country_super_admin")
-    .eq("branch_country", cc)
-    .eq("branch_state", st)
-    .eq("is_active", 1);
+  const { data: countryHome, error: countryErr } = await supabase.from("admins").select(
+    "id,full_name,is_active,branch_state",
+  ).eq("role", "country_super_admin").eq("branch_country", cc).eq("is_active", 1);
   if (countryErr) throw new Error(countryErr.message);
-  const countryTaken = (countryHome || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  const countryTaken = (countryHome || []).find(
+    (r) => Number(r.id) !== Number(excludeId ?? 0) &&
+      branchStatesEquivalent((r as { branch_state?: string }).branch_state, st),
+  );
   if (countryTaken) {
     throw new Error(
       `This state is already covered by a Country Admin headquarters (${(countryTaken as { full_name?: string }).full_name || "existing account"}). Choose another state or change their headquarters first.`,
@@ -387,17 +401,19 @@ async function assertUniqueSatelliteAdmin(
   excludeId?: number,
 ): Promise<void> {
   const cc = normUp(branchCountry);
-  const st = normUp(branchState);
+  const st = norm(branchState);
   const sat = norm(satelliteSite);
   if (!cc || !st || !sat) return;
-  const { data, error } = await supabase.from("admins").select("id,full_name,is_active")
+  const { data, error } = await supabase.from("admins").select("id,full_name,is_active,branch_state")
     .eq("role", "satellite_church_admin")
     .eq("branch_country", cc)
-    .eq("branch_state", st)
     .eq("satellite_site", sat)
     .eq("is_active", 1);
   if (error) throw new Error(error.message);
-  const taken = (data || []).find((r) => Number(r.id) !== Number(excludeId ?? 0));
+  const taken = (data || []).find(
+    (r) => Number(r.id) !== Number(excludeId ?? 0) &&
+      branchStatesEquivalent((r as { branch_state?: string }).branch_state, st),
+  );
   if (taken) {
     throw new Error(
       `This satellite already has an active Satellite Pastor Admin (${(taken as { full_name?: string }).full_name || "existing account"}). Choose another satellite or deactivate the existing account first.`,
@@ -552,6 +568,13 @@ async function insertAdminFromBody(
   }
   if (row.role === "country_super_admin" && !row.branch_state) {
     throw new Error("Headquarters state is required for Country Admin accounts.");
+  }
+  if (row.branch_country && row.branch_state) {
+    row.branch_state = await resolveBranchStateFullName(
+      supabase,
+      String(row.branch_country),
+      String(body.branch_state ?? row.branch_state),
+    );
   }
   await assertAdminLocationFields(supabase, row.role, row.branch_country, row.branch_state);
   if (["service_unit_leader", "sub_unit_leader"].includes(String(row.role)) && !row.satellite_site) {

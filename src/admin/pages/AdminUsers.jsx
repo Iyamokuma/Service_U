@@ -52,6 +52,8 @@ import {
 import { AdminReassignModal } from "../components/AdminReassignModal.jsx";
 import { AdminScopePanel, adminScopePanelLabel, formatAdminScopeDraft } from "../components/AdminScopePanel.jsx";
 import { AdminLocationScopeFields } from "../components/AdminLocationScopeFields.jsx";
+import { AdminAccountIdentityFields } from "../components/AdminAccountIdentityFields.jsx";
+import { Field } from "../../components/Field.jsx";
 import { useAdminTableBulk } from "../hooks/useAdminTableBulk.js";
 import { TableSelectCheckbox } from "../components/TableSelectCheckbox.jsx";
 import { TableBulkActionsBar } from "../components/TableBulkActionsBar.jsx";
@@ -1626,38 +1628,145 @@ function AdminModal({
         </button>
       </>}
     >
-      {inviteCreate ? <AdminInviteBanner /> : null}
-      <div className="sa-form-row">
-        <div className="sa-field">
-          <label className="sa-label">Full Name <span className="sa-required">*</span></label>
-          <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="John Doe" />
-        </div>
-        {!inviteCreate ? (
-        <div className="sa-field">
-          <label className="sa-label">Username <span className="sa-required">*</span></label>
-          <input
-            className="sa-input"
-            value={form.username}
-            onChange={set("username")}
-            placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
-            disabled={isEdit}
-          />
+      {inviteCreate && !flatScopeLayout ? <AdminInviteBanner /> : null}
+      {flatScopeLayout ? (
+        <AdminAccountIdentityFields
+          form={form}
+          setForm={setForm}
+          isEdit={isEdit}
+          inviteCreate={inviteCreate}
+          usernamePlaceholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
+          showStatus={!(mustUseRequestFlowForCreate(me?.role, form.role) && !isEdit)}
+          statusPendingReview={mustUseRequestFlowForCreate(me?.role, form.role) && !isEdit}
+        />
+      ) : (
+        <>
+          {inviteCreate ? <AdminInviteBanner /> : null}
+          <div className="sa-form-row">
+            <div className="sa-field">
+              <label className="sa-label">Full Name <span className="sa-required">*</span></label>
+              <input className="sa-input" value={form.full_name} onChange={set("full_name")} placeholder="John Doe" />
             </div>
-        ) : null}
-      </div>
-      <div className="sa-field">
-        <label className="sa-label">Email <span className="sa-required">*</span></label>
-        <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="admin@church.org" />
-      </div>
-      {!inviteCreate ? (
-      <div className="sa-field">
-          <label className="sa-label">
-            {isEdit ? "New Password (leave blank to keep current)" : "Password"}{" "}
-            {!isEdit && <span className="sa-required">*</span>}
-          </label>
-        <input className="sa-input" type="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" />
-      </div>
-      ) : null}
+            {!inviteCreate ? (
+              <div className="sa-field">
+                <label className="sa-label">Username <span className="sa-required">*</span></label>
+                <input
+                  className="sa-input"
+                  value={form.username}
+                  onChange={set("username")}
+                  placeholder={form.role === "country_super_admin" ? "gb.country.admin" : "johndoe"}
+                  disabled={isEdit}
+                />
+              </div>
+            ) : null}
+          </div>
+          <div className="sa-field">
+            <label className="sa-label">Email <span className="sa-required">*</span></label>
+            <input className="sa-input" type="email" value={form.email} onChange={set("email")} placeholder="admin@church.org" />
+          </div>
+          {!inviteCreate ? (
+            <div className="sa-field">
+              <label className="sa-label">
+                {isEdit ? "New Password (leave blank to keep current)" : "Password"}{" "}
+                {!isEdit && <span className="sa-required">*</span>}
+              </label>
+              <input className="sa-input" type="password" value={form.password} onChange={set("password")} placeholder="Min 8 characters" />
+            </div>
+          ) : null}
+        </>
+      )}
+      {flatScopeLayout ? (
+        <div className="grid" style={{ marginTop: 16 }}>
+          <Field label="Role">
+            <select
+              className="select"
+              value={form.role}
+              disabled={isServiceLeader}
+              onChange={(e) => {
+                const role = e.target.value;
+                const geoRoles = ROLES_WITH_COUNTRY;
+                setForm((f) => {
+                  let branch_country = geoRoles.includes(role)
+                    ? f.branch_country
+                    : isCountryAdmin
+                      ? me?.branch_country || ""
+                      : "";
+                  let branch_state = ROLES_WITH_STATE.includes(role) ? f.branch_state : "";
+                  if (!isEdit && role === "country_super_admin") {
+                    const cc = String(branch_country || "").toUpperCase();
+                    if (cc && takenCountries.has(cc)) {
+                      branch_country = "";
+                      branch_state = "";
+                    }
+                  }
+                  if (!isEdit && role === "state_super_admin") {
+                    const cc = String(branch_country || "").toUpperCase();
+                    const st = String(branch_state || "").toUpperCase();
+                    if (st && takenStates.has(st)) branch_state = "";
+                    if (cc && !branch_state && allStateOptions.every((s) => takenStates.has(String(s.code).toUpperCase()))) {
+                      branch_country = "";
+                    }
+                  }
+                  const next = {
+                    ...f,
+                    role,
+                    service_unit_id: ["service_unit_leader", "sub_unit_leader"].includes(role) ? f.service_unit_id : "",
+                    sub_unit_name: role === "sub_unit_leader" ? f.sub_unit_name : "",
+                    branch_country,
+                    branch_state,
+                    satellite_site:
+                      ROLES_WITH_BRANCH_CHURCH.includes(role) || ROLES_WITH_SATELLITE.includes(role)
+                        ? ""
+                        : "",
+                  };
+                  if (
+                    role === "country_super_admin" &&
+                    shouldAutoFillCountryAdminUsername(f.username)
+                  ) {
+                    next.username = suggestedCountryAdminUsername(next.branch_country);
+                  }
+                  return next;
+                });
+              }}
+            >
+              {(isGlobalAdmin
+                ? ROLES.filter((r) => {
+                    if (r.value === "super_admin") {
+                      if (!isEdit) return false;
+                      return isRootSuper;
+                    }
+                    return true;
+                  })
+                : isCountryAdmin
+                  ? ROLES.filter((r) => r.value === "state_super_admin")
+                  : isStateAdmin
+                    ? ROLES.filter((r) => ["satellite_church_admin"].includes(r.value))
+                    : isSatellitePastor
+                      ? ROLES.filter((r) => ["service_unit_leader", "sub_unit_leader"].includes(r.value))
+                      : ROLES.filter((r) => r.value === "sub_unit_leader")
+              ).map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {!(mustUseRequestFlowForCreate(me?.role, form.role) && !isEdit) ? (
+            <Field label="Status">
+              <select className="select" value={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: +e.target.value }))}>
+                <option value={1}>Active</option>
+                <option value={0}>Inactive</option>
+              </select>
+            </Field>
+          ) : (
+            <Field label="Status">
+              <div className="field-hint" style={{ marginTop: 4 }}>
+                Submitted as <span className="sa-badge in_review">In review</span> until Super Admin approves.
+              </div>
+            </Field>
+          )}
+        </div>
+      ) : (
       <div className="sa-form-row">
         <div className="sa-field">
           <label className="sa-label">Role</label>
@@ -1751,10 +1860,11 @@ function AdminModal({
           </div>
         )}
       </div>
+      )}
 
       {locationScopedRole &&
         (flatScopeLayout ? (
-          locationScopeFields(true)
+          <div style={{ marginTop: 16 }}>{locationScopeFields(true)}</div>
         ) : (
           <AdminScopePanel
             label={adminScopePanelLabel(form.role)}

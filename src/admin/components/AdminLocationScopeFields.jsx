@@ -40,11 +40,14 @@ export function AdminLocationScopeFields({
   disableCountry = false,
   disableState = false,
   onCountryChange,
+  onStateChange,
   showCountryVacantHint = false,
   showStateVacantHint = false,
   showSteppedStateVacantHint = false,
   churchesLoading = false,
   statesLoading = false,
+  stateReadOnly = false,
+  showChurchInStepFlow = true,
 }) {
   const role = form?.role || "";
   const countryList =
@@ -69,7 +72,11 @@ export function AdminLocationScopeFields({
 
   function pickState(selection) {
     const canonical = resolveStateCodeFromSelection(selection, stateFieldOptions);
-    setForm((f) => ({ ...f, branch_state: canonical, satellite_site: "" }));
+    setForm((f) => {
+      let next = { ...f, branch_state: canonical, satellite_site: "" };
+      if (onStateChange) next = onStateChange(next, { branch_state: canonical, prev: f }) || next;
+      return next;
+    });
   }
 
   const stateDropdownOptions = useMemo(
@@ -168,52 +175,65 @@ export function AdminLocationScopeFields({
         </Field>
 
         <Field label={stateLabel} required hint={stateHint}>
-          <SearchableDropdown
-            value={stateDropdownValue}
-            onChange={pickState}
-            options={stateDropdownOptions}
-            disabled={!form.branch_country || disableState || statesLoading}
-            placeholder={
-              !form.branch_country
-                ? "Select country first"
-                : statesLoading
-                  ? "Loading states…"
-                  : stateDropdownOptions.length
-                    ? "Select"
-                    : "No states found for this country"
-            }
-            searchPlaceholder="Search state"
-            emptyMessage="No states match your search"
-            valid={!!form.branch_state && !statesLoading}
-            ariaLabel={stateLabel}
-          />
+          {stateReadOnly ? (
+            <input
+              className="input"
+              value={selectedStateLabel || form.branch_state || ""}
+              disabled
+              readOnly
+            />
+          ) : (
+            <SearchableDropdown
+              value={stateDropdownValue}
+              onChange={pickState}
+              options={stateDropdownOptions}
+              disabled={!form.branch_country || disableState || statesLoading}
+              placeholder={
+                !form.branch_country
+                  ? "Select country first"
+                  : statesLoading
+                    ? "Loading states…"
+                    : stateDropdownOptions.length
+                      ? "Select"
+                      : "No states found for this country"
+              }
+              searchPlaceholder="Search state"
+              emptyMessage="No states match your search"
+              valid={!!form.branch_state && !statesLoading}
+              ariaLabel={stateLabel}
+            />
+          )}
         </Field>
 
-        <Field label="Church / branch" required span="2" hint={churchFieldHint}>
-          <SearchableDropdown
-            key={`${form.branch_country}-${form.branch_state}`}
-            value={churchValue}
-            onChange={(value) => {
-              const { branch_state, satellite_site } = parseHqChurchValue(value);
-              setForm((f) => ({ ...f, branch_state, satellite_site }));
-            }}
-            options={scopedChurchOpts}
-            disabled={!form.branch_country || !form.branch_state || churchesLoading}
-            placeholder={churchPlaceholder}
-            searchPlaceholder="Search by name or address"
-            emptyMessage="No branches match your search"
-            valid={!!churchValue && !churchesLoading}
-            ariaLabel="Church / branch"
-          />
-        </Field>
+        {showChurchInStepFlow ? (
+          <>
+            <Field label="Church / branch" required span="2" hint={churchFieldHint}>
+              <SearchableDropdown
+                key={`${form.branch_country}-${form.branch_state}`}
+                value={churchValue}
+                onChange={(value) => {
+                  const { branch_state, satellite_site } = parseHqChurchValue(value);
+                  setForm((f) => ({ ...f, branch_state, satellite_site }));
+                }}
+                options={scopedChurchOpts}
+                disabled={!form.branch_country || !form.branch_state || churchesLoading}
+                placeholder={churchPlaceholder}
+                searchPlaceholder="Search by name or address"
+                emptyMessage="No branches match your search"
+                valid={!!churchValue && !churchesLoading}
+                ariaLabel="Church / branch"
+              />
+            </Field>
 
-        {form.satellite_site ? (
-          <div className="field col-span-2">
-            <div className="field-hint" style={{ marginTop: -4 }}>
-              Selected: <strong>{form.satellite_site}</strong>
-              {selectedStateLabel ? <> · {selectedStateLabel}</> : null}
-            </div>
-          </div>
+            {form.satellite_site ? (
+              <div className="field col-span-2">
+                <div className="field-hint" style={{ marginTop: -4 }}>
+                  Selected: <strong>{form.satellite_site}</strong>
+                  {selectedStateLabel ? <> · {selectedStateLabel}</> : null}
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : null}
       </div>
     );
