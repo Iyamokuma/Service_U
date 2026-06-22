@@ -201,10 +201,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     const destination_type = form.destination_type;
     let destination_config = {};
     if (destination_type === "send_all") {
-      destination_config = {
-        ...form.send_all,
-        audiences: sendAllAudienceOptions.map((a) => a.value),
-      };
+      destination_config = { ...form.send_all };
     } else if (destination_type === "members") {
       destination_config = { ...form.members };
     } else if (destination_type === "leaders") {
@@ -231,6 +228,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return "Select at least one medium: Email or Push notification.";
     }
     if (form.destination_type === "send_all") {
+      if (!form.send_all.audiences?.length) {
+        return "Select at least one audience under Send all.";
+      }
       return "";
     }
     if (policy.membersOnly && form.destination_type !== "members") {
@@ -386,6 +386,11 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           destinationType={form.destination_type}
           onDestinationChange={setDest}
           adminsSubtitle={form.destination_type === "admins" ? destLabels.pastorsSubtitle : ""}
+          sendAllAudiences={policy.showSendAllTab ? sendAllAudienceOptions : null}
+          selectedAudiences={form.send_all.audiences}
+          onAudiencesChange={(audiences) =>
+            setForm((f) => ({ ...f, send_all: { ...f.send_all, audiences } }))
+          }
         />
       ) : (
         <p className="sa-field-hint" style={{ margin: "0 0 16px", lineHeight: 1.55 }}>
