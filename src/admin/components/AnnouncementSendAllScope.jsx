@@ -13,6 +13,14 @@ export function AnnouncementSendAllScope({
   allowAllCountries = false,
   allowAllSatellites = false,
   vis,
+  showLeaderType = false,
+  leaderMode = "",
+  leaderModeOptions = [],
+  onLeaderModeChange,
+  leaderTypeLabel = "Leader type",
+  leaderTypeHint = "",
+  leaderTypePlaceholder = "Select audience",
+  leaderTypeAriaLabel = "Leader type",
 }) {
   return (
     <section className="sa-ann-scope" aria-label="Announcement audience scope">
@@ -29,6 +37,14 @@ export function AnnouncementSendAllScope({
         lockedCountryCode={lockedCountryCode}
         lockedStateCode={lockedStateCode}
         lockedSatelliteSite={lockedSatelliteSite}
+        showLeaderType={showLeaderType}
+        leaderMode={leaderMode}
+        leaderModeOptions={leaderModeOptions}
+        onLeaderModeChange={onLeaderModeChange}
+        leaderTypeLabel={leaderTypeLabel}
+        leaderTypeHint={leaderTypeHint}
+        leaderTypePlaceholder={leaderTypePlaceholder}
+        leaderTypeAriaLabel={leaderTypeAriaLabel}
       />
       {scopeHint ? (
         <p className="sa-field-hint" style={{ marginTop: 12, marginBottom: 0 }}>

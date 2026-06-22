@@ -398,6 +398,24 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           lockedCountryCode={policy.lockedCountry}
           lockedStateCode={policy.lockedState}
           lockedSatelliteSite={policy.lockedSatellite}
+          showLeaderType={policy.isGlobal && form.destination_type === "leaders"}
+          leaderMode={form.leaders.mode}
+          leaderModeOptions={leaderModeOptions}
+          onLeaderModeChange={(mode) =>
+            setForm((f) => ({
+              ...f,
+              leaders: {
+                ...f.leaders,
+                mode,
+                service_unit_id: policy.lockedServiceUnitId || "",
+                sub_unit: "",
+              },
+            }))
+          }
+          leaderTypeLabel={destLabels.leaderTypeLabel}
+          leaderTypeHint={destLabels.leaderTypeHint}
+          leaderTypePlaceholder="Select audience"
+          leaderTypeAriaLabel="Leader audience type"
         />
       )}
 
@@ -516,7 +534,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </section>
       )}
 
-      {!policy.membersOnly && form.destination_type === "leaders" && (
+      {!policy.membersOnly && form.destination_type === "leaders" && !(useUnifiedGeo && policy.isGlobal) && (
         <section
           className="sa-ann-scope"
           aria-label={

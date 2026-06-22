@@ -6,6 +6,7 @@ import {
   announcementStateOptions,
 } from "../announcementScopePolicy.js";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
+import { AnnouncementLeaderTypeField } from "./AnnouncementLeaderTypeField.jsx";
 
 export function LockedGeoField({ label, value, hint }) {
   return (
@@ -33,6 +34,14 @@ export function AnnouncementAudienceGeoScope({
   lockedCountryCode = "",
   lockedStateCode = "",
   lockedSatelliteSite = "",
+  showLeaderType = false,
+  leaderMode = "",
+  leaderModeOptions = [],
+  onLeaderModeChange,
+  leaderTypeLabel = "Leader type",
+  leaderTypeHint = "",
+  leaderTypePlaceholder = "Select audience",
+  leaderTypeAriaLabel = "Leader type",
 }) {
   const v = vis || { country: true, state: true, satellite: true };
   const cc = lockedCountryCode || scope.branch_country;
@@ -132,6 +141,17 @@ export function AnnouncementAudienceGeoScope({
           )}
         </div>
       )}
+      {showLeaderType ? (
+        <AnnouncementLeaderTypeField
+          label={leaderTypeLabel}
+          hint={leaderTypeHint}
+          value={leaderMode}
+          options={leaderModeOptions}
+          onChange={onLeaderModeChange}
+          placeholder={leaderTypePlaceholder}
+          ariaLabel={leaderTypeAriaLabel}
+        />
+      ) : null}
     </div>
   );
 }
