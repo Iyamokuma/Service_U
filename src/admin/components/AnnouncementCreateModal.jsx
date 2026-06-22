@@ -79,9 +79,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     const audienceOptions = sendAllAudienceOptionsForPolicy(policy);
     if (policy.membersOnly) {
       base.destination_type = "members";
-    } else if (policy.isSatellitePastor) {
-      base.destination_type = "members";
-      base.leaders.mode = policy.destinationLabels?.defaultLeaderMode || "service_unit";
     }
     if (policy.showSendAllTab) {
       const geo = policy.isGlobal
@@ -243,9 +240,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       return `Select a country for ${destLabels.typePrefix.members.toLowerCase()} announcements.`;
     }
     if (form.destination_type === "leaders") {
-      if (policy.isSatellitePastor && !["service_unit", "sub_unit"].includes(form.leaders.mode)) {
-        return "Select Service unit leaders or Sub unit leaders.";
-      }
       if (!useUnifiedGeo && !form.leaders.branch_country && !policy.lockedCountry) {
         return `Select a country for ${destLabels.typePrefix.leaders.toLowerCase()} announcements.`;
       }
@@ -315,13 +309,6 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             audiences: sendAllAudienceOptions.map((a) => a.value),
           },
         };
-      }
-      if (
-        policy.isSatellitePastor &&
-        type === "leaders" &&
-        !["service_unit", "sub_unit"].includes(f.leaders.mode)
-      ) {
-        next.leaders = { ...next.leaders, mode: destLabels.defaultLeaderMode || "service_unit" };
       }
       return next;
     });

@@ -37,11 +37,8 @@ const DESTINATION_TABS_DEFAULT = DESTINATION_TABS_BROADCAST;
 
 const DESTINATION_TABS_COUNTRY = DESTINATION_TABS_BROADCAST;
 
-/** Satellite Pastor — members + service unit heads only (no admins destination). */
-const DESTINATION_TABS_SATELLITE = [
-  { id: "members", label: "Service Unit Members" },
-  { id: "leaders", label: "Service Unit Heads" },
-];
+/** Satellite Pastor — unit members + Send all (same tab style as broadcast admins). */
+const DESTINATION_TABS_SATELLITE = [{ id: "members", label: "Unit members" }];
 
 const LEADER_MODES_SATELLITE = [
   { value: "service_unit", label: "Service unit leaders" },
@@ -129,12 +126,13 @@ export function usesSendAllDestination(_policy) {
   return false;
 }
 
-/** Global, country, and state branch admin: Send all as a fourth destination tab. */
+/** Global, country, state branch, and satellite admin: Send all destination tab. */
 export function showSendAllDestinationTab(policy) {
   if (policy?.membersOnly) return false;
   if (policy?.isGlobal) return true;
   if (policy?.isCountryAdmin && !policy?.actingAsState) return true;
   if (policy?.isStateBranchAudience) return true;
+  if (policy?.isSatellitePastor) return true;
   return false;
 }
 
@@ -152,6 +150,11 @@ export function announcementDestinationTabsForPolicy(policy) {
 }
 
 export function sendAllAudienceOptionsForPolicy(policy) {
+  if (policy?.isSatellitePastor) {
+    return SEND_ALL_AUDIENCE_OPTIONS.filter((a) =>
+      ["members", "service_unit_leaders", "sub_unit_leaders"].includes(a.value),
+    );
+  }
   if (policy?.isGlobal || (policy?.isCountryAdmin && !policy?.actingAsState)) {
     return SEND_ALL_AUDIENCE_OPTIONS;
   }
@@ -347,8 +350,8 @@ export function getAnnouncementScopePolicy(admin, viewMode) {
     : String(admin?.branch_country || "").trim().toUpperCase();
   const lockedState = isGlobal
     ? ""
-    : isStateAdmin || actingAsState
-      ? String(admin?.branch_state || "").trim().toUpperCase()
+    : isStateAdmin || actingAsState || role === "satellite_church_admin"
+      ? String(admin?.branch_state || "").trim()
       : "";
   const lockedSatellite =
     role === "satellite_church_admin" ||
@@ -425,7 +428,7 @@ function buildScopeHint(ctx) {
     return "Target all countries or narrow by country, state, and satellite. Send all reaches every selected audience tier within the scope you set.";
   }
   if (ctx.role === "satellite_church_admin" && ctx.lockedSatellite) {
-    return `Scoped to your satellite: ${ctx.lockedSatellite} (${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}).`;
+    return `Scoped to your satellite: ${ctx.lockedSatellite} (${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}). Use Send all to reach unit members and leaders within this church.`;
   }
   if (ctx.isStateBranchAudience && ctx.lockedState) {
     return `All audiences are limited to ${branchStateLabel(ctx.lockedCountry, ctx.lockedState) || ctx.lockedState}, ${branchCountryLabel(ctx.lockedCountry) || ctx.lockedCountry}. Narrow by satellite or use Send all with audience checkboxes.`;
