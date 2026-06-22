@@ -19,7 +19,7 @@ import { WorkforceLeaderModal } from "../components/WorkforceLeaderModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { countryAdminHomeState, isCountrySuperAdmin } from "../roles.js";
 import { adminApiScopeParams, isActingAsStateAdmin } from "../adminViewMode.js";
-import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { availableSatellitesForState } from "../stateSatelliteForm.js";
 import { exportCsv } from "../exportCsv.js";
@@ -69,7 +69,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   const [reassignOnly, setReassignOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
-  const [churches, setChurches] = useState([]);
+  const { churches } = useAdminLocationCatalog();
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null, scope: "admins" });
   const [leaderModal, setLeaderModal] = useState(null);
 
@@ -108,10 +108,6 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   useEffect(() => {
     loadPending();
   }, [loadPending, adminsPayload]);
-
-  useEffect(() => {
-    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-  }, []);
 
   const satellitesInDataset = useMemo(
     () => satelliteSitesForBranch(churches, countryCode, stateCode),

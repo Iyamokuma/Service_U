@@ -1,7 +1,8 @@
 /** Shared helpers for Country Admin → State Branch Admin accounts. */
 
-import { branchStateLabel } from "./branchRegions.js";
-import { statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { branchStateLabel, mergeStateOptions } from "./branchRegions.js";
+import { directoryStateOptionsFromRows, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { satelliteSitesForBranch } from "./satelliteSites.js";
 
 const PENDING = new Set(["open", "in_review"]);
 
@@ -56,16 +57,27 @@ export function occupiedStateCodes(admins, pendingRequests, countryCode, exclude
   return set;
 }
 
+/** All states/regions in a country from directory, catalog cache, and church rows. */
+export function allStatesInCountry(countryCode, { catalog, churches, directoryStates } = {}) {
+  const cc = String(countryCode || "").toUpperCase();
+  if (!cc) return [];
+  return mergeStateOptions(
+    cc,
+    statesFromCatalogAndChurches(catalog, cc, churches || []),
+    directoryStateOptionsFromRows(cc, directoryStates || []),
+  );
+}
+
 export function availableStatesForCountryAdmin(
   countryCode,
   admins,
   pendingRequests,
   excludeAdminId,
-  { catalog, churches } = {},
+  { catalog, churches, directoryStates } = {},
 ) {
   const cc = String(countryCode || "").toUpperCase();
   const taken = occupiedStateCodes(admins, pendingRequests, countryCode, excludeAdminId);
-  const stateRows = statesFromCatalogAndChurches(catalog, cc, churches || []);
+  const stateRows = allStatesInCountry(cc, { catalog, churches, directoryStates });
   return stateRows.filter((s) => !taken.has(String(s.code).toUpperCase()));
 }
 
@@ -75,12 +87,12 @@ export function availableHomeStatesForCountryAdmin(
   admins,
   pendingRequests,
   countryAdminId,
-  { catalog, churches } = {},
+  { catalog, churches, directoryStates } = {},
 ) {
   const cc = String(countryCode || "").toUpperCase();
   const taken = occupiedStateCodes(admins, pendingRequests, countryCode, countryAdminId);
   const me = (admins || []).find((a) => Number(a.id) === Number(countryAdminId));
-  const stateRows = statesFromCatalogAndChurches(catalog, cc, churches || []);
+  const stateRows = allStatesInCountry(cc, { catalog, churches, directoryStates });
   return stateRows.filter((s) => {
     const code = String(s.code).toUpperCase();
     if (!taken.has(code)) return true;
@@ -178,7 +190,10 @@ export function suggestedStateAdminUsername(countryCode, stateCode) {
   return cc && st ? `${cc}.${st}.admin` : "";
 }
 
-export function validateStateBranchAdminForm(form, { countryCode, takenStates, isEdit, inviteCreate } = {}) {
+export function validateStateBranchAdminForm(
+  form,
+  { countryCode, takenStates, isEdit, inviteCreate, churches } = {},
+) {
   if (!String(form.full_name || "").trim()) return "Full name is required.";
   if (!isEdit && !inviteCreate && !String(form.username || "").trim()) return "Username is required.";
   if (!String(form.email || "").trim()) return "Email is required.";
@@ -191,6 +206,14 @@ export function validateStateBranchAdminForm(form, { countryCode, takenStates, i
   if (!st) return "Select a state / region.";
   if (!isEdit && takenStates?.has(String(st).toUpperCase())) {
     return "This state already has a State Branch Admin or Country Admin headquarters.";
+  }
+  const sites = satelliteSitesForBranch(churches || [], cc, st);
+  if (!isEdit && sites.length > 0 && !String(form.satellite_site || "").trim()) {
+    return "Select a church branch for this State Branch Admin.";
+  }
+  const sat = String(form.satellite_site || "").trim();
+  if (sat && sites.length > 0 && !sites.includes(sat)) {
+    return "This church branch is not in the selected state.";
   }
   return "";
 }

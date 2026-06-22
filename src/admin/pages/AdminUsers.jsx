@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { api, shapeAdminListRow } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { SearchableSelect } from "../components/SearchableSelect.jsx";
+import { churchSelectOptionsForBranch } from "../satelliteSites.js";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import {
   countriesFromCatalog,
@@ -9,7 +11,6 @@ import {
   satellitesFromChurches,
   directoryStateOptionsFromRows,
 } from "../catalogGeoOptions.js";
-import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
@@ -202,7 +203,10 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   const [reassignModal, setReassignModal] = useState(null);
   const [stateBranchModal, setStateBranchModal] = useState(null);
   const [satelliteModal, setSatelliteModal] = useState(null);
-  const [churchesCatalog, setChurchesCatalog] = useState([]);
+  const needsLocationCatalog = isGlobalAdmin || isCountryAdmin;
+  const { churches: churchesCatalog, catalog: locationCatalog } = useAdminLocationCatalog({
+    enabled: needsLocationCatalog,
+  });
 
   const loadPendingAdminRequests = useCallback(() => {
     if (!isCountryAdmin && !isGlobalAdmin && !isStateAdmin && !isSatellitePastor) return;
@@ -221,36 +225,6 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
   useEffect(() => {
     loadPendingAdminRequests();
   }, [loadPendingAdminRequests, data]);
-
-  useEffect(() => {
-    if (!isGlobalAdmin) return;
-    fetchAdminChurchesCatalog().then(setChurchesCatalog).catch(() => setChurchesCatalog([]));
-    api
-      .catalogList()
-      .then((r) => hydrateBranchLabelsFromCatalog(r))
-      .catch(() => {});
-  }, [isGlobalAdmin]);
-
-  useEffect(() => {
-    if (!isGlobalAdmin) return;
-    const reload = () => {
-      fetchAdminChurchesCatalog().then(setChurchesCatalog).catch(() => setChurchesCatalog([]));
-      api
-        .catalogList()
-        .then((r) => hydrateBranchLabelsFromCatalog(r))
-        .catch(() => {});
-    };
-    const onVis = () => {
-      if (document.visibilityState !== "visible") return;
-      reload();
-    };
-    window.addEventListener("focus", onVis);
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      window.removeEventListener("focus", onVis);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [isGlobalAdmin]);
 
   const scopedAdmins = (data?.data ?? []).filter((a) => {
     if (isGlobalAdmin) return !!a?.id;
@@ -961,6 +935,8 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
           <StateBranchAdminModal
             open={!!stateBranchModal}
             countryCode={stateBranchModal?.branch_country}
+            churches={churchesCatalog}
+            catalog={locationCatalog}
             existingAdmins={allAdmins}
             pendingRequests={pendingAdminRequests}
             editData={stateBranchModal?.id ? stateBranchModal : null}
@@ -1085,6 +1061,8 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         <StateBranchAdminModal
           open={!!modal}
           countryCode={me?.branch_country}
+          churches={churchesCatalog}
+          catalog={locationCatalog}
           existingAdmins={allAdmins.filter(
             (a) => String(a.branch_country || "").toUpperCase() === String(me?.branch_country || "").toUpperCase(),
           )}

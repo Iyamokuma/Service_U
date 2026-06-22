@@ -2218,12 +2218,13 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
     const countryIso2 = normUp(payload.countryIso2);
     const countryName = norm(payload.countryName);
     const stateName = norm(payload.stateName);
+    const stateCode = normUp(payload.stateCode);
     const lgaName = norm(payload.lgaName);
     const satelliteChurches = Array.isArray(payload.satelliteChurches)
       ? (payload.satelliteChurches as unknown[]).map((s) => String(s || "").trim()).filter(Boolean)
       : [];
-    if (!continent || !countryIso2 || !countryName || !stateName || !lgaName) {
-      throw new Error("Continent, country, state, and LGA are required.");
+    if (!countryIso2 || !countryName || !stateName || !lgaName) {
+      throw new Error("Country, state, and LGA are required.");
     }
     if (!satelliteChurches.length) {
       throw new Error("At least one satellite church name is required.");
@@ -2243,6 +2244,7 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
         countryIso2,
         countryName,
         stateName,
+        stateCode,
         lgaName,
         satelliteChurches,
       },
@@ -3374,7 +3376,26 @@ async function handleDeleteAnnouncement(supabase: SupabaseClient, params: Record
 function requireCatalogEditor(admin: AdminRow) {
   const r = norm(admin.role);
   if (!["super_admin", "general_admin", "data_entry_admin"].includes(r)) {
-    throw new Error("Only Super Admin, General Admin, or Data Entry Admin can access the branch catalog.");
+    throw new Error("Only Super Admin, General Admin, or Data Entry Admin can edit the branch catalog.");
+  }
+}
+
+/** Read directory + churches for admin forms (scoped in loadScopedCatalog). */
+function requireCatalogReader(admin: AdminRow) {
+  const r = norm(admin.role);
+  if (
+    ![
+      "super_admin",
+      "general_admin",
+      "data_entry_admin",
+      "country_super_admin",
+      "state_super_admin",
+      "satellite_church_admin",
+      "service_unit_leader",
+      "sub_unit_leader",
+    ].includes(r)
+  ) {
+    throw new Error("Not allowed to load branch directory data.");
   }
 }
 
@@ -3577,7 +3598,7 @@ async function loadScopedCatalog(supabase: SupabaseClient, admin: AdminRow) {
 }
 
 async function handleCatalogList(supabase: SupabaseClient, admin: AdminRow) {
-  requireCatalogEditor(admin);
+  requireCatalogReader(admin);
   return loadScopedCatalog(supabase, admin);
 }
 
@@ -3587,7 +3608,7 @@ async function handleCatalogStatesForCountry(
   params: Record<string, unknown>,
   admin: AdminRow,
 ) {
-  requireCatalogEditor(admin);
+  requireCatalogReader(admin);
   const cc = normUp(String(params.branch_country_code || params.countryCode || ""));
   if (!cc) throw new Error("Country code is required.");
   assertCatalogCountryScope(admin, cc);
@@ -3611,6 +3632,7 @@ async function handleCatalogStatesForCountry(
 }
 
 async function handleChurchCatalog(supabase: SupabaseClient, admin: AdminRow) {
+  requireCatalogReader(admin);
   const catalog = await loadScopedCatalog(supabase, admin);
   return {
     churches: buildMergedChurchRows(

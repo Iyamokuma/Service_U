@@ -17,9 +17,9 @@ import { UsersSectionTabs } from "../components/UsersSectionTabs.jsx";
 import { CountryWorkforce } from "./CountryWorkforce.jsx";
 import { UnitMembers } from "./UnitMembers.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
-import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import {
   availableStatesForCountryAdmin,
   countStateBranchLeaders,
@@ -86,8 +86,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   const [saving, setSaving] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [actionMenu, setActionMenu] = useState({ id: null, anchor: null });
-  const [churches, setChurches] = useState([]);
-  const [catalog, setCatalog] = useState(null);
+  const { churches, catalog } = useAdminLocationCatalog();
   const [workforceStats, setWorkforceStats] = useState({
     total: 0,
     unitLeaders: 0,
@@ -134,11 +133,6 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
     () => satelliteSitesForCountry(churches, countryCode, filterState),
     [churches, countryCode, filterState],
   );
-
-  useEffect(() => {
-    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
-  }, []);
 
   useEffect(() => {
     setAdminsPage(1);
@@ -644,6 +638,8 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
       <StateBranchAdminModal
         open={!!stateModal}
         countryCode={countryCode}
+        churches={churches}
+        catalog={catalog}
         existingAdmins={countryAdmins}
         pendingRequests={pendingRequests}
         initialStateCode={stateModal?.initialState || stateModal?.branch_state || ""}

@@ -5,14 +5,15 @@ import {
   fetchLgasOrCities,
   fetchStatesForCountryName,
 } from "../../lib/geoApi.js";
-import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel, hydrateBranchLabelsFromCatalog } from "../branchRegions.js";
+import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel } from "../branchRegions.js";
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 
 export function DataEntryLocationForm() {
   const toast = useToast();
   const [entryMode, setEntryMode] = useState("catalog");
-  const [catalog, setCatalog] = useState(null);
+  const { catalog } = useAdminLocationCatalog();
   const [catalogCountryCode, setCatalogCountryCode] = useState("");
   const [catalogStateCode, setCatalogStateCode] = useState("");
   const [continents, setContinents] = useState([]);
@@ -58,29 +59,6 @@ export function DataEntryLocationForm() {
   }, [catalog?.states, catalogCountries, catalogCountryCode]);
 
   const selectedCatalogState = catalogStateOptions.find((s) => s.code === catalogStateCode);
-
-  useEffect(() => {
-    const loadCatalog = () => {
-      api
-        .catalogList()
-        .then((r) => {
-          setCatalog(r);
-          hydrateBranchLabelsFromCatalog(r);
-        })
-        .catch(() => setCatalog(null));
-    };
-    loadCatalog();
-    const onVis = () => {
-      if (document.visibilityState !== "visible") return;
-      loadCatalog();
-    };
-    window.addEventListener("focus", onVis);
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      window.removeEventListener("focus", onVis);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, []);
 
   const filteredCountries = countries.filter((c) => {
     const q = countrySearch.trim().toLowerCase();
@@ -200,10 +178,12 @@ export function DataEntryLocationForm() {
       }
       const countryRow = catalogCountries.find((c) => c.code === catalogCountryCode);
       payload = {
+        catalogMode: "existing",
         continent: "",
-        countryIso2: /^[A-Z]{2}$/.test(catalogCountryCode) ? catalogCountryCode : catalogCountryCode,
+        countryIso2: catalogCountryCode,
         countryName: countryRow?.name || branchCountryLabel(catalogCountryCode),
         stateName: selectedCatalogState?.name || branchStateLabel(catalogCountryCode, catalogStateCode),
+        stateCode: catalogStateCode,
         lgaName: lgaName.trim(),
         satelliteChurches: cleanedSats,
       };

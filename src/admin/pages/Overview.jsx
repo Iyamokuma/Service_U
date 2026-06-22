@@ -5,8 +5,8 @@ import { leaderScopeLabel } from "../leaderScope.js";
 import { isGlobalAdminRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStateLabel, branchCountryLabel } from "../branchRegions.js";
-import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { countriesFromCatalog, statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
 import { CategoryHistogram, GenderHistogram, StatusPieChart } from "../components/charts/DashboardCharts.jsx";
@@ -54,13 +54,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
   const [status, setStatus] = useState("all");
   const [sex, setSex] = useState("");
   const [submittedDate, setSubmittedDate] = useState("");
-  const [churches, setChurches] = useState([]);
-  const [catalog, setCatalog] = useState(null);
-
-  useEffect(() => {
-    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
-  }, []);
+  const { churches, catalog } = useAdminLocationCatalog();
 
   const countryOptions = useMemo(() => countriesFromCatalog(catalog || { countries: [] }), [catalog]);
   const unitOpts = units?.data ?? [];

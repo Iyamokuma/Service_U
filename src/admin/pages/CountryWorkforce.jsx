@@ -6,8 +6,8 @@ import { useToast } from "../components/Toast.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
-import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
 
@@ -55,8 +55,7 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
   const [filterState, setFilterState] = useState("");
   const [filterSatellite, setFilterSatellite] = useState("");
   const [workforcePage, setWorkforcePage] = useState(1);
-  const [churches, setChurches] = useState([]);
-  const [catalog, setCatalog] = useState(null);
+  const { churches, catalog } = useAdminLocationCatalog();
 
   const loadUnits = useCallback(() => {
     setUnitsLoading(true);
@@ -70,11 +69,6 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
   useEffect(() => {
     loadUnits();
   }, [loadUnits]);
-
-  useEffect(() => {
-    fetchAdminChurchesCatalog().then(setChurches).catch(() => setChurches([]));
-    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
-  }, []);
 
   const stateOptions = useMemo(
     () => statesFromCatalogAndChurches(catalog, countryCode, churches),

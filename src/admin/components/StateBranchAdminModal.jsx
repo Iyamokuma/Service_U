@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
-import { api } from "../api.js";
-import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { SearchableSelect } from "./SearchableSelect.jsx";
+import { api } from "../api.js";
 import {
+  allStatesInCountry,
   availableStatesForCountryAdmin,
   occupiedStateCodes,
   suggestedStateAdminUsername,
@@ -12,6 +13,9 @@ import {
 import { usesAdminInviteCreate } from "../adminAccountForm.js";
 import { AdminInviteBanner } from "./AdminInviteBanner.jsx";
 import { adminCreateButtonLabel } from "../adminInviteUi.js";
+import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
+import { churchSelectOptionsForBranch } from "../satelliteSites.js";
+import { parseHqChurchValue } from "../catalogGeoOptions.js";
 
 function shouldAutoFillUsername(username) {
   const u = String(username || "").trim().toLowerCase();
@@ -29,10 +33,51 @@ export function StateBranchAdminModal({
   initialStateCode = "",
   editData = null,
   reassignOnly = false,
+  churches: churchesProp = null,
+  catalog: catalogProp = null,
 }) {
   const isEdit = !!editData?.id;
   const inviteCreate = usesAdminInviteCreate(isEdit);
   const cc = String(countryCode || "").toUpperCase();
+
+  const hasExternalCatalog = catalogProp != null;
+  const { churches: loadedChurches, catalog: loadedCatalog, loading: catalogLoading } = useAdminLocationCatalog({
+    enabled: open && !hasExternalCatalog,
+  });
+  const catalog = hasExternalCatalog ? catalogProp : loadedCatalog;
+  const churches = churchesProp?.length ? churchesProp : loadedChurches;
+
+  const [directoryStates, setDirectoryStates] = useState([]);
+  const [statesLoading, setStatesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !cc) {
+      setDirectoryStates([]);
+      setStatesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setStatesLoading(true);
+    api
+      .catalogStatesForCountry(cc)
+      .then((res) => {
+        if (!cancelled) setDirectoryStates(Array.isArray(res?.states) ? res.states : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDirectoryStates([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStatesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, cc]);
+
+  const allCountryStates = useMemo(
+    () => allStatesInCountry(cc, { catalog, churches, directoryStates }),
+    [cc, catalog, churches, directoryStates],
+  );
 
   const [form, setForm] = useState({
     full_name: "",
@@ -40,31 +85,27 @@ export function StateBranchAdminModal({
     email: "",
     password: "",
     branch_state: "",
+    satellite_site: "",
     is_active: 1,
   });
-  const [churches, setChurches] = useState([]);
-  const [catalog, setCatalog] = useState(null);
-
-  useEffect(() => {
-    if (!open) {
-      setChurches([]);
-      setCatalog(null);
-      return;
-    }
-    fetchAdminChurchesCatalog()
-      .then(setChurches)
-      .catch(() => setChurches([]));
-    api.catalogList().then(setCatalog).catch(() => setCatalog(null));
-  }, [open]);
 
   const stateOptions = useMemo(
     () =>
       availableStatesForCountryAdmin(cc, existingAdmins, pendingRequests, isEdit ? editData?.id : null, {
         catalog,
         churches,
+        directoryStates,
       }),
-    [cc, existingAdmins, pendingRequests, isEdit, editData?.id, catalog, churches],
+    [cc, existingAdmins, pendingRequests, isEdit, editData?.id, catalog, churches, directoryStates],
   );
+
+  const churchOptions = useMemo(() => {
+    if (!cc || !form.branch_state) return [];
+    return churchSelectOptionsForBranch(churches, cc, form.branch_state).map((o) => ({
+      value: parseHqChurchValue(o.value).satellite_site,
+      label: o.label,
+    }));
+  }, [churches, cc, form.branch_state]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,6 +117,7 @@ export function StateBranchAdminModal({
         email: editData.email || "",
         password: "",
         branch_state: editData.branch_state || "",
+        satellite_site: editData.satellite_site || "",
         is_active: editData.is_active ?? 1,
       });
       return;
@@ -87,6 +129,7 @@ export function StateBranchAdminModal({
       email: "",
       password: "",
       branch_state: st,
+      satellite_site: "",
       is_active: 1,
     });
   }, [open, editData, initialStateCode, cc]);
@@ -95,8 +138,11 @@ export function StateBranchAdminModal({
     const v = k === "is_active" ? Number(e.target.value) : e.target.value;
     setForm((f) => {
       const next = { ...f, [k]: v };
-      if (k === "branch_state" && shouldAutoFillUsername(f.username)) {
-        next.username = suggestedStateAdminUsername(cc, v);
+      if (k === "branch_state") {
+        next.satellite_site = "";
+        if (shouldAutoFillUsername(f.username)) {
+          next.username = suggestedStateAdminUsername(cc, v);
+        }
       }
       return next;
     });
@@ -106,7 +152,7 @@ export function StateBranchAdminModal({
     const takenStates = occupiedStateCodes(existingAdmins, pendingRequests, cc, isEdit ? editData?.id : null);
     const msg = validateStateBranchAdminForm(
       { ...form, branch_country: cc, role: "state_super_admin" },
-      { countryCode: cc, takenStates, isEdit, inviteCreate },
+      { countryCode: cc, takenStates, isEdit, inviteCreate, churches },
     );
     if (msg) {
       onSave(null, msg);
@@ -117,14 +163,13 @@ export function StateBranchAdminModal({
       role: "state_super_admin",
       branch_country: cc,
       branch_state: form.branch_state,
+      satellite_site: form.satellite_site,
     });
   }
 
   const countryLabel = branchCountryLabel(cc);
   const editStateLabel =
-    isEdit && form.branch_state
-      ? branchStateLabel(cc, form.branch_state)
-      : form.branch_state;
+    isEdit && form.branch_state ? branchStateLabel(cc, form.branch_state) : form.branch_state;
 
   return (
     <Modal
@@ -141,7 +186,7 @@ export function StateBranchAdminModal({
             type="button"
             className="sa-btn sa-btn-primary"
             onClick={submit}
-            disabled={saving || (!isEdit && stateOptions.length === 0 && !initialStateCode)}
+            disabled={saving || (!isEdit && stateOptions.length === 0 && !initialStateCode && !statesLoading)}
           >
             {adminCreateButtonLabel({ saving, isEdit, reassignOnly })}
           </button>
@@ -166,8 +211,15 @@ export function StateBranchAdminModal({
           {isEdit && !reassignOnly ? (
             <input className="sa-input" value={editStateLabel || form.branch_state} disabled readOnly />
           ) : (
-            <select className="sa-field-select" value={form.branch_state} onChange={set("branch_state")} disabled={!cc}>
-              <option value="">{cc ? "Select state" : "—"}</option>
+            <select
+              className="sa-field-select"
+              value={form.branch_state}
+              onChange={set("branch_state")}
+              disabled={!cc || statesLoading}
+            >
+              <option value="">
+                {!cc ? "—" : statesLoading ? "Loading states…" : "Select state"}
+              </option>
               {stateOptions.map((s) => (
                 <option key={s.code} value={s.code}>
                   {s.name}
@@ -175,11 +227,47 @@ export function StateBranchAdminModal({
               ))}
             </select>
           )}
-          {!isEdit && stateOptions.length === 0 && (
+          {!isEdit && !statesLoading && stateOptions.length === 0 && allCountryStates.length > 0 && (
             <div className="sa-field-hint">Every state in this country already has a State Branch Admin.</div>
+          )}
+          {!isEdit && !statesLoading && allCountryStates.length === 0 && (
+            <div className="sa-field-hint">
+              No states found for {countryLabel || cc} in the directory yet. Add locations via Data Entry or the branch
+              catalog first.
+            </div>
           )}
         </div>
       </div>
+      {!reassignOnly && !isEdit ? (
+        <div className="sa-field">
+          <label className="sa-label">
+            Church branch <span className="sa-required">*</span>
+          </label>
+          <SearchableSelect
+            value={form.satellite_site}
+            onChange={set("satellite_site")}
+            options={churchOptions}
+            disabled={!form.branch_state || catalogLoading}
+            placeholder={
+              !form.branch_state
+                ? "Select state first"
+                : catalogLoading
+                  ? "Loading churches…"
+                  : churchOptions.length
+                    ? "Select church branch"
+                    : "No churches in this state yet"
+            }
+            searchPlaceholder="Search church branches…"
+            emptyMessage="No churches match your search"
+            searchAriaLabel="Filter church branches"
+          />
+          <div className="sa-field-hint">
+            {form.branch_state && !catalogLoading && churchOptions.length === 0
+              ? "No churches listed for this state yet. Add branches via Data Entry or approve a location request first."
+              : "State Branch Admin is tied to this church location within the selected state."}
+          </div>
+        </div>
+      ) : null}
       {!reassignOnly ? (
         <>
           {inviteCreate ? <AdminInviteBanner /> : null}
