@@ -1,7 +1,7 @@
 /** Shared helpers for Country Admin → State Branch Admin accounts. */
 
-import { branchStateLabel, mergeStateOptions } from "./branchRegions.js";
-import { directoryStateOptionsFromRows, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { branchStateLabel } from "./branchRegions.js";
+import { statesForCountryPicker } from "./catalogGeoOptions.js";
 import { satelliteSitesForBranch } from "./satelliteSites.js";
 
 const PENDING = new Set(["open", "in_review"]);
@@ -59,13 +59,7 @@ export function occupiedStateCodes(admins, pendingRequests, countryCode, exclude
 
 /** All states/regions in a country from directory, catalog cache, and church rows. */
 export function allStatesInCountry(countryCode, { catalog, churches, directoryStates } = {}) {
-  const cc = String(countryCode || "").toUpperCase();
-  if (!cc) return [];
-  return mergeStateOptions(
-    cc,
-    statesFromCatalogAndChurches(catalog, cc, churches || []),
-    directoryStateOptionsFromRows(cc, directoryStates || []),
-  );
+  return statesForCountryPicker(countryCode, { catalog, churches, directoryStates });
 }
 
 export function availableStatesForCountryAdmin(

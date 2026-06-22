@@ -143,8 +143,27 @@ export function ChurchLocationSection({ form, set, setSilent, errors }) {
         code: norm(s.branch_state_code),
         name: String(s.name || "").trim(),
       }));
-    if (fromDir.length) {
+    const legacyGhCatchAll =
+      cc === "GH" && fromDir.length === 1 && fromDir[0]?.code === "GH";
+    if (fromDir.length && !legacyGhCatchAll) {
       return fromDir.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    if (cc === "GH") {
+      const churchCodes = new Set();
+      for (const ch of catalog) {
+        if (norm(ch.branch_country) === "GH") {
+          const st = norm(ch.branch_state);
+          if (st) churchCodes.add(st);
+        }
+      }
+      const canonical = [
+        { code: "AS", name: "Ashanti Region" },
+        { code: "CR", name: "Central Region" },
+        { code: "GA", name: "Greater Accra" },
+        { code: "WR", name: "Western Region" },
+      ];
+      const rows = canonical.filter((r) => churchCodes.has(r.code));
+      if (rows.length) return rows;
     }
     const seen = new Set();
     const fromChurches = [];

@@ -122,7 +122,7 @@ export function mergeStateOptions(countryCode, ...lists) {
       const opt = canonicalStateOption(countryCode, item.code ?? item.branch_state_code, item.name);
       if (!opt) continue;
       const prev = byCode.get(opt.code);
-      if (!prev || (prev.name === prev.code && opt.name !== opt.code)) {
+      if (!prev || (normCode(prev.name) === normCode(prev.code) && normCode(opt.name) !== normCode(opt.code))) {
         byCode.set(opt.code, opt);
       }
     }

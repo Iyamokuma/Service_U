@@ -82,10 +82,21 @@ export function StateBranchAdminModal({
     };
   }, [open, cc]);
 
-  const allCountryStates = useMemo(
-    () => allStatesInCountry(cc, { catalog, churches, directoryStates }),
-    [cc, catalog, churches, directoryStates],
-  );
+  const allCountryStates = useMemo(() => {
+    const effectiveDirectoryStates =
+      directoryStates.length > 0
+        ? directoryStates
+        : (() => {
+            const country = (catalog?.countries || []).find(
+              (c) => String(c.branch_country_code || "").toUpperCase() === cc,
+            );
+            if (!country) return [];
+            return (catalog?.states || []).filter(
+              (s) => Number(s.country_id) === Number(country.id),
+            );
+          })();
+    return allStatesInCountry(cc, { catalog, churches, directoryStates: effectiveDirectoryStates });
+  }, [cc, catalog, churches, directoryStates]);
 
   const [form, setForm] = useState({
     full_name: "",
@@ -97,15 +108,35 @@ export function StateBranchAdminModal({
     is_active: 1,
   });
 
-  const stateOptions = useMemo(
-    () =>
-      availableStatesForCountryAdmin(cc, existingAdmins, pendingRequests, isEdit ? editData?.id : null, {
-        catalog,
-        churches,
-        directoryStates,
-      }),
-    [cc, existingAdmins, pendingRequests, isEdit, editData?.id, catalog, churches, directoryStates],
-  );
+  const stateOptions = useMemo(() => {
+    const effectiveDirectoryStates =
+      directoryStates.length > 0
+        ? directoryStates
+        : (() => {
+            const country = (catalog?.countries || []).find(
+              (c) => String(c.branch_country_code || "").toUpperCase() === cc,
+            );
+            if (!country) return [];
+            return (catalog?.states || []).filter(
+              (s) => Number(s.country_id) === Number(country.id),
+            );
+          })();
+
+    return availableStatesForCountryAdmin(cc, existingAdmins, pendingRequests, isEdit ? editData?.id : null, {
+      catalog,
+      churches,
+      directoryStates: effectiveDirectoryStates,
+    });
+  }, [
+    cc,
+    existingAdmins,
+    pendingRequests,
+    isEdit,
+    editData?.id,
+    catalog,
+    churches,
+    directoryStates,
+  ]);
 
   const churchOptions = useMemo(() => {
     if (!cc || !form.branch_state) return [];

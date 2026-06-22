@@ -51,8 +51,8 @@ export function ensureStateRowForCode(stateRows, countryCode, stateCode) {
   return [...rows, { code, name }];
 }
 
-function statesFromChurchesForDropdown(countryCode, churches) {
-  return statesFromChurches(churches, countryCode);
+function statesFromChurchesForDropdown(countryCode, churches, catalog) {
+  return statesFromChurches(churches, countryCode, catalog);
 }
 
 /** All countries: catalog first, then any static entries not yet in the directory. */
@@ -77,7 +77,18 @@ export function statesFromCatalog(catalog, countryCode) {
   return statesFromCatalogAndChurches(catalog, countryCode, []);
 }
 
-function statesFromChurches(churches, countryCode) {
+function stateNameFromCatalog(catalog, countryCode, stateCode) {
+  const cc = normUp(countryCode);
+  const sc = normUp(stateCode);
+  const country = (catalog?.countries || []).find((c) => normUp(c.branch_country_code) === cc);
+  if (!country) return "";
+  const row = (catalog?.states || []).find(
+    (s) => Number(s.country_id) === Number(country.id) && normUp(s.branch_state_code) === sc,
+  );
+  return String(row?.name || "").trim();
+}
+
+function statesFromChurches(churches, countryCode, catalog = null) {
   const cc = normUp(countryCode);
   if (!cc) return [];
   const rows = [];
@@ -89,7 +100,10 @@ function statesFromChurches(churches, countryCode) {
     seen.add(code);
     rows.push({
       code,
-      name: branchStateLabel(cc, code) || code,
+      name:
+        stateNameFromCatalog(catalog, cc, code) ||
+        branchStateLabel(cc, code) ||
+        code,
     });
   }
   return rows;
@@ -116,7 +130,49 @@ export function statesFromCatalogAndChurches(catalog, countryCode, churches = []
     }
   }
 
-  return mergeStateOptions(cc, catalogRows, statesFromChurchesForDropdown(cc, churches));
+  return mergeStateOptions(cc, catalogRows, statesFromChurchesForDropdown(cc, churches, catalog));
+}
+
+/** States for admin pickers: directory API/catalog first, churches only as fallback. */
+export function statesForCountryPicker(countryCode, { catalog, churches, directoryStates } = {}) {
+  const cc = normUp(countryCode);
+  if (!cc) return [];
+
+  let fromDirectory = directoryStateOptionsFromRows(cc, directoryStates || []);
+  // Legacy Ghana catch-all row (code GH) — prefer regional states from catalog/churches.
+  if (cc === "GH" && fromDirectory.length === 1 && normUp(fromDirectory[0]?.code) === "GH") {
+    fromDirectory = [];
+  }
+  if (fromDirectory.length > 0) {
+    return fromDirectory;
+  }
+
+  const fromCatalog = statesFromDirectoryOnly(catalog, cc);
+  if (fromCatalog.length > 0) {
+    return fromCatalog;
+  }
+
+  if (cc === "GH") {
+    const churchCodes = new Set();
+    for (const ch of churches || []) {
+      if (normUp(ch.branch_country) === "GH") {
+        const st = normUp(ch.branch_state);
+        if (st) churchCodes.add(st);
+      }
+    }
+    if (churchCodes.size > 0) {
+      const canonical = [
+        { code: "AS", name: "Ashanti Region" },
+        { code: "CR", name: "Central Region" },
+        { code: "GA", name: "Greater Accra" },
+        { code: "WR", name: "Western Region" },
+      ];
+      const rows = canonical.filter((r) => churchCodes.has(r.code));
+      if (rows.length) return rows;
+    }
+  }
+
+  return mergeStateOptions(cc, statesFromChurches(churches, cc, catalog));
 }
 
 /** States from directory_states rows only (database records for one country). */
