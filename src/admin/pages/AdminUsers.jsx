@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { api, shapeAdminListRow } from "../api.js";
 import { Modal } from "../components/Modal.jsx";
 import { SearchableSelect } from "../components/SearchableSelect.jsx";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
@@ -322,7 +323,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
       .map((code) => ({ value: code, label: branchCountryLabel(code) || code }));
   }, [isGlobalAdmin, visibilityFiltered]);
 
-  const stateFilterOptions = useMemo(() => {
+  const stateFilterRows = useMemo(() => {
     if (!isGlobalAdmin) return [];
     const currentCountry = countryFilter === "all" ? "" : countryFilter;
     return [...new Set(
@@ -336,7 +337,7 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
         const lb = branchStateLabel(currentCountry, b) || b;
         return la.localeCompare(lb);
       })
-      .map((code) => ({ value: code, label: branchStateLabel(currentCountry, code) || code }));
+      .map((code) => ({ code, name: branchStateLabel(currentCountry, code) || code }));
   }, [isGlobalAdmin, visibilityFiltered, countryFilter]);
 
   const satelliteFilterOptions = useMemo(() => {
@@ -877,22 +878,18 @@ export function AdminUsers({ data, units, reload, upsertAdminInList, removeAdmin
                   </option>
                 ))}
               </select>
-              <select
+              <StateRegionSelect
                 className="sa-select"
-                value={stateFilter}
-                onChange={(e) => {
-                  setStateFilter(e.target.value);
+                stateRows={stateFilterRows}
+                countryCode={countryFilter === "all" ? "" : countryFilter}
+                value={stateFilter === "all" ? "" : stateFilter}
+                onChange={(code) => {
+                  setStateFilter(code || "all");
                   setSatelliteFilter("all");
                 }}
+                emptyOption="All states"
                 aria-label="Filter by state"
-              >
-                <option value="all">All states</option>
-                {stateFilterOptions.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              />
               <select
                 className="sa-select"
                 value={satelliteFilter}

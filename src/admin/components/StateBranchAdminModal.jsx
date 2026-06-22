@@ -20,6 +20,7 @@ import { adminCreateButtonLabel } from "../adminInviteUi.js";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { churchSelectOptionsForBranch } from "../satelliteSites.js";
 import { parseHqChurchValue } from "../catalogGeoOptions.js";
+import { StateRegionSelect } from "./StateRegionSelect.jsx";
 
 function shouldAutoFillUsername(username) {
   const u = String(username || "").trim().toLowerCase();
@@ -143,16 +144,7 @@ export function StateBranchAdminModal({
 
   const set = (k) => (e) => {
     const v = k === "is_active" ? Number(e.target.value) : e.target.value;
-    setForm((f) => {
-      const next = { ...f, [k]: v };
-      if (k === "branch_state") {
-        next.satellite_site = "";
-        if (shouldAutoFillUsername(f.username)) {
-          next.username = suggestedStateAdminUsername(cc, v);
-        }
-      }
-      return next;
-    });
+    setForm((f) => ({ ...f, [k]: v }));
   };
 
   function submit() {
@@ -218,21 +210,22 @@ export function StateBranchAdminModal({
           {isEdit && !reassignOnly ? (
             <input className="sa-input" value={editStateLabel || form.branch_state} disabled readOnly />
           ) : (
-            <select
-              className="sa-field-select"
+            <StateRegionSelect
+              stateRows={stateOptions}
+              countryCode={cc}
               value={form.branch_state}
-              onChange={set("branch_state")}
+              onChange={(code) => {
+                setForm((f) => {
+                  const next = { ...f, branch_state: code, satellite_site: "" };
+                  if (shouldAutoFillUsername(f.username)) {
+                    next.username = suggestedStateAdminUsername(cc, code);
+                  }
+                  return next;
+                });
+              }}
+              emptyOption={!cc ? "—" : statesLoading ? "Loading states…" : "Select state"}
               disabled={!cc || statesLoading}
-            >
-              <option value="">
-                {!cc ? "—" : statesLoading ? "Loading states…" : "Select state"}
-              </option>
-              {stateOptions.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            />
           )}
           {!isEdit && !statesLoading && stateOptions.length === 0 && allCountryStates.length > 0 && (
             <div className="sa-field-hint">Every state in this country already has a State Branch Admin.</div>

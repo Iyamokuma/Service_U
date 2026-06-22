@@ -7,6 +7,7 @@ import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { AdminLoginMeta } from "../components/AdminLoginMeta.jsx";
 import { isAdminActive } from "../components/adminRowMenuItems.js";
 import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
@@ -201,22 +202,18 @@ export function CountryWorkforce({ admins: adminsPayload, embedded = false, onSt
         <select className="sa-select" value={countryCode} disabled aria-label="Country">
           <option value={countryCode}>{countryLabel || countryCode}</option>
         </select>
-        <select
+        <StateRegionSelect
           className="sa-select"
+          stateRows={stateOptions}
+          countryCode={countryCode}
           value={filterState}
-          onChange={(e) => {
-            setFilterState(e.target.value);
+          onChange={(code) => {
+            setFilterState(code);
             setFilterSatellite("");
           }}
+          emptyOption="All states / regions"
           aria-label="State / region"
-        >
-          <option value="">All states / regions</option>
-          {stateOptions.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        />
         <select
           className="sa-select"
           value={filterSatellite}

@@ -3,12 +3,13 @@ import { Modal } from "./Modal.jsx";
 import { branchCountryLabel, branchStateLabel, hydrateBranchLabelsFromCatalog } from "../branchRegions.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { api } from "../api.js";
-import { countriesFromCatalog } from "../catalogGeoOptions.js";
+import { countriesFromCatalog, resolveStateCodeFromSelection, stateSelectionValueForCode } from "../catalogGeoOptions.js";
 import { SearchableDropdown } from "./SearchableDropdown.jsx";
 import {
   announcementCountryOptions,
   announcementSatelliteOptions,
   announcementStateOptions,
+  announcementStateRows,
   applyAnnouncementScopeLocks,
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
@@ -56,13 +57,19 @@ function AudienceGeoScope({
   lockedCountryCode,
   lockedStateCode,
   lockedSatelliteSite,
+  catalog = null,
 }) {
   const v = vis || { country: true, state: true, satellite: true };
   const cc = lockedCountryCode || scope.branch_country;
 
+  const stateRows = useMemo(
+    () => announcementStateRows(churches, cc, catalog),
+    [churches, cc, catalog],
+  );
+
   const stateOptions = useMemo(
-    () => announcementStateOptions(churches, cc, lockedStateCode),
-    [churches, cc, lockedStateCode],
+    () => announcementStateOptions(churches, cc, lockedStateCode, catalog),
+    [churches, cc, lockedStateCode, catalog],
   );
 
   const satelliteOptions = useMemo(() => {
@@ -105,8 +112,13 @@ function AudienceGeoScope({
             />
           ) : (
             <SearchableDropdown
-              value={scope.branch_state}
-              onChange={(code) => onScopeChange({ branch_state: code, satellite_site: "" })}
+              value={stateSelectionValueForCode(scope.branch_state, stateRows)}
+              onChange={(name) =>
+                onScopeChange({
+                  branch_state: resolveStateCodeFromSelection(name, stateRows),
+                  satellite_site: "",
+                })
+              }
               options={stateOptions}
               disabled={!cc}
               placeholder={cc ? "All states" : "Select country first"}
@@ -501,6 +513,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             scope={form.send_all}
             onScopeChange={(patch) => setForm((f) => ({ ...f, send_all: { ...f.send_all, ...patch } }))}
             churches={churches}
+            catalog={catalog}
             countryOptions={countryOptions}
             requireCountry
             vis={policy.visibility}
@@ -735,6 +748,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             scope={form.leaders}
             onScopeChange={(patch) => setForm((f) => ({ ...f, leaders: { ...f.leaders, ...patch } }))}
             churches={churches}
+            catalog={catalog}
             countryOptions={countryOptions}
             requireCountry
             vis={policy.visibility}
@@ -850,6 +864,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
             scope={form.admins}
             onScopeChange={(patch) => setForm((f) => ({ ...f, admins: { ...f.admins, ...patch } }))}
             churches={churches}
+            catalog={catalog}
             countryOptions={countryOptions}
             requireCountry
             vis={policy.visibility}

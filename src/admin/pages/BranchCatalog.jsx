@@ -7,6 +7,7 @@ import { LocationCreateModal } from "../components/LocationCreateModal.jsx";
 import { AddSatellitesModal } from "../components/AddSatellitesModal.jsx";
 import { BranchLocationDetail } from "./BranchLocationDetail.jsx";
 import { countriesFromCatalog, statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 import {
   buildAllRows,
@@ -549,19 +550,15 @@ export function BranchCatalog({ variant = "catalog" }) {
             </div>
             <div className="sa-field" style={{ margin: 0 }}>
               <label className="sa-label">Branch (state)</label>
-              <select
+              <StateRegionSelect
                 className="sa-field-select"
+                stateRows={branchOptions}
+                countryCode={filters.country}
                 value={filters.branch}
+                onChange={(code) => setFilters((f) => ({ ...f, branch: code, satellite: "" }))}
+                emptyOption={filters.country ? "All branches" : "Select country first"}
                 disabled={!filters.country}
-                onChange={(e) => setFilters((f) => ({ ...f, branch: e.target.value, satellite: "" }))}
-              >
-                <option value="">{filters.country ? "All branches" : "Select country first"}</option>
-                {branchOptions.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div className="sa-field" style={{ margin: 0 }}>
               <label className="sa-label">Satellite</label>

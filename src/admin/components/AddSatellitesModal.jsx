@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./Modal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { StateRegionSelect } from "./StateRegionSelect.jsx";
 
 function iso2ForBranchCountry(branchCountryCode) {
   const cc = String(branchCountryCode || "").trim().toUpperCase();
@@ -149,19 +150,13 @@ export function AddSatellitesModal({
               <label className="sa-label">
                 State / region <span className="sa-required">*</span>
               </label>
-              <select
-                className="sa-field-select"
+              <StateRegionSelect
+                stateRows={stateOptions}
+                countryCode={branchCountry}
                 value={stateCode}
-                required
-                onChange={(e) => setStateCode(e.target.value)}
-              >
-                <option value="">Select state</option>
-                {stateOptions.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setStateCode}
+                disabled={stateOptions.length === 0}
+              />
               {stateOptions.length === 0 ? (
                 <p className="sa-field-hint">No states in the directory for this country yet.</p>
               ) : null}

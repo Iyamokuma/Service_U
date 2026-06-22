@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Field } from "../../components/Field.jsx";
 import { SearchableDropdown } from "../../components/SearchableDropdown.jsx";
+import { StateRegionSelect } from "./StateRegionSelect.jsx";
 import { SearchableSelect } from "./SearchableSelect.jsx";
 import {
   ROLES_WITH_SATELLITE,
@@ -8,7 +9,13 @@ import {
 } from "../adminAccountForm.js";
 import { branchStateLabel } from "../branchRegions.js";
 import { churchSelectOptionsForBranch } from "../satelliteSites.js";
-import { hqChurchValueFromForm, parseHqChurchValue } from "../catalogGeoOptions.js";
+import {
+  hqChurchValueFromForm,
+  parseHqChurchValue,
+  resolveStateCodeFromSelection,
+  stateSelectOptionsForDropdown,
+  stateSelectionValueForCode,
+} from "../catalogGeoOptions.js";
 
 /**
  * Country / state / HQ church fields for global admin create & reassign flows.
@@ -60,26 +67,25 @@ export function AdminLocationScopeFields({
     });
   }
 
-  function pickState(branch_state) {
-    const raw = String(branch_state || "").trim();
-    const match = (stateFieldOptions || []).find(
-      (s) =>
-        String(s.code || "").toUpperCase() === raw.toUpperCase() ||
-        String(s.name || "").toUpperCase() === raw.toUpperCase(),
-    );
-    const canonical = match?.code ? String(match.code).toUpperCase() : raw.toUpperCase();
+  function pickState(selection) {
+    const canonical = resolveStateCodeFromSelection(selection, stateFieldOptions);
     setForm((f) => ({ ...f, branch_state: canonical, satellite_site: "" }));
   }
+
+  const stateDropdownOptions = useMemo(
+    () => stateSelectOptionsForDropdown(stateFieldOptions),
+    [stateFieldOptions],
+  );
+
+  const stateDropdownValue = useMemo(
+    () => stateSelectionValueForCode(form.branch_state, stateFieldOptions),
+    [form.branch_state, stateFieldOptions],
+  );
 
   const scopedChurchOpts = useMemo(() => {
     if (!form.branch_country || !form.branch_state) return [];
     return churchSelectOptionsForBranch(churches || [], form.branch_country, form.branch_state);
   }, [churches, form.branch_country, form.branch_state]);
-
-  const stateDropdownOptions = useMemo(
-    () => (stateFieldOptions || []).map((s) => ({ value: s.code, label: s.name })),
-    [stateFieldOptions],
-  );
 
   const countryDisabled = disableCountry || (role === "country_super_admin" && isEdit);
 
@@ -163,7 +169,7 @@ export function AdminLocationScopeFields({
 
         <Field label={stateLabel} required hint={stateHint}>
           <SearchableDropdown
-            value={form.branch_state}
+            value={stateDropdownValue}
             onChange={pickState}
             options={stateDropdownOptions}
             disabled={!form.branch_country || disableState || statesLoading}
@@ -243,25 +249,20 @@ export function AdminLocationScopeFields({
               {role === "country_super_admin" ? "Headquarters state" : branchStateLabelText}{" "}
               <span className="sa-required">*</span>
             </label>
-            <select
-              className="sa-field-select"
+            <StateRegionSelect
+              stateRows={stateList || []}
+              countryCode={form.branch_country}
               value={form.branch_state}
-              onChange={(e) =>
+              onChange={(code) =>
                 setForm((f) => ({
                   ...f,
-                  branch_state: e.target.value,
+                  branch_state: code,
                   satellite_site: ROLES_WITH_SATELLITE.includes(f.role) ? "" : f.satellite_site,
                 }))
               }
+              emptyOption={form.branch_country ? "Select state" : "Select country first"}
               disabled={disableState || !form.branch_country || (role === "state_super_admin" && isEdit)}
-            >
-              <option value="">{form.branch_country ? "Select state" : "Select country first"}</option>
-              {(stateList || []).map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            />
             {showStateVacantHint ? (
               <div className="sa-field-hint">
                 Every state in this country already has a State Branch Admin (or one pending approval).
@@ -277,27 +278,21 @@ export function AdminLocationScopeFields({
             {role === "country_super_admin" ? "Headquarters state" : branchStateLabelText}{" "}
             <span className="sa-required">*</span>
           </label>
-          <select
-            className="sa-field-select"
+          <StateRegionSelect
+            stateRows={steppedStateOptions}
+            countryCode={form.branch_country}
             value={form.branch_state}
-            onChange={(e) =>
+            onChange={(code) =>
               setForm((f) => ({
                 ...f,
-                branch_state: e.target.value,
+                branch_state: code,
                 satellite_site: "",
               }))
             }
             disabled={
               (role === "state_super_admin" && isEdit) || (role === "country_super_admin" && isEdit)
             }
-          >
-            <option value="">Select state</option>
-            {steppedStateOptions.map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          />
           {showSteppedStateVacantHint ? (
             <div className="sa-field-hint">
               {role === "country_super_admin"

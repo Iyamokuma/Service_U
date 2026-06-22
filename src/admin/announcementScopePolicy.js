@@ -2,6 +2,7 @@ import { isActingAsStateAdmin } from "./adminViewMode.js";
 import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 import { isCountrySuperAdmin, isGlobalAdminRole, isStateSuperAdmin } from "./roles.js";
 import { satelliteSitesForBranch } from "./satelliteSites.js";
+import { stateSelectOptionsForDropdown, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
 
 const ADMIN_ROLES_GLOBAL = [
   { value: "general_admin", label: "General Admin" },
@@ -446,33 +447,23 @@ export function announcementCountryOptions(lockedCountry, branchCountries) {
   return branchCountries.map((c) => ({ value: c.code, label: c.name }));
 }
 
-/** State dropdown from church directory + branch regions for locked country. */
-export function announcementStateOptions(churches, lockedCountry, lockedState) {
+/** State dropdown from directory catalog (full region names, not codes). */
+export function announcementStateOptions(churches, lockedCountry, lockedState, catalog = null) {
   if (lockedState) {
-    return [
-      {
-        value: lockedState,
-        label: branchStateLabel(lockedCountry, lockedState) || lockedState,
-      },
-    ];
+    const label = branchStateLabel(lockedCountry, lockedState) || lockedState;
+    return [{ value: label, label }];
   }
   const cc = String(lockedCountry || "").trim().toUpperCase();
   if (!cc) return [];
-  const fromChurches = new Map();
-  for (const ch of churches || []) {
-    if (String(ch.branch_country || "").toUpperCase() !== cc) continue;
-    const st = String(ch.branch_state || "").trim().toUpperCase();
-    if (!st) continue;
-    if (!fromChurches.has(st)) {
-      fromChurches.set(st, branchStateLabel(cc, st) || st);
-    }
-  }
-  return [
-    { value: "", label: "All states" },
-    ...[...fromChurches.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1]))
-      .map(([value, label]) => ({ value, label })),
-  ];
+  const rows = statesFromCatalogAndChurches(catalog, cc, churches || []);
+  return [{ value: "", label: "All states" }, ...stateSelectOptionsForDropdown(rows)];
+}
+
+/** State rows for resolving announcement scope picks back to branch_state codes. */
+export function announcementStateRows(churches, lockedCountry, catalog = null) {
+  const cc = String(lockedCountry || "").trim().toUpperCase();
+  if (!cc) return [];
+  return statesFromCatalogAndChurches(catalog, cc, churches || []);
 }
 
 export function announcementSatelliteOptions(churches, lockedCountry, lockedState, lockedSatellite) {

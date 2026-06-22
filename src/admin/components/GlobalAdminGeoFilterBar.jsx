@@ -1,4 +1,5 @@
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
+import { resolveStateCodeFromSelection, stateSelectionValueForCode } from "../catalogGeoOptions.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 
 /**
@@ -20,8 +21,11 @@ export function GlobalAdminGeoFilterBar({ className = "" }) {
     hasFilters,
     countryOptions,
     stateOptions,
+    stateRows,
     satelliteOptions,
   } = geo;
+
+  const stateDisplay = stateSelectionValueForCode(state, stateRows);
 
   return (
     <div
@@ -50,10 +54,10 @@ export function GlobalAdminGeoFilterBar({ className = "" }) {
         <select
           id="global-geo-state"
           className="sa-select sa-dash-filter-compact"
-          title={state ? branchStateLabel(country, state) || state : "State"}
-          value={state}
+          title={state ? branchStateLabel(country, state) || stateDisplay || state : "State"}
+          value={stateDisplay}
           disabled={!country}
-          onChange={(e) => setState(e.target.value)}
+          onChange={(e) => setState(resolveStateCodeFromSelection(e.target.value, stateRows))}
         >
           <option value="">State</option>
           {stateOptions.map((s) => (

@@ -5,7 +5,7 @@ import { leaderScopeLabel } from "../leaderScope.js";
 import { isGlobalAdminRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchStateLabel, branchCountryLabel } from "../branchRegions.js";
-import { countriesFromCatalog, statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { countriesFromCatalog, resolveStateCodeFromSelection, statesFromCatalogAndChurches, stateSelectionValueForCode } from "../catalogGeoOptions.js";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { RegistrationTrendAnalytics } from "../components/RegistrationTrendAnalytics.jsx";
 import { SubUnitLeaderAnalytics } from "../components/SubUnitLeaderAnalytics.jsx";
@@ -159,16 +159,16 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
             id="dash-filter-state"
             className="sa-select sa-dash-filter-compact"
             title={state ? (stateOpts.find((s) => s.code === state)?.name || "") : ""}
-            value={state}
+            value={stateSelectionValueForCode(state, stateOpts)}
             disabled={!country}
             onChange={(e) => {
-              setState(e.target.value);
+              setState(resolveStateCodeFromSelection(e.target.value, stateOpts));
               setBranch("");
             }}
           >
             <option value="">State</option>
             {stateOpts.map((s) => (
-              <option key={s.code} value={s.code}>{s.name}</option>
+              <option key={s.code} value={s.name}>{s.name}</option>
             ))}
           </select>
         </div>

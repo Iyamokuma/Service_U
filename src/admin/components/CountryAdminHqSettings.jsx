@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { branchStateLabel } from "../branchRegions.js";
 import { AdminScopePanel } from "./AdminScopePanel.jsx";
+import { StateRegionSelect } from "./StateRegionSelect.jsx";
 
 /**
  * Collapsible HQ state picker — kept off the main Users flow until expanded.
@@ -52,19 +53,14 @@ export function CountryAdminHqSettings({
           <label className="sa-label" htmlFor="sa-hq-state-select">
             Headquarters state
           </label>
-          <select
+          <StateRegionSelect
             id="sa-hq-state-select"
-            className="sa-field-select"
+            stateRows={homeStateOptions}
+            countryCode={countryCode}
             value={homeStateDraft}
-            onChange={(e) => onChangeHomeState(e.target.value)}
-          >
-            <option value="">None — country oversight only</option>
-            {homeStateOptions.map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            onChange={onChangeHomeState}
+            emptyOption="None — country oversight only"
+          />
         </div>
         <button
           type="button"

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { countriesFromCatalog, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
+import { countriesFromCatalog, stateSelectOptionsForDropdown, statesFromCatalogAndChurches } from "./catalogGeoOptions.js";
 import { geoFilterApiParams, hasGeoFilters, satelliteOptionsForGeoFilter } from "./geoFilterUtils.js";
 import { useAdminLocationCatalog } from "./hooks/useAdminLocationCatalog.js";
 import { isGlobalAdminRole } from "./roles.js";
@@ -14,6 +14,7 @@ const EMPTY = {
   churches: [],
   countryOptions: [],
   stateOptions: [],
+  stateRows: [],
   satelliteOptions: [],
   setCountry: () => {},
   setState: () => {},
@@ -54,6 +55,11 @@ export function AdminGeoFilterProvider({ admin, children }) {
     [country, state, satellite],
   );
 
+  const stateRows = useMemo(
+    () => (country ? statesFromCatalogAndChurches(catalog, country, churches) : []),
+    [country, catalog, churches],
+  );
+
   const value = useMemo(
     () => ({
       enabled,
@@ -63,12 +69,8 @@ export function AdminGeoFilterProvider({ admin, children }) {
       churches,
       catalog,
       countryOptions: countriesFromCatalog(catalog || { countries: [] }),
-      stateOptions: country
-        ? statesFromCatalogAndChurches(catalog, country, churches).map((s) => ({
-            value: s.code,
-            label: s.name,
-          }))
-        : [],
+      stateRows,
+      stateOptions: stateSelectOptionsForDropdown(stateRows),
       satelliteOptions:
         country && state ? satelliteOptionsForGeoFilter(churches, country, state) : [],
       country,
@@ -87,6 +89,7 @@ export function AdminGeoFilterProvider({ admin, children }) {
       country,
       state,
       satellite,
+      stateRows,
       setCountrySafe,
       setStateSafe,
       clear,

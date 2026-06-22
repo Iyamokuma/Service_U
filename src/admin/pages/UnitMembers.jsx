@@ -7,6 +7,7 @@ import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForCountry } from "../satelliteSites.js";
 import { exportCsv } from "../exportCsv.js";
@@ -257,25 +258,21 @@ export function UnitMembers({
       <select className="sa-select" value={countryCode} disabled aria-label="Country">
         <option value={countryCode}>{countryLabel}</option>
       </select>
-      <select
+      <StateRegionSelect
         className="sa-select"
+        stateRows={stateOptions}
+        countryCode={countryCode}
         value={filters.filter_branch_state}
-        onChange={(e) =>
+        onChange={(code) =>
           setFilters((f) => ({
             ...f,
-            filter_branch_state: e.target.value,
+            filter_branch_state: code,
             filter_satellite: "",
           }))
         }
+        emptyOption="All states / regions"
         aria-label="State / region"
-      >
-        <option value="">All states / regions</option>
-        {stateOptions.map((s) => (
-          <option key={s.code} value={s.code}>
-            {s.name}
-          </option>
-        ))}
-      </select>
+      />
       <select
         className="sa-select"
         value={filters.filter_satellite}
@@ -324,18 +321,14 @@ export function UnitMembers({
         onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
       />
       {isCountryAdmin && (
-        <select
+        <StateRegionSelect
           className="sa-select"
+          stateRows={stateOptions}
+          countryCode={countryCode}
           value={filters.filter_branch_state}
-          onChange={(e) => setFilters((f) => ({ ...f, filter_branch_state: e.target.value }))}
-        >
-          <option value="">All states / regions</option>
-          {stateOptions.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+          onChange={(code) => setFilters((f) => ({ ...f, filter_branch_state: code }))}
+          emptyOption="All states / regions"
+        />
       )}
       {!isLeader && (
         <select

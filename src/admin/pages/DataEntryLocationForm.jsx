@@ -9,6 +9,7 @@ import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel } from 
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 
 export function DataEntryLocationForm() {
   const toast = useToast();
@@ -275,19 +276,14 @@ export function DataEntryLocationForm() {
             </div>
             <div className="sa-field">
               <label className="sa-label">State / region (directory)</label>
-              <select
-                className="sa-field-select"
+              <StateRegionSelect
+                stateRows={catalogStateOptions}
+                countryCode={catalogCountryCode}
                 value={catalogStateCode}
+                onChange={setCatalogStateCode}
+                emptyOption={catalogCountryCode ? "Select state" : "Select country first"}
                 disabled={!catalogCountryCode}
-                onChange={(e) => setCatalogStateCode(e.target.value)}
-              >
-                <option value="">{catalogCountryCode ? "Select state" : "Select country first"}</option>
-                {catalogStateOptions.map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div className="sa-field">
               <label className="sa-label">LGA / city</label>

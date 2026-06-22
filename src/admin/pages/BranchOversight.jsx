@@ -6,6 +6,7 @@ import { Modal } from "../components/Modal.jsx";
 import { AcceptVerifyModal, needsAcceptVerification } from "../components/AcceptVerifyModal.jsx";
 import { branchCountryLabel, branchStateLabel } from "../branchRegions.js";
 import { statesFromCatalogAndChurches } from "../catalogGeoOptions.js";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { isCountrySuperAdmin, isStateSuperAdmin, isSupervisoryBranchRole } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
@@ -305,14 +306,15 @@ export function BranchOversight({ units }) {
             <input placeholder="Search name, email, phone…" value={filters.search} onChange={setFilter("search")} />
           </div>
           {isCountryActor && (
-            <select className="sa-select" value={filters.filter_branch_state} onChange={setFilter("filter_branch_state")} aria-label="Filter by state">
-              <option value="">All states / satellites</option>
-              {stateOptions.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <StateRegionSelect
+              className="sa-select"
+              stateRows={stateOptions}
+              countryCode={admin?.branch_country}
+              value={filters.filter_branch_state}
+              onChange={(code) => setFilters((f) => ({ ...f, filter_branch_state: code }))}
+              emptyOption="All states / satellites"
+              aria-label="Filter by state"
+            />
           )}
           <select className="sa-select" value={filters.unit_id} onChange={(e) => setFilters((f) => ({ ...f, unit_id: e.target.value, sub_unit: "" }))}>
             <option value="">All service units</option>

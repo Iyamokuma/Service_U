@@ -9,6 +9,48 @@ function normUp(s) {
   return String(s ?? "").trim().toUpperCase();
 }
 
+/** Dropdown options using full state/region names (not branch_state codes). */
+export function stateSelectOptionsForDropdown(stateRows) {
+  return (stateRows || [])
+    .filter((s) => String(s.name || "").trim())
+    .map((s) => {
+      const name = String(s.name).trim();
+      return { value: name, label: name };
+    });
+}
+
+/** Resolve a picked state name (or legacy code) to branch_state code. */
+export function resolveStateCodeFromSelection(selection, stateRows) {
+  const raw = String(selection ?? "").trim();
+  if (!raw) return "";
+  const up = normUp(raw);
+  for (const s of stateRows || []) {
+    const code = normUp(s.code);
+    const name = normUp(s.name);
+    if (code === up || name === up) return code;
+  }
+  return up;
+}
+
+/** Map stored branch_state code to the directory name shown in dropdowns. */
+export function stateSelectionValueForCode(stateCode, stateRows) {
+  const code = normUp(stateCode);
+  if (!code) return "";
+  const row = (stateRows || []).find((s) => normUp(s.code) === code);
+  return row?.name ? String(row.name).trim() : code;
+}
+
+/** Include a fallback row when editing/filtering with a code missing from directory rows. */
+export function ensureStateRowForCode(stateRows, countryCode, stateCode) {
+  const rows = [...(stateRows || [])];
+  const code = normUp(stateCode);
+  if (!code) return rows;
+  if (rows.some((s) => normUp(s.code) === code)) return rows;
+  const name = branchStateLabel(countryCode, code);
+  if (!name || normUp(name) === code) return rows;
+  return [...rows, { code, name }];
+}
+
 function statesFromChurchesForDropdown(countryCode, churches) {
   return statesFromChurches(churches, countryCode);
 }
