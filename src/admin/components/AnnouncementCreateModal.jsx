@@ -632,6 +632,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
               scope={form.members}
               onScopeChange={(patch) => setForm((f) => ({ ...f, members: { ...f.members, ...patch } }))}
               churches={churches}
+              catalog={catalog}
               countryOptions={countryOptions}
               requireCountry
               vis={policy.visibility}

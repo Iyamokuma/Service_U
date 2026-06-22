@@ -53,6 +53,7 @@ import { AdminReassignModal } from "../components/AdminReassignModal.jsx";
 import { AdminScopePanel, adminScopePanelLabel, formatAdminScopeDraft } from "../components/AdminScopePanel.jsx";
 import { AdminLocationScopeFields } from "../components/AdminLocationScopeFields.jsx";
 import { AdminAccountIdentityFields } from "../components/AdminAccountIdentityFields.jsx";
+import { AdminWorkforceUnitFields } from "../components/AdminWorkforceUnitFields.jsx";
 import { Field } from "../../components/Field.jsx";
 import { useAdminTableBulk } from "../hooks/useAdminTableBulk.js";
 import { TableSelectCheckbox } from "../components/TableSelectCheckbox.jsx";
@@ -1370,6 +1371,11 @@ function AdminModal({
   const showBranchChurchStepFlow =
     isGlobalAdmin && ROLES_WITH_BRANCH_CHURCH.includes(form.role);
 
+  const showWorkforceGeoFlow =
+    !isEdit &&
+    (isSatellitePastor || isServiceLeader) &&
+    ["service_unit_leader", "sub_unit_leader"].includes(form.role);
+
   useEffect(() => {
     if (!open || !form.branch_country) {
       setDbStateOptions([]);
@@ -1548,7 +1554,7 @@ function AdminModal({
         branchChurchOpts.length > 0 &&
         !String(form.satellite_site || "").trim()));
 
-  const flatScopeLayout = showBranchChurchStepFlow && !isEdit;
+  const flatScopeLayout = (showBranchChurchStepFlow || showWorkforceGeoFlow) && !isEdit;
   const locationScopeFields = (flat) => (
     <AdminLocationScopeFields
       form={form}
@@ -1862,7 +1868,7 @@ function AdminModal({
       </div>
       )}
 
-      {locationScopedRole &&
+      {locationScopedRole && !showWorkforceGeoFlow &&
         (flatScopeLayout ? (
           <div style={{ marginTop: 16 }}>{locationScopeFields(true)}</div>
         ) : (
@@ -1882,7 +1888,61 @@ function AdminModal({
           </AdminScopePanel>
         ))}
 
-      {ROLES_WITH_SATELLITE.includes(form.role) && !showBranchChurchStepFlow && (
+      {showWorkforceGeoFlow ? (
+        <>
+          <div style={{ marginTop: 16 }}>
+            <AdminLocationScopeFields
+              form={form}
+              setForm={setForm}
+              isEdit={isEdit}
+              countryOptions={[{ code: form.branch_country, name: branchCountryLabel(form.branch_country) }]}
+              allCountryOptions={[{ code: form.branch_country, name: branchCountryLabel(form.branch_country) }]}
+              allStateOptions={[]}
+              stateOptions={[]}
+              stateFieldOptions={[]}
+              showBranchChurchStepFlow
+              showBranchStateStep={false}
+              branchStateLabelText="State / region"
+              branchChurchHint={
+                form.role === "sub_unit_leader"
+                  ? "Sub-unit leader is assigned to this satellite church."
+                  : "Service unit leader is assigned to this satellite church."
+              }
+              disableCountry
+              countryReadOnly
+              countryReadOnlyLabel={branchCountryLabel(form.branch_country) || form.branch_country}
+              disableState
+              stateReadOnly
+              showChurchInStepFlow={false}
+              satelliteReadOnly
+              churchFieldLabel="Satellite church"
+              churchPickerMode="satellite"
+              churches={churches}
+            />
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <AdminWorkforceUnitFields
+              form={form}
+              setForm={setForm}
+              units={
+                isServiceLeader
+                  ? unitList.filter((u) => Number(u.id) === Number(me?.service_unit_id))
+                  : unitList
+              }
+              role={form.role}
+              isEdit={isEdit}
+              lockServiceUnit={isServiceLeader}
+              serviceUnitHint={
+                isSatellitePastor
+                  ? "Choose the ministry unit this person leads (must already exist, or request a new unit first)."
+                  : ""
+              }
+            />
+          </div>
+        </>
+      ) : null}
+
+      {ROLES_WITH_SATELLITE.includes(form.role) && !showBranchChurchStepFlow && !showWorkforceGeoFlow && (
         <div className="sa-field">
           <label className="sa-label">
             Satellite church <span className="sa-required">*</span>
@@ -1915,7 +1975,7 @@ function AdminModal({
         </div>
       )}
 
-      {["service_unit_leader", "sub_unit_leader"].includes(form.role) && (
+      {["service_unit_leader", "sub_unit_leader"].includes(form.role) && !showWorkforceGeoFlow && (
         <div className="sa-form-row">
           <div className="sa-field">
             <label className="sa-label">Service Unit <span className="sa-required">*</span></label>

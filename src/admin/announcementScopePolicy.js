@@ -121,7 +121,7 @@ const DEFAULT_ADMIN_ROLES_BY_SENDER = {
 
 const DESTINATION_TABS_SUB_UNIT_MEMBERS_ONLY = [{ id: "members", label: "Service Unit Members" }];
 
-/** Send-all audience checkboxes (country / state / satellite pastor announcements). */
+/** Send-all audience checkboxes (country / state branch announcements). */
 export const SEND_ALL_AUDIENCE_OPTIONS = [
   { value: "members", label: "Unit members" },
   { value: "service_unit_leaders", label: "Service unit leaders" },
@@ -132,15 +132,10 @@ export const SEND_ALL_AUDIENCE_OPTIONS = [
 
 export function usesSendAllDestination(policy) {
   if (!policy || policy.isServiceUnitLeader || policy.isSubUnitLeader || policy.membersOnly) return false;
-  return Boolean(policy.isCountryAdmin || policy.isStateBranchAudience || policy.isSatellitePastor);
+  return Boolean(policy.isCountryAdmin || policy.isStateBranchAudience);
 }
 
 export function sendAllAudienceOptionsForPolicy(policy) {
-  if (policy?.isSatellitePastor) {
-    return SEND_ALL_AUDIENCE_OPTIONS.filter((a) =>
-      ["members", "service_unit_leaders", "sub_unit_leaders"].includes(a.value),
-    );
-  }
   if (policy?.isStateBranchAudience && !policy?.isCountryAdmin) {
     return SEND_ALL_AUDIENCE_OPTIONS.filter((a) => a.value !== "state_branch_pastors");
   }
