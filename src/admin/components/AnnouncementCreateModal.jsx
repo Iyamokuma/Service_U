@@ -194,6 +194,18 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
   );
   const leaderUnitHasSubUnits = unitHasSubUnits(leaderSelectedUnit) || Boolean(policy.lockedSubUnit);
 
+  const leaderTypePlaceholder = policy.isSatellitePastor
+    ? "Select service unit head role"
+    : policy.isServiceUnitLeader
+      ? "Select sub-unit leaders"
+      : "Select audience";
+  const leaderTypeAriaLabel = policy.isSatellitePastor
+    ? "Service unit head role"
+    : policy.isServiceUnitLeader
+      ? "Sub Unit Leaders"
+      : "Leader audience type";
+  const showLeaderTypeInScope = useUnifiedGeo && form.destination_type === "leaders";
+
   function buildPayload(workflow_action) {
     const destination_type = form.destination_type;
     let destination_config = {};
@@ -398,7 +410,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           lockedCountryCode={policy.lockedCountry}
           lockedStateCode={policy.lockedState}
           lockedSatelliteSite={policy.lockedSatellite}
-          showLeaderType={policy.isGlobal && form.destination_type === "leaders"}
+          showLeaderType={showLeaderTypeInScope}
           leaderMode={form.leaders.mode}
           leaderModeOptions={leaderModeOptions}
           onLeaderModeChange={(mode) =>
@@ -414,8 +426,8 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           }
           leaderTypeLabel={destLabels.leaderTypeLabel}
           leaderTypeHint={destLabels.leaderTypeHint}
-          leaderTypePlaceholder="Select audience"
-          leaderTypeAriaLabel="Leader audience type"
+          leaderTypePlaceholder={leaderTypePlaceholder}
+          leaderTypeAriaLabel={leaderTypeAriaLabel}
         />
       )}
 
@@ -534,7 +546,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         </section>
       )}
 
-      {!policy.membersOnly && form.destination_type === "leaders" && !(useUnifiedGeo && policy.isGlobal) && (
+      {!policy.membersOnly && form.destination_type === "leaders" && !showLeaderTypeInScope && (
         <section
           className="sa-ann-scope"
           aria-label={
