@@ -30,7 +30,7 @@ const LEADER_MODES_COUNTRY = [
 const DESTINATION_TABS_BROADCAST = [
   { id: "members", label: "Unit members" },
   { id: "leaders", label: "Leaders" },
-  { id: "admins", label: "Admins" },
+  { id: "admins", label: "Pastors" },
 ];
 
 const DESTINATION_TABS_DEFAULT = DESTINATION_TABS_BROADCAST;
