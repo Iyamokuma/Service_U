@@ -7,12 +7,12 @@ import { PasswordField } from "../components/PasswordField.jsx";
 import { roleDisplayLabel } from "../roles.js";
 import { SmhLoader } from "../../components/SmhLoader.jsx";
 
-const RESET_STEPS = ["Open link", "New password", "Sign in"];
+const RESET_STEPS = ["Open link", "Set password", "Sign in"];
 
 export function AdminResetPassword() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { admin, loginWithToken } = useAdminAuth();
+  const { admin } = useAdminAuth();
   const token = String(searchParams.get("token") || "").trim();
 
   const [phase, setPhase] = useState("loading");
@@ -28,7 +28,7 @@ export function AdminResetPassword() {
       return;
     }
     if (!token) {
-      setError("This link is missing its reset token. Request a new link from the sign-in page.");
+      setError("This link is missing its reset token. Use Forgot password on the sign-in page to get a new link.");
       setPhase("error");
       return;
     }
@@ -58,12 +58,11 @@ export function AdminResetPassword() {
     setError("");
     try {
       const res = await api.completePasswordReset(token, password);
-      if (res?.token && res?.admin) {
-        await loginWithToken(res.token, res.admin);
-        setPhase("success");
-        return;
+      if (!res?.ok) {
+        throw new Error("Password could not be updated. Try again or request a new link.");
       }
-      throw new Error("Password was updated but sign-in failed. Use the admin login page with your new password.");
+      const email = String(res.email || profile?.email || "").trim();
+      navigate(`/admin?${new URLSearchParams({ email, reset: "success" }).toString()}`, { replace: true });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -71,13 +70,7 @@ export function AdminResetPassword() {
     }
   }
 
-  useEffect(() => {
-    if (phase !== "success") return undefined;
-    const t = setTimeout(() => navigate("/admin", { replace: true }), 1800);
-    return () => clearTimeout(t);
-  }, [phase, navigate]);
-
-  const activeStep = phase === "success" ? 2 : 1;
+  const activeStep = phase === "form" ? 1 : 0;
 
   return (
     <AdminAuthCard
@@ -86,16 +79,14 @@ export function AdminResetPassword() {
       activeStep={activeStep}
       description={
         phase === "form"
-          ? "Choose a new password for your admin account. You will be signed in automatically."
-          : phase === "success"
-            ? "Your password is updated. Redirecting to the dashboard…"
-            : phase === "loading"
-              ? "Checking your reset link…"
-              : ""
+          ? "Choose a new password for your admin account. After confirming, sign in with it on the login page."
+          : phase === "loading"
+            ? "Checking your reset link…"
+            : ""
       }
       footer={
         phase === "error"
-          ? "Link expired? Request a new reset from the sign-in page."
+          ? "Link expired? Use Forgot password on the sign-in page to get a new link."
           : "Secure admin access · Salvation Ministries"
       }
     >
@@ -108,27 +99,6 @@ export function AdminResetPassword() {
           <div className="sa-login-invite-name">{profile.full_name}</div>
           <div className="sa-login-invite-meta">{profile.email}</div>
           <div className="sa-login-invite-role">{roleDisplayLabel(profile.role)}</div>
-        </div>
-      ) : null}
-
-      {phase === "success" ? (
-        <div className="sa-login-success-panel" role="status">
-          <div className="sa-login-success-icon" aria-hidden>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M6 12.5L10 16.5L18 8.5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-          <div className="sa-login-success-title">Password updated</div>
-          <p className="sa-login-success-text">
-            Welcome back{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}. Taking you to the dashboard…
-          </p>
-          <SmhLoader label="" variant="compact" size={28} />
         </div>
       ) : null}
 
@@ -163,17 +133,15 @@ export function AdminResetPassword() {
             />
           </div>
           <button className="sa-login-btn" type="submit" disabled={saving}>
-            {saving ? "Updating password…" : "Update & sign in"}
+            {saving ? "Updating password…" : "Confirm password"}
           </button>
         </form>
       ) : null}
 
       {phase === "error" ? (
-        <div className="sa-login-forgot" style={{ marginTop: 16 }}>
-          <Link to="/admin/forgot-password">Request a new reset link</Link>
-          {" · "}
-          <Link to="/admin">Back to sign in</Link>
-        </div>
+        <Link to="/admin" className="sa-login-btn sa-login-btn-outline" style={{ marginTop: 16, display: "inline-block", textAlign: "center", textDecoration: "none" }}>
+          Back to sign in
+        </Link>
       ) : null}
     </AdminAuthCard>
   );

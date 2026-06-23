@@ -5,7 +5,6 @@ import {
   issuePasswordResetToken,
   sendPasswordResetEmail,
 } from "../_shared/admin_password_reset.ts";
-import { issueAdminSession } from "../_shared/admin_session.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -182,15 +181,6 @@ Deno.serve(async (req) => {
       if (freshErr) return json(500, { error: freshErr.message });
       if (!fresh) return json(500, { error: "Account could not be loaded after reset." });
 
-      const jwtSecret = requireEnv("ADMIN_JWT_SECRET");
-      const session = await issueAdminSession(
-        supabase,
-        fresh as Record<string, unknown>,
-        jwtSecret,
-        req,
-        "Reset password and signed in",
-      );
-
       await supabase.from("activity_logs").insert({
         admin_id: fresh.id,
         admin_name: fresh.full_name,
@@ -204,8 +194,6 @@ Deno.serve(async (req) => {
       return json(200, {
         ok: true,
         email: norm(fresh.email).toLowerCase(),
-        token: session.token,
-        admin: session.admin,
       });
     }
 

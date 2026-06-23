@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { AdminAuthCard } from "./components/AdminAuthCard.jsx";
 import { PasswordField } from "./components/PasswordField.jsx";
@@ -19,6 +20,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
     loading,
     error,
     clearLoginError,
+    setLoginError,
   } = useAdminAuth();
   const [step, setStep] = useState(() => {
     const saved = readLoginChallenge();
@@ -34,6 +36,13 @@ export function AdminLogin({ initialStep = "credentials" }) {
   const [challenge, setChallenge] = useState(() => readLoginChallenge());
   const [resendIn, setResendIn] = useState(() => challenge?.resendAfter ?? 0);
   const [emailSent, setEmailSent] = useState(() => !!challenge?.emailSent);
+  const [resetSending, setResetSending] = useState(false);
+  const [resetNotice, setResetNotice] = useState(() => {
+    if (searchParams.get("reset") === "success") {
+      return "Your password was updated. Sign in with your new password below.";
+    }
+    return "";
+  });
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -46,6 +55,12 @@ export function AdminLogin({ initialStep = "credentials" }) {
   useEffect(() => {
     const email = String(searchParams.get("email") || "").trim();
     if (email) setForm((f) => ({ ...f, email }));
+    if (searchParams.get("reset") === "success") {
+      setResetNotice("Your password was updated. Sign in with your new password below.");
+      const next = new URLSearchParams(searchParams);
+      next.delete("reset");
+      setSearchParams(next, { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -76,6 +91,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
   async function onCredentialsSubmit(e) {
     e.preventDefault();
     clearLoginError();
+    setResetNotice("");
     const res = await startLogin(form.email, form.password);
     if (res?.needsDualVerify && res.challengeId) {
       beginVerifyStep(
@@ -105,6 +121,29 @@ export function AdminLogin({ initialStep = "credentials" }) {
     if (res?.loggedIn) {
       clearLoginChallenge();
       setForm((f) => ({ ...f, password: "" }));
+    }
+  }
+
+  async function onForgotPassword(e) {
+    e.preventDefault();
+    clearLoginError();
+    setResetNotice("");
+    const email = String(form.email || "").trim();
+    if (!email) {
+      setLoginError("Enter your email above, then click Forgot password.");
+      return;
+    }
+    setResetSending(true);
+    try {
+      const res = await api.requestPasswordReset(email);
+      setResetNotice(
+        res?.message ||
+          "We sent a password reset link to that email when an account is registered. Check your inbox and spam folder.",
+      );
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setResetSending(false);
     }
   }
 
@@ -190,6 +229,9 @@ export function AdminLogin({ initialStep = "credentials" }) {
       footer="Secure admin access · Salvation Ministries"
     >
       {error ? <div className="sa-login-err" role="alert">{error}</div> : null}
+      {resetNotice && step === "credentials" ? (
+        <div className="sa-login-success" role="status">{resetNotice}</div>
+      ) : null}
 
       <form onSubmit={onSubmit}>
         {step === "credentials" ? (
@@ -222,9 +264,16 @@ export function AdminLogin({ initialStep = "credentials" }) {
               />
             </div>
             <div className="sa-login-forgot">
-              <Link to="/admin/forgot-password">Forgot password?</Link>
+              <button
+                type="button"
+                className="sa-login-forgot-btn"
+                onClick={onForgotPassword}
+                disabled={loading || resetSending}
+              >
+                {resetSending ? "Sending reset link…" : "Forgot password?"}
+              </button>
             </div>
-            <button className="sa-login-btn" type="submit" disabled={loading}>
+            <button className="sa-login-btn" type="submit" disabled={loading || resetSending}>
               {loading ? (
                 <SmhLoader label="" variant="compact" size={24} className="sa-login-btn-loader" />
               ) : (

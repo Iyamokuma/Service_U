@@ -59,7 +59,8 @@ export async function sendPasswordResetEmail(
     <p>We received a request to reset the password for your admin account (<strong>${email}</strong>).</p>
     <p><a href="${resetUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Choose a new password</a></p>
     <p style="font-size:14px;color:#444;">Or copy this link: <a href="${resetUrl}">${resetUrl}</a></p>
-    <p>This link expires in <strong>${PASSWORD_RESET_TTL_HOURS} hour</strong>. If you did not request a reset, you can ignore this email — your password will stay the same.</p>
+    <p>This link expires in <strong>${PASSWORD_RESET_TTL_HOURS} hour</strong>. Open it to choose a new password, then sign in on the admin login page with your new password.</p>
+    <p style="color:#666;font-size:13px;">If you did not request a reset, you can ignore this email — your password will stay the same.</p>
     <p style="color:#666;font-size:13px;">Super Admin accounts cannot use self-service reset. Contact your platform owner if you need help.</p>
   `;
 
