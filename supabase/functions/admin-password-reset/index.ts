@@ -5,6 +5,7 @@ import {
   issuePasswordResetToken,
   sendPasswordResetEmail,
 } from "../_shared/admin_password_reset.ts";
+import { issueAdminSession } from "../_shared/admin_session.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -203,9 +204,20 @@ Deno.serve(async (req) => {
         ip_address: clientIp(req),
       });
 
+      const jwtSecret = requireEnv("ADMIN_JWT_SECRET");
+      const session = await issueAdminSession(
+        supabase,
+        fresh as Record<string, unknown>,
+        jwtSecret,
+        req,
+        "Reset password and signed in",
+      );
+
       return json(200, {
         ok: true,
         email: norm(fresh.email).toLowerCase(),
+        token: session.token,
+        admin: session.admin,
       });
     }
 

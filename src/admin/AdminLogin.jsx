@@ -1,18 +1,15 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { api } from "./api.js";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { AdminAuthCard } from "./components/AdminAuthCard.jsx";
 import { PasswordField } from "./components/PasswordField.jsx";
-import { useToast } from "./components/Toast.jsx";
 import { SmhLoader } from "../components/SmhLoader.jsx";
 import { clearLoginChallenge, readLoginChallenge, saveLoginChallenge } from "./loginChallenge.js";
 
 const LOGIN_STEPS = ["Sign in", "Verify"];
 
 export function AdminLogin({ initialStep = "credentials" }) {
-  const toast = useToast();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const {
     startLogin,
     verifyLoginOtp,
@@ -22,7 +19,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
     loading,
     error,
     clearLoginError,
-    setLoginError,
   } = useAdminAuth();
   const [step, setStep] = useState(() => {
     const saved = readLoginChallenge();
@@ -38,7 +34,10 @@ export function AdminLogin({ initialStep = "credentials" }) {
   const [challenge, setChallenge] = useState(() => readLoginChallenge());
   const [resendIn, setResendIn] = useState(() => challenge?.resendAfter ?? 0);
   const [emailSent, setEmailSent] = useState(() => !!challenge?.emailSent);
-  const [resetSending, setResetSending] = useState(false);
+
+  const forgotPasswordTo = form.email.trim()
+    ? `/admin/forgot-password?email=${encodeURIComponent(form.email.trim())}`
+    : "/admin/forgot-password";
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -51,12 +50,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
   useEffect(() => {
     const email = String(searchParams.get("email") || "").trim();
     if (email) setForm((f) => ({ ...f, email }));
-    if (searchParams.get("reset") === "success") {
-      toast("Password updated. Sign in with your new password.", "success");
-      const next = new URLSearchParams(searchParams);
-      next.delete("reset");
-      setSearchParams(next, { replace: true });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -116,25 +109,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
     if (res?.loggedIn) {
       clearLoginChallenge();
       setForm((f) => ({ ...f, password: "" }));
-    }
-  }
-
-  async function onForgotPassword(e) {
-    e.preventDefault();
-    clearLoginError();
-    const email = String(form.email || "").trim();
-    if (!email) {
-      setLoginError("Enter your email above, then click Forgot password.");
-      return;
-    }
-    setResetSending(true);
-    try {
-      await api.requestPasswordReset(email);
-      toast("Password reset link sent", "success");
-    } catch {
-      toast("Password reset link sent", "success");
-    } finally {
-      setResetSending(false);
     }
   }
 
@@ -252,16 +226,9 @@ export function AdminLogin({ initialStep = "credentials" }) {
               />
             </div>
             <div className="sa-login-forgot">
-              <button
-                type="button"
-                className="sa-login-forgot-btn"
-                onClick={onForgotPassword}
-                disabled={loading || resetSending}
-              >
-                {resetSending ? "Sending reset link…" : "Forgot password?"}
-              </button>
+              <Link to={forgotPasswordTo}>Forgot password?</Link>
             </div>
-            <button className="sa-login-btn" type="submit" disabled={loading || resetSending}>
+            <button className="sa-login-btn" type="submit" disabled={loading}>
               {loading ? (
                 <SmhLoader label="" variant="compact" size={24} className="sa-login-btn-loader" />
               ) : (
