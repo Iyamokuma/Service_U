@@ -11,6 +11,13 @@ import { useAdminAuth } from "../AdminContext.jsx";
 import { roleDisplayLabel } from "../roles.js";
 import { isActingAsStateAdmin } from "../adminViewMode.js";
 import { useAdminGeoFilters } from "../AdminGeoFilterContext.jsx";
+import {
+  emitAdminCatalogChanged,
+  emitAdminRequestsChanged,
+  readFocusRequestId,
+  setFocusRequestId,
+  ADMIN_REQUESTS_CHANGED,
+} from "../adminLiveRefresh.js";
 import { matchesRequestGeo } from "../geoFilterUtils.js";
 
 function parsePayload(raw) {
@@ -120,6 +127,7 @@ export function Requests() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [focusRequestId, setFocusRequestIdState] = useState(() => readFocusRequestId());
 
   const load = async () => {
     try {
@@ -133,6 +141,20 @@ export function Requests() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => {
+    const onRefresh = () => load();
+    window.addEventListener(ADMIN_REQUESTS_CHANGED, onRefresh);
+    return () => window.removeEventListener(ADMIN_REQUESTS_CHANGED, onRefresh);
+  }, []);
+
+  useEffect(() => {
+    const id = readFocusRequestId();
+    if (!id) return;
+    setFocusRequestIdState(id);
+    setTypeFilter("all");
+    setStatusFilter("all");
   }, []);
 
   const requestTypeLabel = (r) => {
@@ -152,7 +174,7 @@ export function Requests() {
   const visibleRows = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
     return rows
-      .filter((r) => (isSuper && geo.enabled ? matchesRequestGeo(r, geo.filters) : true))
+      .filter((r) => (isSuper && geo.enabled ? matchesRequestGeo(r, geo.filters) || Number(r.id) === focusRequestId : true))
       .filter((r) => (statusFilter === "all" ? true : String(r.status || "") === statusFilter))
       .filter((r) => (typeFilter === "all" ? true : String(r.request_type || "") === typeFilter))
       .filter((r) => {
@@ -175,7 +197,7 @@ export function Requests() {
           .toLowerCase();
         return hay.includes(q);
       });
-  }, [rows, isSuper, geo.enabled, geo.filters, statusFilter, typeFilter, search]);
+  }, [rows, isSuper, geo.enabled, geo.filters, statusFilter, typeFilter, search, focusRequestId]);
 
   const approve = async (r) => {
     try {
@@ -193,6 +215,12 @@ export function Requests() {
         }
       }
       load();
+      emitAdminRequestsChanged();
+      if (r.request_type === "location_catalog") {
+        emitAdminCatalogChanged();
+      }
+      setFocusRequestId(null);
+      setFocusRequestIdState(null);
     } catch (e) {
       toast(e.message, "error");
     }
@@ -203,6 +231,9 @@ export function Requests() {
       await api.updateRequest(id, { status: "rejected" });
       toast("Request rejected.", "success");
       load();
+      emitAdminRequestsChanged();
+      setFocusRequestId(null);
+      setFocusRequestIdState(null);
     } catch (e) {
       toast(e.message, "error");
     }
@@ -213,6 +244,9 @@ export function Requests() {
       await api.updateRequest(id, { status: "resolved" });
       toast("Request marked resolved.", "success");
       load();
+      emitAdminRequestsChanged();
+      setFocusRequestId(null);
+      setFocusRequestIdState(null);
     } catch (e) {
       toast(e.message, "error");
     }
@@ -287,7 +321,7 @@ export function Requests() {
               const isUnit = r.request_type === "service_unit_proposal";
               const isAdminAcct = r.request_type === "admin_account";
               return (
-                <tr key={r.id}>
+                <tr key={r.id} className={Number(r.id) === focusRequestId ? "sa-row-focus" : undefined}>
                   <td>{new Date(r.created_at).toLocaleString()}</td>
                   <td>{r.from_name}</td>
                   <td>

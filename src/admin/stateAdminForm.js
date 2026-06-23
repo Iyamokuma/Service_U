@@ -166,6 +166,40 @@ export function listStateBranchesForCountry(countryCode, admins, directoryStates
     .sort((a, b) => String(a.stateLabel).localeCompare(String(b.stateLabel)));
 }
 
+/** List state branches for a country admin — excludes their HQ state (they cover it directly). */
+export function listStateBranchesForCountryAdmin(countryCode, admins, directoryStates, countryAdmin) {
+  const rows = listStateBranchesForCountry(countryCode, admins, directoryStates);
+  const homeState =
+    countryAdmin?.role === "country_super_admin"
+      ? String(countryAdmin.branch_state || "").trim().toUpperCase()
+      : "";
+  if (!homeState) return rows;
+  return rows.filter((row) => String(row.stateCode || "").toUpperCase() !== homeState);
+}
+
+export function stateBranchStateOptionsForCountryAdmin(stateRows, countryAdmin) {
+  const homeState =
+    countryAdmin?.role === "country_super_admin"
+      ? String(countryAdmin.branch_state || "").trim().toUpperCase()
+      : "";
+  if (!homeState) return stateRows;
+  return (stateRows || []).filter((s) => String(s.code || "").toUpperCase() !== homeState);
+}
+
+/** State branch admin with an assigned church appears alongside satellite pastors. */
+export function isSatellitePastorDisplay(admin) {
+  if (!admin) return false;
+  if (admin.role === "satellite_church_admin") return true;
+  return admin.role === "state_super_admin" && Boolean(String(admin.satellite_site || "").trim());
+}
+
+export function satellitePastorDisplayLabel(admin) {
+  if (admin?.role === "state_super_admin" || admin?.role === "satellite_church_admin") {
+    return "Satellite Pastor Admin";
+  }
+  return "Satellite Pastor Admin";
+}
+
 export function stateBranchKindLabel(kind) {
   if (kind === "country_hq") return "Country & State (HQ)";
   if (kind === "state_admin") return "State Branch Admin";

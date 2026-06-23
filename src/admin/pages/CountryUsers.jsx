@@ -25,6 +25,7 @@ import {
   countStateBranchLeaders,
   isStateBranchLeader,
   occupiedStateCodes,
+  stateBranchStateOptionsForCountryAdmin,
   stateLeaderLabel,
 } from "../stateAdminForm.js";
 import { readUsersSectionTab, writeUsersSectionTab } from "../usersSectionTab.js";
@@ -102,7 +103,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   );
 
   const stateBranchAdmins = useMemo(
-    () => countryAdmins.filter((a) => isStateBranchLeader(a)),
+    () => countryAdmins.filter((a) => isStateBranchLeader(a) && a.role !== "country_super_admin"),
     [countryAdmins],
   );
 
@@ -123,6 +124,11 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
   }, [countryAdmins]);
 
   const pastorAdminTotal = stateBranchAdmins.length + satellitePastors.length;
+
+  const stateFilterOptions = useMemo(
+    () => stateBranchStateOptionsForCountryAdmin(stateOptions, me),
+    [stateOptions, me],
+  );
 
   const satelliteOptions = useMemo(
     () => satelliteSitesForCountry(churches, countryCode, filterState),
@@ -444,7 +450,7 @@ export function CountryUsers({ admins: adminsPayload, units, reload, setPage }) 
             </select>
             <StateRegionSelect
               className="sa-select"
-              stateRows={stateOptions}
+              stateRows={stateFilterOptions}
               countryCode={countryCode}
               value={filterState}
               onChange={(code) => {

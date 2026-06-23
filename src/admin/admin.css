@@ -2551,12 +2551,26 @@
 }
 .sa-de-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 14px 18px;
+  max-width: 720px;
+}
+.sa-data-entry-panel .sa-field-select,
+.sa-data-entry-panel .sa-input,
+.sa-data-entry-panel .sa-unit-tab-btn {
+  max-width: 280px;
+}
+.sa-data-entry-panel .sa-de-sat-row .sa-input {
+  max-width: 280px;
+}
+.sa-data-entry-panel .sa-btn-primary {
+  max-width: 280px;
 }
 .sa-de-sat-list { display: flex; flex-direction: column; gap: 10px; }
 .sa-de-sat-row { display: flex; align-items: center; gap: 10px; }
 .sa-de-sat-row .sa-input { flex: 1; }
+.sa-row-focus { background: var(--sa-accent-light, #eff6ff); }
+.sa-row-focus td { box-shadow: inset 3px 0 0 var(--sa-accent, #2563eb); }
 
 /* ── Charts ───────────────────────────────────────────────── */
 .sa-chart-grid {

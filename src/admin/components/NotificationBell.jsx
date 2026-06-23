@@ -35,7 +35,8 @@ export function NotificationBell({ onNavigateQueue, onNavigateAnnouncements, onO
       return;
     }
     if ((n.type === "admin_request" || n.type === "request_update") && onNavigateRequests) {
-      onNavigateRequests();
+      const requestId = n.entity_type === "request" && n.entity_id ? n.entity_id : null;
+      onNavigateRequests(requestId);
       setOpen(false);
       return;
     }

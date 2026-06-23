@@ -9,7 +9,7 @@ import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel } from 
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
-import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
+import { emitAdminRequestsChanged } from "../adminLiveRefresh.js";
 
 export function DataEntryLocationForm() {
   const toast = useToast();
@@ -28,7 +28,6 @@ export function DataEntryLocationForm() {
   const [stateName, setStateName] = useState("");
   const [lgaName, setLgaName] = useState("");
   const [satellites, setSatellites] = useState([""]);
-  const [countrySearch, setCountrySearch] = useState("");
 
   const [loadingGeo, setLoadingGeo] = useState({ continents: true, countries: false, states: false, lgas: false });
   const [submitting, setSubmitting] = useState(false);
@@ -61,11 +60,13 @@ export function DataEntryLocationForm() {
 
   const selectedCatalogState = catalogStateOptions.find((s) => s.code === catalogStateCode);
 
-  const filteredCountries = countries.filter((c) => {
-    const q = countrySearch.trim().toLowerCase();
-    if (!q) return true;
-    return c.name.toLowerCase().includes(q) || c.iso2.toLowerCase().includes(q);
-  });
+  const catalogContinent = useMemo(() => {
+    if (!catalogCountryCode) return "";
+    const fromSatellite = (catalog?.satellites || []).find(
+      (s) => String(s.branch_country || "").toUpperCase() === catalogCountryCode && s.continent,
+    );
+    return String(fromSatellite?.continent || "").trim();
+  }, [catalog?.satellites, catalogCountryCode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,7 +181,7 @@ export function DataEntryLocationForm() {
       const countryRow = catalogCountries.find((c) => c.code === catalogCountryCode);
       payload = {
         catalogMode: "existing",
-        continent: "",
+        continent: catalogContinent,
         countryIso2: catalogCountryCode,
         countryName: countryRow?.name || branchCountryLabel(catalogCountryCode),
         stateName: selectedCatalogState?.name || branchStateLabel(catalogCountryCode, catalogStateCode),
@@ -210,6 +211,7 @@ export function DataEntryLocationForm() {
         payload,
       });
       toast("Proposal sent for Super / General Admin approval.", "success");
+      emitAdminRequestsChanged();
       if (entryMode === "catalog") {
         setLgaName("");
         setSatellites([""]);
@@ -256,6 +258,16 @@ export function DataEntryLocationForm() {
 
         {entryMode === "catalog" ? (
           <div className="sa-de-grid">
+            <div className="sa-field">
+              <label className="sa-label">Continent</label>
+              <input
+                className="sa-input"
+                value={catalogContinent || (catalogCountryCode ? "—" : "")}
+                readOnly
+                disabled
+                placeholder={catalogCountryCode ? "—" : "Select country first"}
+              />
+            </div>
             <div className="sa-field">
               <label className="sa-label">Country (directory)</label>
               <select
@@ -326,7 +338,6 @@ export function DataEntryLocationForm() {
                 setContinent(e.target.value);
                 setCountryIso2("");
                 setCountryName("");
-                setCountrySearch("");
               }}
             >
               <option value="">{loadingGeo.continents ? "Loading…" : "Select continent"}</option>
@@ -340,16 +351,6 @@ export function DataEntryLocationForm() {
 
           <div className="sa-field">
             <label className="sa-label">Country</label>
-            {continent && !loadingGeo.countries && countries.length > 0 ? (
-              <input
-                className="sa-input"
-                style={{ marginBottom: 8 }}
-                value={countrySearch}
-                disabled={!continent}
-                onChange={(e) => setCountrySearch(e.target.value)}
-                placeholder="Search country name or code (e.g. Nigeria, NG)"
-              />
-            ) : null}
             <select
               className="sa-field-select"
               value={countryIso2}
@@ -364,19 +365,14 @@ export function DataEntryLocationForm() {
               <option value="">
                 {loadingGeo.countries ? "Loading…" : continent ? "Select country" : "Select continent first"}
               </option>
-              {filteredCountries.map((c) => (
+              {countries.map((c) => (
                 <option key={c.iso2} value={c.iso2}>
                   {c.name} ({c.iso2})
                 </option>
               ))}
             </select>
             {continent && !loadingGeo.countries ? (
-              <p className="sa-field-hint">
-                {countries.length} countries in {continent}
-                {countrySearch && filteredCountries.length !== countries.length
-                  ? ` · ${filteredCountries.length} match search`
-                  : ""}
-              </p>
+              <p className="sa-field-hint">{countries.length} countries in {continent}</p>
             ) : null}
           </div>
 

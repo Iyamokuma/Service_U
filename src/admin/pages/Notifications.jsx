@@ -13,6 +13,7 @@ import {
   notificationTypeLabel,
   resolveNotificationTarget,
 } from "../notificationInbox.js";
+import { setFocusRequestId } from "../adminLiveRefresh.js";
 
 const FILTER_TABS = [
   { id: "unread", label: "Unread" },
@@ -87,6 +88,9 @@ export function Notifications({ setPage, navigateToQueue }) {
       if (!n) return;
       if (!n.read_at) await markRead(n.id);
       const target = resolveNotificationTarget(n, admin);
+      if (target?.page === "requests" && n.entity_type === "request" && n.entity_id) {
+        setFocusRequestId(n.entity_id);
+      }
       if (!target) return;
       if (target.page === "queue" && navigateToQueue) {
         navigateToQueue(target.queueTab || "all");

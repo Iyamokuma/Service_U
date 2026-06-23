@@ -15,7 +15,8 @@ let countriesNowCache = null;
 
 function normContinent(c) {
   const x = String(c || "").trim();
-  return x || "Other";
+  if (!x || x.toLowerCase() === "other") return "";
+  return x;
 }
 
 function sortCountriesWithPriority(list) {
@@ -87,7 +88,8 @@ export async function fetchContinents() {
   const [countries, regionMap] = await Promise.all([fetchCountriesNowIso(), loadIsoRegionByCode()]);
   const set = new Map();
   for (const c of countries) {
-    const label = regionMap.get(c.iso2) || "Other";
+    const label = regionMap.get(c.iso2) || "";
+    if (!label) continue;
     const code = label.toUpperCase().replace(/\s+/g, "_").slice(0, 16);
     if (!set.has(label)) set.set(label, { code, label });
   }
@@ -99,7 +101,10 @@ export async function fetchCountriesForContinent(continentLabel) {
   const want = String(continentLabel || "").trim().toLowerCase();
   const [countries, regionMap] = await Promise.all([fetchCountriesNowIso(), loadIsoRegionByCode()]);
   const filtered = countries
-    .filter((c) => (regionMap.get(c.iso2) || "Other").toLowerCase() === want)
+    .filter((c) => {
+      const region = regionMap.get(c.iso2) || "";
+      return region && region.toLowerCase() === want;
+    })
     .map(({ iso2, name }) => ({ iso2, name }));
   return sortCountriesWithPriority(filtered);
 }

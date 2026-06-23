@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { fetchAdminChurchesCatalog } from "../churchesCatalog.js";
 import { hydrateBranchLabelsFromCatalog, hydrateBranchLabelsFromDirectoryStates } from "../branchRegions.js";
+import { ADMIN_CATALOG_CHANGED } from "../adminLiveRefresh.js";
 
 /**
  * Live directory countries/states + church branches for admin forms (scoped by role on the API).
@@ -46,7 +47,14 @@ export function useAdminLocationCatalog({ enabled = true, refreshOnFocus = true 
   }, [reload]);
 
   useEffect(() => {
-    if (!enabled || !refreshOnFocus) return;
+    if (!enabled) return undefined;
+    const onCatalogChanged = () => reload();
+    window.addEventListener(ADMIN_CATALOG_CHANGED, onCatalogChanged);
+    return () => window.removeEventListener(ADMIN_CATALOG_CHANGED, onCatalogChanged);
+  }, [enabled, reload]);
+
+  useEffect(() => {
+    if (!enabled || !refreshOnFocus) return undefined;
     const onVis = () => {
       if (document.visibilityState !== "visible") return;
       reload();

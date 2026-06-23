@@ -22,6 +22,7 @@ import { adminApiScopeParams, isActingAsStateAdmin } from "../adminViewMode.js";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
 import { satelliteSitesForBranch } from "../satelliteSites.js";
 import { availableSatellitesForState } from "../stateSatelliteForm.js";
+import { isSatellitePastorDisplay, satellitePastorDisplayLabel } from "../stateAdminForm.js";
 import { exportCsv } from "../exportCsv.js";
 import { toastAfterAdminCreate } from "../adminInviteUi.js";
 
@@ -88,7 +89,7 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
   const satellitePastors = useMemo(
     () =>
       stateAdmins
-        .filter((a) => a.role === "satellite_church_admin")
+        .filter((a) => isSatellitePastorDisplay(a))
         .sort(compareAdminsAlphabetical),
     [stateAdmins],
   );
@@ -540,6 +541,9 @@ export function StateUsers({ admins: adminsPayload, units, reload, setPage }) {
                       ) : null}
                       <td>
                         <div className="sa-fw-600">{a.full_name}</div>
+                        {a.role === "state_super_admin" ? (
+                          <div className="sa-text-sm sa-text-muted">{satellitePastorDisplayLabel(a)}</div>
+                        ) : null}
                         <AdminLoginMeta username={a.username} email={a.email} />
                       </td>
                       <td className="sa-text-sm">

@@ -18,6 +18,7 @@ import {
   uniqueContinents,
 } from "../catalogUtils.js";
 import { exportCsv } from "../exportCsv.js";
+import { ADMIN_CATALOG_CHANGED } from "../adminLiveRefresh.js";
 
 const TABS = [
   { id: "satellite", label: "Satellite churches" },
@@ -139,6 +140,12 @@ export function BranchCatalog({ variant = "catalog" }) {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const onCatalogChanged = () => load();
+    window.addEventListener(ADMIN_CATALOG_CHANGED, onCatalogChanged);
+    return () => window.removeEventListener(ADMIN_CATALOG_CHANGED, onCatalogChanged);
   }, [load]);
 
   useEffect(() => {

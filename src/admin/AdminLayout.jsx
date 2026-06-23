@@ -27,6 +27,7 @@ import { api, mergeAdminListPayload } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
 import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
+import { ADMIN_REQUESTS_CHANGED, setFocusRequestId } from "./adminLiveRefresh.js";
 import { isGlobalAdminRole, canEditBranchCatalog, isServiceUnitLeader, isCountrySuperAdmin } from "./roles.js";
 import {
   effectiveUiRole,
@@ -159,6 +160,11 @@ export function AdminLayout() {
     try { sessionStorage.setItem("sm_admin_queue_tab", tab); } catch { /* ignore */ }
     setPage("queue");
   }, [setPage]);
+
+  const navigateToRequest = useCallback((requestId) => {
+    setFocusRequestId(requestId);
+    setPage("requests");
+  }, [setPage]);
   const [units, setUnits] = useState(null);
   const [admins, setAdmins] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -269,19 +275,24 @@ export function AdminLayout() {
   useEffect(() => {
     if (!admin) {
       setOpenRequestCount(0);
-      return;
+      return undefined;
     }
     const loadApproverQueue =
       isGlobalAdminRole(admin.role) ||
       (isCountrySuperAdmin(admin.role) && !actingAsState);
     if (!loadApproverQueue) {
       setOpenRequestCount(0);
-      return;
+      return undefined;
     }
-    api
-      .requestOpenCount()
-      .then((r) => setOpenRequestCount(r.open ?? 0))
-      .catch(() => {});
+    const refreshOpenCount = () => {
+      api
+        .requestOpenCount()
+        .then((r) => setOpenRequestCount(r.open ?? 0))
+        .catch(() => {});
+    };
+    refreshOpenCount();
+    window.addEventListener(ADMIN_REQUESTS_CHANGED, refreshOpenCount);
+    return () => window.removeEventListener(ADMIN_REQUESTS_CHANGED, refreshOpenCount);
   }, [admin?.id, actingAsState, contentPage]);
 
   useEffect(() => {
@@ -328,7 +339,7 @@ export function AdminLayout() {
               onNavigateQueue={(tab) => navigateToQueue(tab || "new")}
               onNavigateAnnouncements={() => setPage("announcements")}
               onOpenInbox={() => setPage("notifications")}
-              onNavigateRequests={() => setPage("requests")}
+              onNavigateRequests={navigateToRequest}
             />
             <button
               type="button"

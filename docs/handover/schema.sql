@@ -1,0 +1,3010 @@
+-- =============================================================================
+-- Service Unit Form — PostgreSQL schema (consolidated from supabase/migrations)
+-- Generated: 2026-06-18T08:10:22Z
+--
+-- Apply: run this file in Supabase SQL Editor, OR prefer:
+--   supabase link --project-ref YOUR_REF && supabase db push
+--
+-- Migrations are the source of truth; this file is for handover readability.
+-- Optional seed data: supabase/seeds/salvation_ministries_structure.sql
+-- Full handover guide: docs/HANDOVER.md
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605070001_create_registrations_table.sql
+-- -----------------------------------------------------------------------------
+create extension if not exists "pgcrypto";
+
+create table if not exists public.registrations (
+  id uuid primary key default gen_random_uuid(),
+  first_name text not null,
+  surname text not null,
+  other_names text,
+  dob_month text,
+  dob_day text,
+  dob_year text,
+  sex text,
+  marital_status text,
+  nationality text,
+  address text,
+  bus_stop text,
+  branch_country text,
+  branch_state text,
+  phone1 text not null,
+  phone2 text,
+  email text,
+  workplace text,
+  tithe_card text,
+  homecell text,
+  joined_church_month text,
+  joined_church_year text,
+  born_again text,
+  born_again_year text,
+  foundation text,
+  foundation_month text,
+  foundation_year text,
+  baptised text,
+  baptised_month text,
+  baptised_year text,
+  wolbi text,
+  wolbi_month text,
+  wolbi_year text,
+  wolbi_level text,
+  unit_id bigint,
+  unit_name text,
+  sub_unit text,
+  status text not null default 'new',
+  notes text,
+  submitted_at timestamptz not null default now(),
+  photo_path text
+);
+
+create index if not exists idx_registrations_submitted_at on public.registrations (submitted_at desc);
+create index if not exists idx_registrations_status on public.registrations (status);
+create index if not exists idx_registrations_unit_id on public.registrations (unit_id);
+create index if not exists idx_registrations_email on public.registrations (email);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605090002_admin_core_tables.sql
+-- -----------------------------------------------------------------------------
+-- Admin platform tables + public read for service unit catalog.
+-- Passwords in seed rows are plaintext for initial bootstrap; rotate in production
+-- (hashing can be added via pgcrypto + edge verify without changing column names).
+
+-- ---------------------------------------------------------------------------
+-- Service units & sub-units (IDs align with src/data.js SERVICE_UNITS)
+-- ---------------------------------------------------------------------------
+create table if not exists public.service_units (
+  id bigint primary key,
+  name text not null,
+  description text not null default '',
+  coordinator text not null default '',
+  sort_order int not null default 0,
+  is_active smallint not null default 1
+);
+
+create table if not exists public.sub_units (
+  id bigserial primary key,
+  unit_id bigint not null references public.service_units (id) on delete cascade,
+  name text not null,
+  sort_order int not null default 0,
+  is_active smallint not null default 1,
+  unique (unit_id, name)
+);
+
+create index if not exists idx_sub_units_unit_id on public.sub_units (unit_id);
+
+-- ---------------------------------------------------------------------------
+-- Admins (username/password auth for edge functions; not Supabase Auth users)
+-- ---------------------------------------------------------------------------
+create table if not exists public.admins (
+  id bigserial primary key,
+  full_name text not null,
+  username text not null,
+  email text not null,
+  password text not null,
+  role text not null check (role in (
+    'super_admin',
+    'general_admin',
+    'country_super_admin',
+    'state_super_admin',
+    'service_unit_leader',
+    'sub_unit_leader'
+  )),
+  service_unit_id bigint references public.service_units (id) on delete set null,
+  sub_unit_name text not null default '',
+  branch_country text not null default '',
+  branch_state text not null default '',
+  is_active smallint not null default 1,
+  last_login timestamptz
+);
+
+create unique index if not exists idx_admins_username_lower on public.admins (lower(username));
+create unique index if not exists idx_admins_email_lower on public.admins (lower(email));
+
+-- ---------------------------------------------------------------------------
+-- Activity log & support requests & app settings
+-- ---------------------------------------------------------------------------
+create table if not exists public.activity_logs (
+  id bigserial primary key,
+  admin_id bigint references public.admins (id) on delete set null,
+  admin_name text not null,
+  action text not null,
+  entity_type text not null default '',
+  entity_id text not null default '',
+  description text not null default '',
+  ip_address text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_activity_logs_created_at on public.activity_logs (created_at desc);
+
+create table if not exists public.admin_requests (
+  id bigserial primary key,
+  from_admin_id bigint not null references public.admins (id) on delete cascade,
+  from_name text not null,
+  from_role text not null,
+  message text not null,
+  status text not null default 'open',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_admin_requests_created_at on public.admin_requests (created_at desc);
+
+create table if not exists public.app_settings (
+  id int primary key default 1 check (id = 1),
+  templates jsonb not null default '{}'::jsonb,
+  overdue_threshold_hours int not null default 72,
+  permissions jsonb not null default '{}'::jsonb
+);
+
+-- ---------------------------------------------------------------------------
+-- Row level security
+-- ---------------------------------------------------------------------------
+alter table public.service_units enable row level security;
+alter table public.sub_units enable row level security;
+alter table public.admins enable row level security;
+alter table public.activity_logs enable row level security;
+alter table public.admin_requests enable row level security;
+alter table public.app_settings enable row level security;
+alter table public.registrations enable row level security;
+
+-- Public form: read active catalog only
+drop policy if exists "anon_read_service_units" on public.service_units;
+create policy "anon_read_service_units"
+  on public.service_units for select
+  using (is_active = 1);
+
+drop policy if exists "anon_read_sub_units" on public.sub_units;
+create policy "anon_read_sub_units"
+  on public.sub_units for select
+  using (is_active = 1);
+
+-- No direct client access to admin tables or registrations (edge uses service role)
+
+grant select on public.service_units to anon, authenticated;
+grant select on public.sub_units to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Seed: service units (matches src/data.js)
+-- ---------------------------------------------------------------------------
+insert into public.service_units (id, name, description, coordinator, sort_order, is_active) values
+  (1, 'Choir', '', '', 0, 1),
+  (2, 'Special Care Unit', '', '', 1, 1),
+  (3, 'Medical Team', '', '', 2, 1),
+  (4, 'Peacekeepers Unit', '', '', 3, 1),
+  (5, 'Safety Unit', '', '', 4, 1),
+  (6, 'Sanctuary Keepers', '', '', 5, 1),
+  (7, 'Children Ministry', '', '', 6, 1),
+  (8, 'Decoration Unit', '', '', 7, 1),
+  (9, 'Editorial Unit', '', '', 8, 1),
+  (10, 'Crowd Management Unit (CC1)', '', '', 9, 1),
+  (11, 'Soul Establishment Unit', '', '', 10, 1),
+  (12, 'Media & Service', '', '', 11, 1),
+  (13, 'Ushering Unit', '', '', 12, 1),
+  (14, 'Foreign Language Unit', '', '', 13, 1),
+  (15, 'Horticulture', '', '', 14, 1)
+on conflict (id) do update set
+  name = excluded.name,
+  sort_order = excluded.sort_order,
+  is_active = excluded.is_active;
+
+-- Sub-units (names only; IDs are generated)
+insert into public.sub_units (unit_id, name, sort_order, is_active)
+select * from (values
+  (7, 'Lessons & teaching', 0, 1),
+  (7, 'Activities & programs', 1, 1),
+  (7, 'Children''s worship', 2, 1),
+  (7, 'Environment / classroom setup', 3, 1),
+  (8, 'Sanctuary décor & altar aesthetics', 0, 1),
+  (8, 'Altar cleanliness & hygiene', 1, 1),
+  (9, 'Testimonies & life stories', 0, 1),
+  (9, 'Magazines & editorial publications', 1, 1),
+  (10, 'Entry / exit & flow', 0, 1),
+  (10, 'Seating coordination', 1, 1),
+  (10, 'Crowd control & queue management', 2, 1),
+  (11, 'Service unit placement & follow-up', 0, 1),
+  (11, 'Cell fellowship integration', 1, 1),
+  (12, 'Audio', 0, 1),
+  (12, 'Video', 1, 1),
+  (12, 'Electrical', 2, 1),
+  (13, 'Seating & order', 0, 1),
+  (13, 'Offerings & collection support', 1, 1),
+  (13, 'Visitors & new converts hospitality', 2, 1),
+  (14, 'Live interpretation (services)', 0, 1),
+  (14, 'Written materials translation', 1, 1),
+  (15, 'Cultivation & grounds care', 0, 1),
+  (15, 'Landscape design', 1, 1),
+  (15, 'Garden / grounds maintenance', 2, 1)
+) as v(unit_id, name, sort_order, is_active)
+where not exists (
+  select 1 from public.sub_units s
+  where s.unit_id = v.unit_id and s.name = v.name
+);
+
+-- ---------------------------------------------------------------------------
+-- Seed admins (passwords match prior local demo; change after deploy)
+-- Media & Service = unit id 12
+-- ---------------------------------------------------------------------------
+insert into public.admins (id, full_name, username, email, password, role, service_unit_id, sub_unit_name, branch_country, branch_state, is_active)
+select * from (values
+  (1::bigint, 'Super Admin'::text, 'superadmin'::text, 'superadmin@smhos.org'::text, 'Admin@1234'::text, 'super_admin'::text, null::bigint, ''::text, ''::text, ''::text, 1::smallint),
+  (2, 'Chuks', 'chuks', 'chuks@smhos.org', 'Ibiyeomie@58', 'service_unit_leader', 12, '', '', '', 1),
+  (3, 'Inatimi', 'inatimi', 'inatimi@smhos.org', 'Ibiyeomie@58', 'sub_unit_leader', 12, 'Audio', '', '', 1),
+  (4, 'Nigeria Country Super Admin', 'country.admin', 'country.admin@smhos.org', 'Ibiyeomie@58', 'country_super_admin', null, '', 'NG', '', 1),
+  (5, 'Rivers State Super Admin', 'rivers.state', 'rivers.state@smhos.org', 'Ibiyeomie@58', 'state_super_admin', null, '', 'NG', 'RI', 1)
+) as v(id, full_name, username, email, password, role, service_unit_id, sub_unit_name, branch_country, branch_state, is_active)
+where not exists (select 1 from public.admins a where a.id = v.id);
+
+select setval(
+  pg_get_serial_sequence('public.admins', 'id'),
+  (select coalesce(max(id), 1) from public.admins)
+);
+
+insert into public.app_settings (id, templates, overdue_threshold_hours, permissions)
+select
+  1,
+  '{"approved": "Hello {{name}}, your registration has been approved.", "rejected": "Hello {{name}}, your registration was not approved.", "waitlisted": "Hello {{name}}, your registration is currently waitlisted."}'::jsonb,
+  72,
+  '{"leaders_can_update_queue": true, "leaders_can_send_requests": true, "sub_unit_leaders_can_update_queue": true}'::jsonb
+where not exists (select 1 from public.app_settings where id = 1);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605100001_extend_admin_roles.sql
+-- -----------------------------------------------------------------------------
+-- Add Data Entry Admin + Satellite Church Admin; optional satellite label on admins.
+
+alter table public.admins add column if not exists satellite_site text not null default '';
+
+-- Inline CHECK on `role` is typically named admins_role_check in PostgreSQL.
+alter table public.admins drop constraint if exists admins_role_check;
+
+alter table public.admins add constraint admins_role_check check (role in (
+  'super_admin',
+  'general_admin',
+  'data_entry_admin',
+  'country_super_admin',
+  'state_super_admin',
+  'satellite_church_admin',
+  'service_unit_leader',
+  'sub_unit_leader'
+));
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605110001_create_announcements_table.sql
+-- -----------------------------------------------------------------------------
+create table if not exists public.announcements (
+  id bigserial primary key,
+  title text not null,
+  body text not null,
+  branch_country text not null default '',
+  scope_unit_id bigint references public.service_units (id) on delete set null,
+  scope_sub_unit text not null default '',
+  scope_branch_state text not null default '',
+  scope_satellite_site text not null default '',
+  created_by_admin_id bigint references public.admins (id) on delete set null,
+  created_by_name text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_announcements_created_at on public.announcements (created_at desc);
+create index if not exists idx_announcements_country on public.announcements (branch_country);
+
+alter table public.announcements enable row level security;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605120001_leader_accept_verification_and_announcement_scope.sql
+-- -----------------------------------------------------------------------------
+-- Sub-unit leader acceptance attestations (stored on registration row).
+alter table public.registrations add column if not exists leader_accept_foundation_class boolean not null default false;
+alter table public.registrations add column if not exists leader_accept_water_baptism boolean not null default false;
+alter table public.registrations add column if not exists leader_accept_wolbi boolean not null default false;
+alter table public.registrations add column if not exists leader_accept_wolbi_level text not null default '';
+alter table public.registrations add column if not exists leader_accept_called_candidate boolean not null default false;
+alter table public.registrations add column if not exists leader_accept_physical_meeting boolean not null default false;
+alter table public.registrations add column if not exists leader_accept_verified_at timestamptz;
+
+-- Announcements: optional service unit / sub-unit scope (for leaders).
+alter table public.announcements add column if not exists scope_unit_id bigint references public.service_units (id) on delete set null;
+alter table public.announcements add column if not exists scope_sub_unit text not null default '';
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605130001_announcements_branch_satellite_scope.sql
+-- -----------------------------------------------------------------------------
+-- Branch / satellite targeting for announcements (country / state / site scoped posts).
+alter table public.announcements add column if not exists scope_branch_state text not null default '';
+alter table public.announcements add column if not exists scope_satellite_site text not null default '';
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605140001_location_catalog_requests.sql
+-- -----------------------------------------------------------------------------
+-- Structured location proposals from data entry (super/general approve before sites go live).
+alter table public.admin_requests add column if not exists request_type text not null default 'general';
+alter table public.admin_requests add column if not exists payload jsonb not null default '{}'::jsonb;
+
+create table if not exists public.satellite_church_sites (
+  id bigserial primary key,
+  continent text not null default '',
+  branch_country text not null,
+  branch_state text not null,
+  lga text not null default '',
+  site_name text not null,
+  source_request_id bigint references public.admin_requests (id) on delete set null,
+  is_active int not null default 1,
+  created_at timestamptz not null default now(),
+  unique (branch_country, branch_state, lga, site_name)
+);
+
+create index if not exists idx_satellite_sites_branch on public.satellite_church_sites (branch_country, branch_state);
+create index if not exists idx_satellite_sites_active on public.satellite_church_sites (is_active);
+
+alter table public.satellite_church_sites enable row level security;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605150001_admin_notifications.sql
+-- -----------------------------------------------------------------------------
+-- In-app notifications (e.g. overdue applications for unit / sub-unit leaders).
+create table if not exists public.admin_notifications (
+  id bigserial primary key,
+  admin_id bigint not null references public.admins (id) on delete cascade,
+  type text not null default 'overdue_application',
+  title text not null,
+  body text not null,
+  entity_type text not null default '',
+  entity_id text not null default '',
+  read_at timestamptz,
+  created_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create index if not exists idx_admin_notifications_admin_created on public.admin_notifications (admin_id, created_at desc);
+
+-- One overdue alert per registration per leader until the registration leaves the open pipeline.
+create table if not exists public.overdue_notify_dedup (
+  registration_id text not null,
+  admin_id bigint not null references public.admins (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (registration_id, admin_id)
+);
+
+alter table public.admin_notifications enable row level security;
+alter table public.overdue_notify_dedup enable row level security;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605190001_salvation_ministries_directory.sql
+-- -----------------------------------------------------------------------------
+-- Merged from salvation_ministries_structure.sql (Excel export)
+-- Postgres: directory mirrors + public.churches for the registration form
+
+create table if not exists public.directory_countries (
+  id integer primary key,
+  name text not null
+);
+
+create table if not exists public.directory_states (
+  id integer primary key,
+  country_id integer not null references public.directory_countries(id) on delete cascade,
+  name text not null
+);
+
+create table if not exists public.directory_branches (
+  id integer primary key,
+  state_id integer not null references public.directory_states(id) on delete cascade,
+  name text not null,
+  address text not null default ''
+);
+
+create index if not exists idx_directory_states_country on public.directory_states(country_id);
+create index if not exists idx_directory_branches_state on public.directory_branches(state_id);
+
+alter table public.directory_countries enable row level security;
+alter table public.directory_states enable row level security;
+alter table public.directory_branches enable row level security;
+drop policy if exists "anon_read_directory_countries" on public.directory_countries;
+create policy "anon_read_directory_countries" on public.directory_countries for select using (true);
+drop policy if exists "anon_read_directory_states" on public.directory_states;
+create policy "anon_read_directory_states" on public.directory_states for select using (true);
+drop policy if exists "anon_read_directory_branches" on public.directory_branches;
+create policy "anon_read_directory_branches" on public.directory_branches for select using (true);
+grant select on public.directory_countries to anon, authenticated;
+grant select on public.directory_states to anon, authenticated;
+grant select on public.directory_branches to anon, authenticated;
+
+insert into public.directory_countries (id, name) values
+  (1, 'Nigeria'),
+  (2, 'Asia Region'),
+  (3, 'Benin Republic'),
+  (4, 'Cameroon'),
+  (5, 'Gambia'),
+  (6, 'Ghana'),
+  (7, 'Switzerland'),
+  (8, 'United Arab Emirates'),
+  (9, 'United Kingdom'),
+  (10, 'United States')
+on conflict (id) do update set name = excluded.name;
+
+insert into public.directory_states (id, country_id, name) values
+  (1, 1, 'Rivers State'),
+  (2, 1, 'Abia State'),
+  (3, 1, 'Akwa-Ibom State'),
+  (4, 1, 'Anambra State'),
+  (5, 1, 'Adamawa State'),
+  (6, 1, 'Bauchi State'),
+  (7, 1, 'Bayelsa State'),
+  (8, 1, 'Benue State'),
+  (9, 1, 'Borno State'),
+  (10, 1, 'Cross River State'),
+  (11, 1, 'Delta State'),
+  (12, 1, 'Ebonyi State'),
+  (13, 1, 'Edo State'),
+  (14, 1, 'Ekiti State'),
+  (15, 1, 'Enugu State'),
+  (16, 1, 'FCT Abuja'),
+  (17, 1, 'Gombe State'),
+  (18, 1, 'Imo State'),
+  (19, 1, 'Jigawa State'),
+  (20, 1, 'Kaduna State'),
+  (21, 1, 'Kano State'),
+  (22, 1, 'Katsina State'),
+  (23, 1, 'Kebbi State'),
+  (24, 1, 'Kogi State'),
+  (25, 1, 'Kwara State'),
+  (26, 1, 'Lagos State'),
+  (27, 1, 'Nasarawa State'),
+  (28, 1, 'Niger State'),
+  (29, 1, 'Ogun State'),
+  (30, 1, 'Ondo State'),
+  (31, 1, 'Osun State'),
+  (32, 1, 'Oyo State'),
+  (33, 1, 'Plateau State'),
+  (34, 1, 'Sokoto State'),
+  (35, 1, 'Taraba State'),
+  (36, 1, 'Yobe State'),
+  (37, 1, 'Zamfara State'),
+  (38, 10, 'North America'),
+  (39, 9, 'United Kingdom & Canada'),
+  (40, 7, 'Switzerland'),
+  (41, 8, 'United Arab Emirates'),
+  (42, 2, 'Asia'),
+  (43, 6, 'Ghana'),
+  (44, 3, 'Benin Republic'),
+  (45, 4, 'Cameroon'),
+  (46, 5, 'Gambia')
+on conflict (id) do update set country_id = excluded.country_id, name = excluded.name;
+
+insert into public.directory_branches (id, state_id, name, address) values
+  (1, 1, 'ABONNEMA', 'ABONNEMA/DEGEMA ROAD, CONSULATE DEGEMA'),
+  (2, 1, 'ABONNEMA 2', 'BE-DON CLOSE OFF ABONNEMA/OBONOMA ROAD, ABONNEMA'),
+  (3, 1, 'SILVER DOVE', 'BESIDE TIMBER MARKET SARS ROAD, RUKPOKWU'),
+  (4, 1, 'SIAT', 'SIAT ESTATE SCHOOL, UBIMA'),
+  (5, 1, 'BIG ELELE 2', '#3/4 OMUSE STREET, MGBUAYIM, BIG ELELE TOWN'),
+  (6, 1, 'AWESOME', 'OFF OLD PH RD, HIGH TENSION, ALETO-ELEME'),
+  (7, 1, 'OBIWALI', '#135 OBIWALI ROAD, NKPOLU JUNCTION, PH'),
+  (8, 1, 'IBANI', 'SAND FILLED, IBANI STREET, BOROKIRI, PORT HARCOURT'),
+  (9, 1, 'OGINIGBA', '#1 CAPINO DRIVE, ANSETH HOSPITAL BY SCHOOL ROAD, NEW LAYOUT OGINIGBA, PORTHARCOURT'),
+  (10, 1, 'RUMUEKINI SCHOOL ROAD', 'SALVATION MINISTRIES RUMUEKINI SCHOOL ROAD BRANCH, RUMUEKINI, PORT HARCOURT'),
+  (11, 1, 'ABALAMABIE', 'ADJACENT TO FEDERAL POLYTECHNIC OF OIL AND GAS, BONNY ISLAND'),
+  (12, 1, 'ELELENWO 3', 'ORANGE BUS STOP, ALONG REFINERY ROAD, ELELENWO, PORT HARCOURT'),
+  (13, 1, 'ABOBIRI', '#4 ABOBIRI STREET OFF HARBOUR ROAD, TOWN, PORT HARCOURT'),
+  (14, 1, 'ABUA 1', '1, SALVATION ROAD OPP ALEX SAW MILL, AYAMA-EMILAGHAN ABUA CENTRAL'),
+  (15, 1, 'MILE 1 DIOBU', '#44 ABAKALIKI STREET, MILE 1 DIOBU, RUMUWOJI COMMUNITY'),
+  (16, 1, 'ABUA 2', 'ALONG OGHORA ROAD AMALEM ABUA CENTRAL ABUA'),
+  (17, 1, 'ABULOMA', '103 ABULOMA ROAD, PH'),
+  (18, 1, 'OZUBOKO', 'ALONG PRIMARY SCHOOL ROAD, OZUBOKO'),
+  (19, 1, 'ADA GEORGE', 'RUMUOKE ROAD, OFF OKILTON JUNCTION OFF ADA GEORGE ROAD'),
+  (20, 1, 'AEROPLANE DRIVE ABULOMA', '37, GEORGE SEKIBO STREET, OFF AEROPLANE DRIVE, ABULOMA, PH'),
+  (21, 1, 'AGBANI DAREGO', 'AGBANI DAREGO COMPLEX, OPP. 136/138 BENDE STREET, TOWN, PORT HARCOURT'),
+  (22, 1, 'AGBA-NDELE', 'EHIOR WOMEN HALL, AGBA-NDELE'),
+  (23, 1, 'AGGREY ROAD', '77, AGGREY ROAD, PH'),
+  (24, 1, 'AGGREY ESTATE', 'AGGREY HOUSING ESTATE INVENT CENTRE SATELLITE CHURCH, PORT HARCOURT'),
+  (25, 1, 'AGIP', '#41 AGIP ROAD BY ESTATE JUNCTION, PORT HARCOURT'),
+  (26, 1, 'AGIP 2', 'PLOT 3, ROAD 26, AGIP ESTATE, PHC'),
+  (27, 1, 'AHOADA', '60, OMUKU ROAD AHOADA'),
+  (28, 1, 'FOUNTAIN OF WISDOM (AHOADA)', 'FOUNTAIN OF WISDOM SCHOOL, OPPOSITE MOUNTAIN OF FIRE, CIVIL DEFENCE ROAD, AHOADA EAST'),
+  (29, 1, 'NWAGBOGWE', '#5 NWAGBOGWE-WAOBIKEZE STREET, OMOKU'),
+  (30, 1, 'AKPAJO-IRIEBE', 'SALVATION MINISTRIES AKPAJO ROAD CHURCH, IRIEBE, OYIGBO'),
+  (31, 1, 'AKPAJO', 'BESIDE AKPAJO MARKET, FARM ROAD, BY ARISE AND SHINE BUSTOP, AKPAJO'),
+  (32, 1, 'ALAKAHIA', 'ANWURI PAVILION, KM16, EAST WEST ROAD, ALAKAHIA, OBIO AKPOR'),
+  (33, 1, 'ALAKAHIA-ALOGU', 'OPPOSITE COLLEGE COURT SUITES, ALAKAHIA ROAD, PHC'),
+  (34, 1, 'ALODE-ELEME', 'LIPZA PLAZA, 17 MARKET ROAD, ALODE-ELEME, RIVERS STATE'),
+  (35, 1, 'AGBONCHIA-ELEME', 'AGBONCHIA CHURCH, ELEME'),
+  (36, 1, 'AGBONCHIA-II', 'BY EPISTEME SCHOOL HEALTH CENTRE ROAD, ELEME, RIVERS STATE'),
+  (37, 1, 'ALUU', 'ALONG RUMUEKINI ROAD, ALUU'),
+  (38, 1, 'PRAISE ARENA ALUU-OMUIKE', 'ALONG OMUODA OMUAGWA LINK ROAD, OMUIKE, ALUU'),
+  (39, 1, 'ALUU-OMUIGWE', 'ABUJA PHASE 2, ALUU, PH'),
+  (40, 1, 'ALUU OMUOKIRI', 'WOLI STREET ALUU OMUOKIRI ALONG CHOBA UNIPORT ROAD, PH'),
+  (41, 1, 'ALUU OMUOKO', 'ALUU OMUOKO TOWN HALL'),
+  (42, 1, 'ALUU MBODO', 'NO 13 ALUU MBODO OFF AIRPORT ROAD'),
+  (43, 1, 'AMAECHI DRIVE GRA', 'AMAECHI DRIVE GRA PHASE 3, PH'),
+  (44, 1, 'ATC-OKRIKA', 'ATC BY-PASS ROAD ATC, OKRIKA'),
+  (45, 1, 'AMEH PLAZA', 'NO 166 RUMUAGHUOLU RD OPP JBECS ALUMINIUM & WATER COMPANY RUMUAGHUOLU CLUB OBIO AKPOR, PH'),
+  (46, 1, 'ANDONI-UNYEADA', 'TOWN/NECO HALL UNYEADA TOWN, ANDONI, RIVERS STATE'),
+  (47, 1, 'IBOTIREM', 'IBOTIREM, ANDONI'),
+  (48, 1, 'AKWETE', 'AKWETE OYIGBO'),
+  (49, 1, 'OGBOSO', 'SALVATION MINISTRIES, OGBOSO'),
+  (50, 1, 'AZIKIWE', '#5 AZIKIWE STREET, MILE 2, DIOBU, PORT HARCOURT'),
+  (51, 1, 'OKUJAGU-AZUABIE', '54 AMONI STREET AZUABIE TOWN, BESIDE BANGA, OKUJAGU'),
+  (52, 1, 'OKUJAGU-2', 'SALVATION MINISTRIES CHURCH, OKUJAGU-2, AZUABIE'),
+  (53, 1, 'OWHONDA', '#22 OWHONDA STREET ATALI, OBIAKPO'),
+  (54, 1, 'IGNATIUS AJURU', 'BESIDE NEW HEAVEN HOSTEL, IGNATIUS AJURU UNIVERSITY OF EDUCATION'),
+  (55, 1, 'BANE', 'MAA-OR CHURCH, BANE, KHANA LGA, BORI REGION'),
+  (56, 1, 'BAEN', 'OPPOSITE BAEN TOWN SQUARE, BAEN'),
+  (57, 1, 'B-DERE', 'B-DERE COMMUNITY TOWN HALL, B-DERE GOKHANA'),
+  (58, 1, 'BEERI', 'MODEL PRIMARY SCHOOL 2, BEERI'),
+  (59, 1, 'BERA', 'BERA CIVIC CENTER, GOKANA'),
+  (60, 1, 'BEN PARADISE', 'BRILLIANT INT''L SCHOOL, BEN PARADISE STREET, ABIRIBA QTRS, OYIGBO'),
+  (61, 1, 'BEULAH LAND', 'LOCATION 15, UMUEBULU 2, OYIGBO'),
+  (62, 1, 'BETTER LIFE', 'BY NDDC ROAD, OYIGBO'),
+  (63, 1, 'BIG ELELE', 'ELELE CIVIC CENTER, BIG ELELE TOWN LGA'),
+  (64, 1, 'DIAMOND PLAZA', 'ALONG SARS ROAD, (CELESTINE OMEHIA ROAD), BETWEEN AKWAKA JUNCTION AND NEW ROAD JUNCTION, RUKPOKWU'),
+  (65, 1, 'BODO', 'TOWN HALL, NEW MARKET, BOTOR VILLAGE BODO CITY'),
+  (66, 1, 'BOLO', 'OPPOSITE VICTOR ALABO OIL & GAS GRA, BOLO'),
+  (67, 1, 'WAKAMA', 'WAKAMA AMA COMMUNITY TOWN SQUARE'),
+  (68, 1, 'BOMU SATELLITE', '78 KABANI ROAD BOMU'),
+  (69, 1, 'BONNY ISLAND', '8 KING EDWARD ASIMINI BYPASS (BERGER ROAD) BONNY ISLAND'),
+  (70, 1, 'BONNY ISLAND 2', 'BONNY HERITAGE CENTER, #39 KING WILLIAM DAPPA ROAD, BONNY ISLAND'),
+  (71, 1, 'BOROBARA/KIRA', 'BOROBARA COMMUNITY TOWN HALL, TAI LGA, RIVERS STATE'),
+  (72, 1, 'BORI', 'YEGHE BORI-ROAD BEFORE YEGHE-BRIDGE, 43 HOSPITAL ROAD, BORI'),
+  (73, 1, 'LUEKE', 'SALVATION MINISTRIES LUEKE BRANCH'),
+  (74, 1, 'GIO', 'GIO COMMUNITY TOWN HALL'),
+  (75, 1, 'NWEOL', 'NWEOL TOWN HALL'),
+  (76, 1, 'EEKEN', 'EEKEN COMMUNITY TOWN HALL'),
+  (77, 1, 'KEN POLY', '#45 ZAAKPON ROAD, GODDY PLAZA, BORI'),
+  (78, 1, 'UEGWERE', 'EEGWERE TOWN SQUARE'),
+  (79, 1, 'BORI 2 TIMER SATELLITE', 'SHOPPING MALL OPPOSITE, GENERAL HOSPITAL BORI'),
+  (80, 1, 'BORIKIRI', '6 KOLOKUMA STREET, BORIKIRI PH'),
+  (81, 1, 'BOTEM', 'BOTEM PRIMARY AUDITORIUM, BOTEM TAI'),
+  (82, 1, 'BUGUMA CITY', 'DETEME SAND FILLED BEHIND MODEL PRIMARY SCHOOL, CLOSE TO POLICE STATION, BUGUMA CITY'),
+  (83, 1, 'ABALAMA BUGUMA', 'ALABAMA ROAD, OFF ABALAMA POLICE STATION, ABALAMA, ASALGA'),
+  (84, 1, 'ISIODU', 'RUMU NWONBUEZE FAMILY HALL, ISIODU EMOHUA'),
+  (85, 1, 'BUGUMA 2', 'EGILE''S COMPOUND, BUGUMA CITY'),
+  (86, 1, 'BUKUMA (AGUMA)', 'SCHOOL ROAD BUKUMA DELGA, RIVERS STATE'),
+  (87, 1, 'IDO', 'CHIEF PETER BAGSHAW ALAWAIFAA''S HOUSE, ESUKU''S COMPOUND, IDO, ASALGA'),
+  (88, 1, 'RUMUODOMAYA 2', '#2 ICHIEGBO STREET OFF AIRPORT ROAD BY NNPC FILLING STATION, RUMUODOMAYA'),
+  (89, 1, 'CHINDA', '#109 SOLID PALM PLAZA BY TRANSFORMER, CHINDA ROAD OFF ADA-GEORGE, PORT HARCOURT'),
+  (90, 1, 'AGIP 3', '#7 ROAD 1 EXTENSION, AGIP ESTATE'),
+  (91, 1, 'CHOBA', '17/19, HABITAT DRIVE, RUMUALOGU TOWN, CHOBA'),
+  (92, 1, 'CHOBA 2', '#10 OFF OKOCHA STREET OWHIPA, CHOBA'),
+  (93, 1, 'CHOBA 3', '16, IGBOGO ROAD (BACK OF CHEM) CHOBA, PHC'),
+  (94, 1, 'CHOKOCHO ETCHE', '15, UMU-OKORO NWADI STREAM ROAD, CHOKOCHO, OFF IGBO-ETCHE, PHC'),
+  (95, 1, 'CHOKOTA IGBO ETCHE 1', 'UMUONA STREAM ROAD, OFF ABA ROAD, CHOKOTA IGBO-ETCHE, RIVERS STATE'),
+  (96, 1, 'CHOKOTA IGBO ETCHE 2', 'OUR GLORIOUS INT''L. ACADEMY UMUAKONU, IGBO ETCHE, RIVERS STATE'),
+  (97, 1, 'CHOKOTA 3 IGBO ETCHE', 'UMUAKONU FARM ROAD IGBO ETCHE, RIVERS STATE'),
+  (98, 1, 'CHOKOATA 4 UMOTUBE', 'ROBERT FARM ROAD, UMOTUBE IGBO-ETCHE'),
+  (99, 1, 'CHOKOTA 5 IGBO ETCHE', 'EBI PLAZA, UMUCHOKO FARM ROAD, CHOTOTA IGBO ETCHE'),
+  (100, 1, 'ABARA', 'ABARA, ETCHE'),
+  (101, 1, 'UMUOYE', 'UMUOYE, ETCHE'),
+  (102, 1, 'CONRIS PLACE', 'NEW ROAD, ROAD 9, 2ND AVENUE OFF MGBUOBA PORT HARCOURT'),
+  (103, 1, 'DE-AMEN', '24 EGBELU AKAMI ROAD, OFF NTA ROAD, CORNERSTONE, OZUOBA PH'),
+  (104, 1, 'CREAM DE LA CREAM', '#4 KPAKANI STREET, OFF OBI-WALI ROAD, RUMUIGBO'),
+  (105, 1, 'DEKEN', 'DEKEN ULTRA MODERN PRIMARY AUDITORIUM, DEKEN'),
+  (106, 1, 'DESS JEFF', 'DESS JEFF RECREATION CENTRE SHELL LOCATION ROAD BY CAR WASH, OYIGBO'),
+  (107, 1, 'D/LINE', '15, OMOKU STREET, D/LINE PORT HARCOURT'),
+  (108, 1, 'D/LINE 2', '3 AKOBO STREET D-LINE, BEHIND ASSOTEL BUILDING, GARRISON, PORT HARCOURT'),
+  (109, 1, 'EAGLE ISLAND 1', 'PLOT 247, ALHAJI ORLU AVENUE, OFF CALVARY TEMPLE ROAD, EAGLE ISLAND PORT HARCOURT'),
+  (110, 1, 'GREEN CITY', '#61 GREEN CITY ESTATE ROAD, GREEN CITY ESTATE, ELELENWO'),
+  (111, 1, 'EAGLE ISLAND 2', '32, HON. VICTOR IHUNWO (ANDONI) ROAD, EAGLE ISLAND'),
+  (112, 1, 'EASTERN BY-PASS', 'PLOT 20, OLD GRA EXTENSION, PHC'),
+  (113, 1, 'EBUBU', 'BEFORE BRIDGE ALONG EJAMAH-TRAILER PARK ROAD, EBUBU ELEME, RIVERS STATE'),
+  (114, 1, 'EBUBU EGBALOR', '#1 OBE STREET OFF EGBALOR FARM ROAD, EBUBU ELEME'),
+  (115, 1, 'SIME TAI', 'SYSTEM WORLD GUEST HOUSE, SIME JUNCTION, TAI'),
+  (116, 1, 'ECM PLAZA', 'KM5, EAST WEST ROAD, OPP CHARKINS MARITIME ACADEMY, PORT-HARCOURT'),
+  (117, 1, 'EDEOHA (AHOADA)', 'ALONG ABUA ROAD, BY IKATA JUNCTION, EDEOHA TOWN, AHOADA EAST'),
+  (118, 1, 'AMINIGBOKO', 'AMINIGBOKO'),
+  (119, 1, 'UZOCHI', 'SALVATION MINISTRIES UZOCHI'),
+  (120, 1, 'IDEOKE', 'SALVATION MINISTRIES IDEOKE'),
+  (121, 1, 'OWEREWERE', 'SALVATION MINISTRIES OWEREWERE'),
+  (122, 1, 'EGBU-ETCHE', 'EGBU COMMUNITY HALL, ETCHE'),
+  (123, 1, 'EGBELU 1', 'EGBELU OZODO, ALONG OGBOGORO ROAD, PORT HARCOURT'),
+  (124, 1, 'EGBELU 2', '#1 WORSHIP AVENUE, BESIDES DE FAME HOTEL, EGBELU-OZODO, PORT HARCOURT'),
+  (125, 1, 'EGBEDA', 'EGBEDA CHURCH, IBONIMERE ALONG EGBEDA/UBIMINI ROAD, EMOLGA, RIVERS STATE'),
+  (126, 1, 'UBIMINI', 'UBIMINI COMMUNITY TOWN HALL, UBIMINI'),
+  (127, 1, 'ODUOHA-EMOHUA', 'ODUOHA-EMOHUA COMMUNITY'),
+  (128, 1, 'EGEDE GLORY CENTER', '27 OJOTO STREET, MILE 2, DIOBU, PH'),
+  (129, 1, 'EGWI', 'ALONG ULAKWU RD, EGWI ETCHE'),
+  (130, 1, 'ELECHI DIOBU', '33, ELECHI BEACH MILE 1 DIOBU PHC'),
+  (131, 1, 'ELELE ALIMINI', 'OMUOHIA TOWN HALL, ELELE ALIMINI, OFF EAST-WEST ROAD'),
+  (132, 1, 'ELELENWO 1', '10 OILFIELD ROAD, BEHIND OILFIELD HOTEL, OFF SCHOOL ROAD, ELELENWO, PORTHARCOURT'),
+  (133, 1, 'ELELENWO 2', '70 ODANI ROAD, ELELENWO'),
+  (134, 1, 'ELELENWO ELIMINIGWE', 'ORO JESUS PLAZA, #222 OLD REFINERY ROAD, ELELENWO, PH'),
+  (135, 1, 'EBUKUMA', 'TOWN HALL 2, EBUKUMA ANDONI'),
+  (136, 1, 'UNION HALL ELIOZU', 'NENI TOWN UNION HALL, BESIDE BENVIATTO SCHOOL, ALONG GAS ROAD, POLICE POST, ELIOZU'),
+  (137, 1, 'ELIGBOLO 1', 'SALVATION MINISTRIES MARIS PLAZA, 2ND FLOOR, BESIDE IVORY HEIGHT GARDEN ESTATE, ENEKA LINK ROAD'),
+  (138, 1, 'ELIOGBOLO 2 RUKPOKU', 'BLESSED EDUCATIONAL SYSTEM SCHOOL, RUKPOKWU'),
+  (139, 1, 'ELIOZU 1', 'G.U AKE ROAD, ELIOZU FLYOVER, PH'),
+  (140, 1, '84 ELIOGBOLO', 'PLOT 84, ELIOGBOLO, RUMUODOMAYA, PH'),
+  (141, 1, 'ELIOZU FARM ROAD', 'FARM ROAD 2, ELIOZU'),
+  (142, 1, 'GRACE AND GLORY CENTER', '#8 IYIAKA STREET, OFF CAR WASH JUNCTION ELIOPARANWO/OGBOGORO ROAD, ELIOPARANWO'),
+  (143, 1, 'ELIOPOKWU-ODU CAMBODIAH', 'CAMBODIAH EVENT CENTER ELIOPOKWU-ODU, ALUU LINK ROAD, ELIKPOKODU, RUKPOKWU'),
+  (144, 1, 'ELIOPOKWU-ODU', 'MABEL PLAZA, 155 ELIKPOKWU ODU/ALUU LINK ROAD, ROKPOKWU'),
+  (145, 1, 'TESTIMONY CENTRE', '11 GOLDEN PLAZA ELIOWHANI TESTIMONY CENTRE PORT HARCOURT'),
+  (146, 1, 'ELIMGBU', '#2 MANGO ESTATE, ELIMGBU'),
+  (147, 1, 'RUMUOKPARALI', 'BELIEVE WALI HALL, BAKERY JUNCTION, RUMUOKPARALI, PORT HARCOURT'),
+  (148, 1, 'OMUNWEI', 'SALVATION MINISTRIES OMUNWEI BRANCH, IGWURUTA'),
+  (149, 1, 'EMOHUA GRA', 'ALONG EMOHUA GENERAL HOSPITAL ROAD, G.R.A EMOHUA'),
+  (150, 1, 'ODUOHA-OGBAKIRI', 'ODUOHA-OGBAKIRI NKOROMA ROAD'),
+  (151, 1, 'OKPOROWO OGBAKIRI', 'IHUNWO''S COMPOUND, MGBUOBA STREET, OKPOROWO OGBAKIRI, EMOHUA'),
+  (152, 1, 'EMOHUA ELIBRADA', 'SALVATION MINISTRIES ELIBRADA BRANCH, EMOHUA, RIVERS STATE'),
+  (153, 1, 'OMUDIOGA', 'OMUDEDE COMMUNITY HALL'),
+  (154, 1, 'RUMUEKPE', 'RUMUEKPE COMMUNITY HALL IMOGU, RUMUEKPE, EMOLGA'),
+  (155, 1, 'MBIAMA', 'MBI-AMA'),
+  (156, 1, 'TOMBIA', 'SALVATION MINISTRIES CHURCH, TOMBIA'),
+  (157, 1, 'KRAKRAMA', 'SALVATION MINISTRIES CHURCH KRAKRAMA'),
+  (158, 1, 'EMOHUA 2', 'SALVATION MINISTRIES CHURCH, EMOHUA'),
+  (159, 1, 'ENEKA 1', 'OPPOSITE GOVERNMENT SECONDARY SCHOOL, ENEKA-IGWURUTA ROAD, ENEKA'),
+  (160, 1, 'RUMUOCHIORLU ENEKA', 'RD-27 RUMUOCHIORLU, ENEKA'),
+  (161, 1, 'ENEKA 2', 'APRIL EVENT CENTRE, ENEKA, RUMUOGUWUMMA NEW LAYOUT, PORT HARCOURT'),
+  (162, 1, 'ETEO-ELEME', 'HEALTH CENTRE ROAD, ETEO-ELEME, RIVERS STATE'),
+  (163, 1, 'FINIMA 1', 'BESIDES HEALTH CENTER QUARTERS, ZONE 3, FINIMA, BONNY'),
+  (164, 1, 'FINIMA 2', 'SAVE THE CHILD FOUNDATION AGALANGA, LONG HOUSE FINIMA, BONNY'),
+  (165, 1, 'FINIMA 3', 'WORKER''S CAMP, FINIMA, BONNY'),
+  (166, 1, 'FINIMA 4', 'PLOT 92, ZONE 2, CAR PARK, FINIMA, BONNY ISLAND'),
+  (167, 1, 'BATHURST', '#23 BATHURST STREET, TOWN, PORTHARCOURT'),
+  (168, 1, 'GLASSHOUSE', '28 RUMUOLA-STADIUM LINK ROAD, OFF STADIUM ROAD PORT HARCOURT'),
+  (169, 1, 'GEORGE-AMA', 'CHIEF ENYINNA POLO GEORGE-AMA, OKRIKA'),
+  (170, 1, 'H-PARAGON', 'OLD ONNE ROAD, EJAMAH EBUBU ELEME, RIVERS STATE'),
+  (171, 1, 'MOGHO (GOKANA)', 'MOGHO TOWN HALL, BEHIND MOGHO FOOTBALL FIELD, GOKANA'),
+  (172, 1, 'BIARA', 'BIARA COMMUNITY TOWN HALL, BIARA GOKANA'),
+  (173, 1, 'KPEAN', 'KPEAN CHURCH'),
+  (174, 1, 'OKAWALE', 'OKWALE CHURCH'),
+  (175, 1, 'KONO', 'KM2 BORI-KONO WATERSIDE ROAD KONO TOWN'),
+  (176, 1, 'IBAA TOWN', 'COMMUNITY TOWN HALL, BESIDE STATE PRIMARY SCHOOL 1, IBAA TOWN, RIVERS STATE'),
+  (177, 1, 'IBETO', '32, IBETO ROAD, OFF RECLAMATION ROAD, TOWN, PORT HARCOURT'),
+  (178, 1, 'IBOLOJI', '#4 WORLU EGUMA STREET, IBOLOJI ESTATE, RUMUIGBO, PH'),
+  (179, 1, 'IPO', 'AIRPORT ROAD, IP. KELGA'),
+  (180, 1, 'OMADEME', 'SALVATION MINISTRIES, OMADEME CHURCH'),
+  (181, 1, 'IHIE-ETCHE', 'IHIE COMMUNITY TOWN HALL ETCHE, R/S'),
+  (182, 1, 'IHUGBO AHOADA', 'IHUGBO TOWN BY YKC FILLING STATION EAST-WEST ROAD, IHUGBO, AHOADA'),
+  (183, 1, 'IHUOWO AHOADA', 'WOMEN TOWN HALL, IHUOWO, AHOADA EAST'),
+  (184, 1, 'OBIRI IKWERRE', 'SALVATION CLOSE, OBIRI IKWERRE, BESIDES GRA PHASE 5'),
+  (185, 1, 'IGBO-ETCHE UMULUUMULU', 'IGBO-ETCHE'),
+  (186, 1, 'IGBO-ETCHE UMUALIKPO', 'PEARL FIELD INT''L ACADEMY, IGBO-ETCHE UMUALIKPO'),
+  (187, 1, 'OKOCHE', 'OKOCHE FARM ROAD OPPOSITE, EDEGELEM BIG MARKET, IGBO ETCHE, ETCHE, RIVERS STATE'),
+  (188, 1, 'IGWURUTA', 'OMUOHIA COMMUNITY HALL, IGWURUTA'),
+  (189, 1, 'IGWURUTA 2', 'OFF AIRPORT ROAD'),
+  (190, 1, 'IGWURUTA 3-OMUMAH', 'OMUMAH TOWN HALL BY OMUMAH JUNCTION'),
+  (191, 1, 'IKWERRENGWO ETCHE OYIGBO', 'PROMISE LAND, IKWERENGWO ETCHE'),
+  (192, 1, 'RINCOLL (IGWURUTA-ALI)', 'SALVATION PATH, OFF ALIMINI ROAD, IGWURUTA-ALI'),
+  (193, 1, 'ILLAOBUCHI', '#105, ANOZIE, BY ILAOBUCHI, MILE 2 DIOBU, PH'),
+  (194, 1, 'RUMUEKINI 4', 'SALVATION MINISTRIES TODAY FM DRIVE, RUMEKINI PH'),
+  (195, 1, 'IRIEBE HOUSING ESTATE', 'IRIEBE HOUSING ESTATE, RIVERS STATE, PORT HARCOURT'),
+  (196, 1, 'IWOFE', '#59, IWOFE ROAD, BESIDE CITY CROWN HOTEL, RUMUEPIRIKOM'),
+  (197, 1, 'IWOFE 2', '#101 IWOFE ROAD, RUMUOLUMENI, PH'),
+  (198, 1, 'ISAKA TOWN', 'GYMING SPORT COMPLEX HALL ISAKA TOWN'),
+  (199, 1, 'ALAKIRI', 'ALAKIRI COMMUNITY TOWN HALL, OKIRIKA'),
+  (200, 1, 'EGBELELIE', 'EGBELELIE-AMA BESIDE FUBI PARADISE OKIRIKA'),
+  (201, 1, 'OLD IBAKA', 'OLD IBAKA COMMUNITY TOWN HALL, IBAKA'),
+  (202, 1, 'ISIOKPO', 'OPP/MAC-VIC HOTEL AGWARA ISIOKPO, RIVERS STATE'),
+  (203, 1, 'JOHN FIBERESIMA', '21 ENGR. AMININASOARI BAPAKAYE ROAD, JOHN FIBERESIMA-AMA, MAIN LAND OKRIKA'),
+  (204, 1, 'KARIS EVENT PLACE', '#1 BENDE STREET, RUMUOMASI, PORT-HARCOURT'),
+  (205, 1, 'KAANI', 'BUA-KAANI ULTRA MODEL TOWN HALL, KANI 1, OGONI'),
+  (206, 1, 'K-DERE', 'K-DERE COMMUNITY PRIMARY AUDITORIUM, K-DERE GOKANA'),
+  (207, 1, 'KALIO-AMA', 'BARR. T.O ISHMAEL HOUSE (INDWELLER''S LODGE) 11/12 OBUDIBO OMUARU, KALIO-AMA, OKRIKA'),
+  (208, 1, 'RUMUOLA', '#29 RUMUOLA ROAD, PHC'),
+  (209, 1, 'KINGS SATELLITE CHURCH', 'KM 2 ALFRED PLAZA OPPOSITE SPRINGWELL ACADEMY IZUOMA, NEW LAYOUT OYIGBO, RIVERS STATE'),
+  (210, 1, 'KPITE SATELLITE', 'KPITE COMMUNITY SCHOOL'),
+  (211, 1, 'KOROMA', 'KOROMA PRIMARY AUDITORIUM, KOROMA TAI'),
+  (212, 1, 'KOROKORO-TAI', 'KOROKORO TAI LGA, R/S'),
+  (213, 1, 'KULA', 'COMMUNITY TOWN HALL BY CANAL, KULA'),
+  (214, 1, 'BAKANA', 'CHIEF LULU''S COMPOUND, BAKANA'),
+  (215, 1, 'LEXCEL PLAZA', '#10, AHOADA ROAD, OPPOSITE GENERAL HOSPITAL, OMOKU, ONELGA, RIVERS STATE'),
+  (216, 1, 'LORD EMMANUEL', 'NO1 LORD EMMANUEL STREET, BY AIRFORCE JUNCTION RUMUOMASI, PORTHARCOURT'),
+  (217, 1, 'DE-PRAISE EVENT CENTRE', 'ANNEX ONE MAN VILLAGE, NKPOLU, RUMUIGBO, RIVERS STATE'),
+  (218, 1, 'DEN-BEC SATELLITE', '13B EAST-WEST ROAD, BESIDE GTBANK RUMUODUMAYA, PH'),
+  (219, 1, 'OKAHIA', 'OKAHIA ESTATE RUMUIGBO OPP. NNPC, EAST WEST ROAD, PHC'),
+  (220, 1, 'MARINE BASE', 'FIRISIKA POLO, DOWN MARINE BASE, PORT HARCOURT'),
+  (221, 1, 'MGBARAJA ROYAL HALL', 'EGBELU-MGBARAJA, OGBOGORO, OBIO AKPOR, RIVERS STATE'),
+  (222, 1, 'MGBARAJA NEW ROAD', 'MGBARAJA NEW ROAD, OGBOGORO, R/S'),
+  (223, 1, 'MGBUOBA', '112, NTA ROAD, BY LOCATION JUNCTION, BESIDE GTBANK, MGBUOBA, PH'),
+  (224, 1, 'MGBUODOHIA', '#1 YAKUBU STREET, OFF FARM ROAD, MGBUODOHIA, RUMUOLUMENI'),
+  (225, 1, 'MILE 1', '42, IKWERRE ROAD MILE 1 DIOBU, PHC'),
+  (226, 1, 'MILE 2-DIOBU', '#80 NNAKA STREET, MILE 1, DIOBU'),
+  (227, 1, 'MILE 3', '#9 WOBO STREET, MILE 3'),
+  (228, 1, 'MILE 4', '18, EBARA/OROAZI ROAD, RUMUEPIRIKOM, PH'),
+  (229, 1, 'U.O.E', 'IWOFE ROAD, BY BIDDEL FILLING STATION RUMUOLUMENI, PORT HARCOURT'),
+  (230, 1, 'NEW ROAD (BORIKIRI) 1', 'PLOT 159, ABIYE SEKIBO STREET, NEW ROAD, BORIKIRI, PHC'),
+  (231, 1, 'OBUMUNTON CHIRI', 'OBUMUNTON CHIRI COMMUNITY HALL'),
+  (232, 1, 'NDELE', 'FORMER STATE SCHOOL 1-NDELE'),
+  (233, 1, 'NDONI', 'LUCKY ODILI HALL, OLD MARKET ROAD, NDONI, ONELGA, RIVERS STATE'),
+  (234, 1, 'NGO TOWN', 'NGO CHURCH, NGO TOWN, ANDONI'),
+  (235, 1, 'NKPOGWU', '21 NKPOGWU ROAD TRANS AMADI INDUSTRIAL LAYOUT, PORT HARCOURT'),
+  (236, 1, 'NKPOLU', '2, IGWE STREET, OFF TORUGO STREET, OPP. NKPOLU PRIMARY SCHOOL, NKPOLU, RUMUIGBO, PORT HARCOURT'),
+  (237, 1, 'NKPOLU TOWN', 'NKPOLU, PHC'),
+  (238, 1, 'NKPOR', '29 CHIEF (HON) ADELE ORAGBULE CRESCENTS/NAVY NKPOR ROAD, NKPOR PORT HARCOURT'),
+  (239, 1, 'OZUOBA 2', '5 OKPORO STREET, BY RUMUOSI JUNCTION OFF NTA/CHOBA ROAD OZUOBA, PH'),
+  (240, 1, 'NONWA', 'NONWA ULTRA-MODERN MARKET, CONFERENCE HALL NONWA JUNCTION, TAI L.G.A, RIVERS STATE'),
+  (241, 1, 'NORTEM BORI', 'PRINCE IGBARA STREET, POLYTECHNIC ROAD, BORI'),
+  (242, 1, 'OBUAMA', 'COMMUNITY YOUTH CENTRE, OBUAMA, HARRY''S TOWN DEGEMA'),
+  (243, 1, 'OBRIKOM', 'ALONG EGBEMA ROAD, OBRIKOM, ONELGA, RIVERS STATE'),
+  (244, 1, 'OCHIGBA, AHOADA', 'IHUCHI HALL, OCHIGBA AHOADA EAST'),
+  (245, 1, 'ODIEMERENYI', 'WOMEN TOWN HALL ODIERENYI TOWN AHOADA EAST'),
+  (246, 1, 'ODILI ROAD', '#117, ODILI ROAD, AMADI AMA PORT HARCOURT'),
+  (247, 1, 'OGALE-ELEME', 'OPPOSITE DAUGHTER''S OF CHARITY NCHIA-ELEME'),
+  (248, 1, 'OGALE FARM ROAD', 'BY SHELL LOCATION, ELEME'),
+  (249, 1, 'OGIDAO-ETCHE', 'OGIDA TOWN HALL, OGIDA ETCHE'),
+  (250, 1, 'OGBUNABALI', '10 AHIAMAKARA OFF EDE STREET BY WAJA TRANS AMADI JUNCTION, OGBUNABALI, PORT HARCOURT'),
+  (251, 1, 'OGUNABALI 2', '11 OKWU CRESCENT OFF GADA STREET, OGUNABALI PH'),
+  (252, 1, 'OGBO-AHOADA', 'THRIFT HALL, OKIJA LANE OGBO-AHOADA EAST'),
+  (253, 1, 'OGBOGORO', 'ALONG AKPA AHIA AKANMI, OGBOGORO TOWN, PHC'),
+  (254, 1, 'OGOLOGO (EAGLE HOUSE)', 'NO 3, TIMAYA STREET, RUMUCHIORLU, OFF OHAKWE STREET, RUMUIGBO PH'),
+  (255, 1, 'OGU', 'SALVATION MINISTRIES ROAD SANDFIELD AREA, OGU'),
+  (256, 1, 'OGU 2', 'COURT HALL TOWN SQUARE, OGU'),
+  (257, 1, 'OGU 3', 'NEAR OLD CORPER''S LODGE MISSION, TENDE-AMA, OGU'),
+  (258, 1, 'OHIAMINI', '#15 PSYCHIATRIC ROAD, OHIAMINI, RUMUOLA-RUMUIGBO, PH'),
+  (259, 1, 'OKAKI', '#86 HAROLD WILSON DRIVE, OKAKI BORIKIRI'),
+  (260, 1, 'CAPTAIN AMANAGALA', 'OPPOSITE CAPTAIN AMANGALA JUNCTION, BOROKIRI TOWN, PORT HARCOURT'),
+  (261, 1, 'OKEHI-ETCHE', 'ALONG OKEHI-OMUMA FEDERAL ROAD OKEHI 1, ETCHE, RIVERS STATE'),
+  (262, 1, 'OKEMINI ROAD', 'OKEMINI ROAD BY Y-JUNCTION BEHIND NICEEFIELD SCHOOL, RUMUAGHOLU PORT HARCOURT'),
+  (263, 1, 'OKOCHIRI', 'KING NEMI T. OPUTIBEYA AMA, ISAIAH ROAD, OKOCHIRI KINGDOM, OKRIKA'),
+  (264, 1, 'OKOCHIRI 2', 'DCN. DANIEL IBUBELEYE ESTATE CHURCH OFF MESSIAH ROAD OKOCHIRI KINGDOM OKRIKA'),
+  (265, 1, 'OKOGBE-AHOADA', 'DE PRINCE GUEST HOUSE, ALONG OYAKAMA ROAD OKOGBE-AHOADA WEST'),
+  (266, 1, 'OKOMA HALL', '11, IGIATULO COMMUNITY ROAD BESIDE HIGH TIDE MARINE, ABULOMA'),
+  (267, 1, 'OKOMOKO-ETCHE', 'OKOMOKO COMMUNITY, OKOMOKO ETCHE'),
+  (268, 1, 'ACHIEVER', 'ACHIEVER''S INT''L SCHOOL, UMUDU, OMUMA'),
+  (269, 1, 'UMUATURU', 'UMUATURU COMMUNITY HALL'),
+  (270, 1, 'OKPORO ROAD', '#9 CHETA STREET OFF OKPORO ROAD, RUMUODARA'),
+  (271, 1, 'OKRIKA', 'OGBOGBO COMMUNITY HALL, SAND FILLED AREA, OGBOGBO-OKRIKA'),
+  (272, 1, 'OKRIKA-REFINERY', 'REFINERY MAIN GATE SATELLITE CHURCH, ABAM JUNCTION, OKRIKA'),
+  (273, 1, 'OKRIKA-GREAM AMA', 'GREAM-AMA COMMUNITY HALL, GREM-AMA, OKRIKA'),
+  (274, 1, 'OKRIKA-EKEREKANA', 'EKEREKANA COMMUNITY HALL, EKEREKANA OKRIKA'),
+  (275, 1, 'OKRIKA-OGOLOMA', 'OLD OGOLOMA TOWN HALL, BIKE BUS STOP, OGOLOMA, OKRIKA'),
+  (276, 1, 'OKRIKA-GRA', 'CHIEF AMAKIRI STREET, OFF BERENABO ROAD BEHIND AMATEL HOTELS, GRA-ABAM, OKRIKA'),
+  (277, 1, 'OKILTON', 'JONATHAN PLAZA, #20 ADA GEORGE ROAD BY OKILTON JUNCTION, PHC'),
+  (278, 1, 'OLD ABA ROAD OYIGBO', 'PARADISE INTERNATIONAL SCHOOL, #17 OLD ABA, MBANO CAMP, OYIGBO WEST, RIVERS STATE'),
+  (279, 1, 'OLD GRA', 'TOG HOTELS, #1A YOLA STREET, AMADI FLATS, OLD GRA, P/H'),
+  (280, 1, 'OMAGWA', 'OMUOLO TOWN HALL, OMAGWA'),
+  (281, 1, 'OMAGWA 3', 'ALONG OMUIKUME, AGWAWIRIE ROAD, OMUIKUME, OKPARAGWA, OMAGWA TOWN'),
+  (282, 1, 'OMERELU', 'ALONG OWERRI ROAD, OMOPI, OMERELU'),
+  (283, 1, 'OMEGA HOUSE RUMUODARA', 'KM 4 EAST-WEST ROAD, NANKA HALL RUMUODARA'),
+  (284, 1, 'OMOWEALTH', 'ALONG IMOGU ROAD, BY OMOWEALTH FILLING STATION, OMUEKETU, OMAGWA'),
+  (285, 1, 'OMUANWA', 'OMUTE YOUTHS TOWN HALL, OMUTE, OMUANWA'),
+  (286, 1, 'OMOKU', '#180, AHOADA ROAD (FORMER MR. BIGGS BY IKIRI ROUNDABOUT) OMOKU, ONELGA, RIVERS STATE'),
+  (287, 1, 'OMOKU-OGBOGU', '#14 OMOKU/AHOADA ROAD, OPPOSITE COMMUNITY PRIMARY SCHOOL, OGBOGU TOWN, ONELGA, RIVERS STATE'),
+  (288, 1, 'OMOKU-OBAGI', 'EBERE PLAZA, OPPOSITE OBIBOR ROUND ABOUT, OBAGI, ONELGA, RIVERS STATE'),
+  (289, 1, 'OMOKU-EDE', 'AHOADA/OMOKU ROAD BY AMAH JUNCTION, EDE TOWN, ONELGA, RIVERS STATE'),
+  (290, 1, 'OMOKU-EREMA', 'EREMA SHOPPING MALL, EREMA TOWN-ONELGA, RIVERS STATE'),
+  (291, 1, 'OMOKU-OBOBURU', 'IBAGWA TOWN HALL, OBOBURU TOWN, ONELGA, RIVERS STATE'),
+  (292, 1, 'OMOKU IMMACULATE', 'IMMACULATE HOTEL AND EVENT CENTRE, 88 EREMA STREET, OMOKU, ONELGA, RIVERS STATE'),
+  (293, 1, 'OMOKU-OBOHIA', '15/17 OBOHIA ROAD, OMOKU, ONELGA, RIVERS STATE'),
+  (294, 1, 'OMOKU-OBOR', '#67 OBOR ROAD, BEFORE LOCATION JUNCTION, OBOR ROAD, OMOKU, ONELGA, RIVERS STATE'),
+  (295, 1, 'OMOKU-AKABUKA', '#61 AHOADA/OMOKU ROAD, VIC''S VIEW HOTEL & RESORT, AKABUKA TOWN, ONELGA, RIVERS STATE'),
+  (296, 1, 'OMOKU OBIOZIMINI', 'MELFORD UMESI COMPOUND, OBIOZIMINI TOWN, ONELGA, RIVERS STATE'),
+  (297, 1, 'OMUMA', 'UMUKPOTA CHURCH, OPP EBERI PARK, OMUMA, LGA'),
+  (298, 1, 'ONNE', 'RCCG ROAD, LUBEY, AGBETA-ONNE, ELEME L.G.A. RIVERS STATE'),
+  (299, 1, 'ONNE 2', 'BESIDE ST. MARY CATHOLIC CHURCH I.I.T.A. ROAD, ONNE'),
+  (300, 1, 'IKPO-AMA', 'SANDFIELD (PHASE 1), IKPO-AMA, OGU/BOLO L.G.A'),
+  (301, 1, 'OPOBO', 'BRUCE JAJA''S COMPOUND, OPOBO TOWN'),
+  (302, 1, 'NKORO', 'OPOROKUNO PROGRESSIVE HALL SAND FIELD NKORO TOWN OPOBO/NKORO LGA RIVERS STATE'),
+  (303, 1, 'EPELLEME', 'SALVATION MINISTRIES EPELLEMA CICILIA AVENUE, ALONG UZO-UZO EPELLEMA, OPOBO TOWN'),
+  (304, 1, 'CENTER POINT', '#52 HOSPITAL ROAD, BORI'),
+  (305, 1, 'BUNU', 'BESIDES COMMUNITY MARKET, BUNU TOWN, TAI'),
+  (306, 1, 'KIRA', 'KIRA MODERN TOWN HALL, KIRA, TAI'),
+  (307, 1, 'ORADA-OZUOBA', 'RUMUADOBO CIVIC CENTER, OPPOSITE AKPOR PALACE BY BAKERY JUNCTION OZUOBA'),
+  (308, 1, 'ORAIFITE-NEW RUMUIGBO', '#14 WALI OGBONDA ROAD (NTA-MERCYLAND LINK ROAD) OPPOSITE PEPSI DEPOT NEW LAYOUT, NEW RUMUIGBO PH'),
+  (309, 1, 'OROWORUKWO', '#130 ABA ROAD BY ST. JOHN''S CAMPUS GATE OROWORUKWO'),
+  (310, 1, 'OWUDO', '4 IYO CLOSE, OWUDO COMMUNITY ABULOMA, PORT HARCOURT'),
+  (311, 1, 'OYIGBO', 'BY BAMBOO MKT, TIMBER JUNCTION, OYIGBO, RIVERS STATE'),
+  (312, 1, 'OYIGBO-UNIK EVENT CENTRE IRIEBE', '5 UGOHENZ AVENUE, OPP. TARIBO JUNCTION, EGBELU-IRIEBE'),
+  (313, 1, 'EDDY JOHNSON', '52 SHELL LOCATION ROAD, OYIGBO, RIVERS STATE'),
+  (314, 1, 'NEW HEAVEN', 'G-CLIMAX MODEL SCHOOL, #30 NEW HEAVEN ESTATE, OYIGBO'),
+  (315, 1, 'OZUAHA', 'OMUSI-OZUAHA ROAD BY J.M.S, OZUAHA'),
+  (316, 1, 'OZUOBA 1', 'OPPOSITE AKPOR GRAMMAR SCHOOL, OZUOBA'),
+  (317, 1, 'OZUZU-ETCHE', 'OJIA TOWNHALL OZUZU TOWN ETCHE'),
+  (318, 1, 'RUMUOKWURUSI PIPE LINE', 'WUTCHE STREET, PIPELINE, RUMUOKWURUSHI, PORT HARCOURT, RIVERS STATE'),
+  (319, 1, 'AKWAKA 1-KEN STREET', '#2 KEN STREET, NEW ROAD LAYOUT AKWAKA PHASE 2 RUMUODOMAYA PH'),
+  (320, 1, 'AKWAKA 2-AKPULONU STREET', '#1 CHIEF AKPULONU STREET, OPPOSITE 1ST OPTION SCHOOL, AKWAKA, RUMUODOMAYA, PORT HARCOURT'),
+  (321, 1, 'ROSE HALL', '#148 IKWERRE ROAD, RUMUIGBO, PORT HARCOURT'),
+  (322, 1, 'PETER PLAZA', 'PETER PLAZA 47 OGBOGORO ROAD, BESIDE OGASAM PETROL STATION, OGBOGORO PORTHARCOURT'),
+  (323, 1, 'ELIOPARANWO 2', '64, ELIOPARANWO ROAD, PORT HARCOURT'),
+  (324, 1, 'GRACE CENTER RUMUOKWURUSI PIPELINE-2', 'GRACE CENTER RUMUOKWURUSI, PIPELINE-2, PHC'),
+  (325, 1, 'RUKPOKWU CIVIC CENTER', 'RUKPOKWU CIVIC CENTER, BEHIND STATE PRIMARY SCHOOL'),
+  (326, 1, 'RUMUOKWUTA', '10 MGBUGBA/NTA ROAD, ADA-ODUM PLAZA RUMUOKWUTA PHC'),
+  (327, 1, 'RUKPOKWU', 'KM 18 AIRPORT ROAD BY ALUU POLICE CHECK POINT, RUKPOKWU, PORT HARCOURT'),
+  (328, 1, 'RUMUAGHOLU', 'KING''S CITY BRANCH, RUMUAGHOLU, PORT HARCOURT'),
+  (329, 1, 'RUMUAGHOLU PIPELINE', 'RUMUAGHOLU PIPELINE JUNCTION, RUMUAGHOLU'),
+  (330, 1, 'RUMUAPU-ENEKA ROAD', 'OPPOSITE TENDRIL SCHOOL, RUMUAPU ROAD'),
+  (331, 1, 'ENEKA ROUND ABOUT', 'S.E WORLU PLAZA, ENEKA ROUNDABOUT'),
+  (332, 1, 'RUMUEKINI 1', '9 MARKET ROAD BY MTN MASK, RUMUEKINI'),
+  (333, 1, 'RUMUEKINI 2', 'SALVATION STREET BEFORE FISH FARM RUMUEKINI, PHC'),
+  (334, 1, 'EGBELU ALUU LINK', 'EGBELU CHURCH, ALUU LINK ROAD, RIVERS STATE'),
+  (335, 1, 'RUMUEPIRIKOM', 'ODOLI COMMUNITY HALL, ODOLI ROAD, MILE 4, WIMPY PHC'),
+  (336, 1, 'RUMUEWHARA', '#57 OROIGWE ROAD, RUMUEWHARA, OPPOSITE OROIGWE CIVIC CENTRE, PH'),
+  (337, 1, 'RUMUIBEKWE', 'GLORY LAND EVENT CENTRE 15, PARKER CRESCENT, RUMUIBEKWE ESTATE, PH'),
+  (338, 1, 'GLORY BRANCH ENEKA', 'SALVATION MINISTRIES, GLORY BRANCH, ENEKA'),
+  (339, 1, 'RUMUIGBO BARAKAH', '#8, HARUK ROAD OFF OBI WALI ROAD, RUMUIGBO, PORT HARCOURT'),
+  (340, 1, 'RUMUIGBO Y-JUNCTION', '16, APARA/NTA LINK ROAD RUMUIGBO PH'),
+  (341, 1, 'RUMUIGBO CIVIC CENTRE', 'RUMUIGBO CIVIC CENTRE, BESIDE RUMUIGBO PRI. HEALTH CARE CENTRE, IKWERRE RD. RUMUIGBO, PH'),
+  (342, 1, 'RUMUJI', 'MGBUATAFA HALL, RUMUJI-EMOHUA'),
+  (343, 1, 'RUMUEJIMA', 'RUMUEJIMA COMMUNITY HALL BY RUKPOKWU LAST BUS STOP OFF AIRPORT ROAD RUKPOKWU PHC'),
+  (344, 1, 'RUMUEME', '#295, IKWERRE ROAD, OPPOSITE RUMUEME CIVIC CENTRE, MILE 4, DIOBU'),
+  (345, 1, 'RUMUNDURU', '#118 RD, RUMUNDURU'),
+  (346, 1, 'RUMUNDURU TOWN HALL/CULVERT', 'PLOT 40/42 STREAM ROAD BY CULVERT, RUMUNDURU, PORT HARCOURT'),
+  (347, 1, 'RUMUOGBA', 'MIRACLE PLAZA OPPOSITE HERITAGE BANK BY ARTILLERY JUNCTION, OLD ABA ROAD, PORTHARCOURT'),
+  (348, 1, 'RUMUOBIAKANI', '#3 CONSTRUCTION AVENUE, NEPA QUARTERS, OPPOSITE PROPEL FILLING STATION BY RUMUOBIAKANI ROUND ABOUT'),
+  (349, 1, 'RUMUODARA', 'KM 4, EAST/WEST ROAD, NANKA TOWN HALL RUMUODARA, PORT HARCOURT'),
+  (350, 1, 'EVANGEL PLAZA', '#40 AIRPORT ROAD RUMUODOMAYA OPPOSITE RUMUODOMAYA NEW PARK'),
+  (351, 1, 'RUMUODOMAYA PHINEHAS SHOPPING PLAZA', '#76 AIRPORT RD PHINEHAS SHOPPING PLAZA RUMUODOMAYA PORT HARCOURT'),
+  (352, 1, 'RUMUKALAGBOR', '#28, RUMUKALAGBO/ELEKAHIA LINK ROAD, PH'),
+  (353, 1, 'RUMUOKORO', '#10 ELIEKE STREET OPPOSITE UBA, RUMUOKORO'),
+  (354, 1, 'RUMUOKWACHI', '#13, RUMUOKWACHI STR, RUMUOKWACHI TOWN PHC'),
+  (355, 1, 'RUMUOKWURUSI', 'ABA ROAD, ADJACENT TO UBA, RUMUOKWURUSI, PH'),
+  (356, 1, 'RUMUOLUMENI 1', '#97, AKER ROAD, RUMUOLUMENI, PH'),
+  (357, 1, 'RUMUOLUMENI 5', 'PLOT 2, OPPOSITE JESUS CLOSE, OFF AKER ROAD, RUMUOLUMENI'),
+  (358, 1, 'RUMUOSI', '#4 SALVATION ROAD, OPPOSITE GULF GAS PLANT, RUMUOSI'),
+  (359, 1, 'RUMUOWHA', 'ENEKA/RUKPOKWU ROAD RUMUOWHA, ENEKA, PORT HARCOURT'),
+  (360, 1, 'ENUGU STREET', '#3 ENUGU STREET'),
+  (361, 1, 'RUMUWOJI-ALODE NSUKKA', '#44 ABAKALIKI, MILE 1, DIOBU, RUMUWOJI BRANCH PHC'),
+  (362, 1, 'SAND FIELD (BORIKIRI)', '#1 WILSON BAKERY ROAD, NAVY JUNCTION UPE, BORIKIRI, PH'),
+  (363, 1, 'SARS ROAD', 'PLOT 16, ROAD 6, ROYAL ESTATE, SARS ROAD, PHC'),
+  (364, 1, 'SARS ROAD 2', 'MALL FLORA, SARS ROAD'),
+  (365, 1, 'SILA CENTRE UMACHI', '#4 PEACE AVENUE, BEHIND SILA INT''L SCHOOL, OMACHI, RUMUODOMAYA, PH'),
+  (366, 1, 'GOLF ESTATE', 'OKURUAMA COMMUNITY OFF PETER ODILI ROAD, SLAUGHTER/TRANS AMADI PHC'),
+  (367, 1, 'ST PATRICK PLAZA ENEKA', 'NEW LAYOUT ROAD RUMUEWHARA ROAD, PH'),
+  (368, 1, 'TAABAA', 'TAABAA PRIMARY SCHOOL 2'),
+  (369, 1, 'TIMBER JUNCTION', 'EAST-WEST ROAD RUMUOSI, KILOMETER 15 EAST WEST ROAD, RUMUOSI'),
+  (370, 1, 'IMMANUEL BRANCH', '#1 SALVATION CLOSE, IMMANUEL ROAD, ABULOMA, PHC'),
+  (371, 1, 'GLORIOUS HOUSE ELEME', 'ALONG TRAILER PARK ROAD, EAST/WEST ROAD, EBUBU ELEME'),
+  (372, 1, 'UBETA AHOADA', 'UBETA YOUTH CENTRE, UBETA TOWN'),
+  (373, 1, 'UBIMA', 'EBERE COMPOUND OMUORDU, UBIMA'),
+  (374, 1, 'UMUAGBAI', 'WEAVING CENTRE UMUAGBAI OYIGBO'),
+  (375, 1, 'UMUAKURU', 'UMUAKURU COMMUNITY TOWN HALL, IGBO ETCHE'),
+  (376, 1, 'UMUASUKPU', 'CHILDREN FOUNDATION SCHOOL, UMUASUKPU, IGBO-ETCHE'),
+  (377, 1, 'UMUECHEM-ETCHE', 'UMUNWAMBE TOWN HALL UMUOGO UMUECHEM ETCHE ALONG IGWURUTA ROAD'),
+  (378, 1, 'UMUOGODO', 'DE REPUBLIC, BESIDE NNPC FILLING STATION, UMUOGODO, IGBO-ETCHE'),
+  (379, 1, 'UMUEBULE 1', 'CHUMA JUO RESORT 1, SANDFIELD ROAD, UMUEBULE 1, ETCHE LGA, RIVERS STATE'),
+  (380, 1, 'UMUEBULE 2-NJOKU PLAZA', 'BESIDE EVENING MARKET, UMUEBULE 2, ETCHE PHC'),
+  (381, 1, 'UMUEBULE 4', 'UMUEBULU 4 BUNCHY HALL OYIGBO, RIVERS STATE'),
+  (382, 1, 'ULA-UPATA', 'OPP. ULA-UPATA SEC. SCH. ULAUPATA-AHOADA EAST'),
+  (383, 1, 'GRACE CENTER ELIGBOLO', 'NO. 5 NEPA ROAD, BRAINFIELD SCHOOL ROAD ELIGBOLO OFF EAST WEST ROAD, PH'),
+  (384, 1, 'UPATABO', 'EVENT CENTRE BY SECONDARY SCHOOL UPATABO AHOADA WEST'),
+  (385, 1, 'USOKUN-DEGEMA', 'ODERI HOTEL USOKUN DEGEMA'),
+  (386, 1, 'UST CAMPUS', 'RIVERS STATE UNIVERSITY SATELLITE CHURCH, ROAD A, BESIDE STAFF SCHOOL'),
+  (387, 1, 'UZUAKA', 'NDDC NEW HEALTH CENTRE UZUAKU, IMO GATE'),
+  (388, 1, 'VICZAAC-NTA ROAD', 'VICZAAC RENTAL EVENT, #309 NTA ROAD BESIDE NNPC FILLING STATION MGBUOBA PHC'),
+  (389, 1, 'VICTORY HOUSE', 'BEFORE REFINERY JUNCTION (FORMER FESTIVE FAVOUR BUILDING) ALETO ELEME, RIVERS STATE'),
+  (390, 1, 'WIIYAAKARA', 'PYAWUGAH HALL WIIYAAKARA KHANA LGA RIVERS STATE'),
+  (391, 1, 'WOJI 1', 'NO.1 CHURCH CLOSE, BEHIND UBA BANK, YKC JUNCTION, WOJI, PH'),
+  (392, 1, 'WOJI 2', 'REES PLAZA #27 EZEGBAKAGBAKA STREET WOJI PHC, RIVERS STATE'),
+  (393, 1, 'WOJI 3', '25 CIRCULAR ROAD OFF ALCON WOJI TOWN GBALAJAM PORT HARCOURT, RIVERS STATE'),
+  (394, 1, 'WOJI APAMINI', '#13 OMACHI LANE RUMUROLU, APAMINI'),
+  (395, 1, 'WOJI-5 ELIJIJI', '38 ELIJIJI AVENUE RUMUROLU'),
+  (396, 1, 'WOJI 6 NVIGWE', '44 NVIGWE ROAD, WOJI'),
+  (397, 1, 'WOJI 7', 'SALVATION MINISTRIES PALACE JUNCTION BRANCH, WOJI'),
+  (398, 1, 'WOJI 8', 'FAITH INTERNATIONAL SECONDARY SCHOOL, HALL 1, #9 FYNEFACE CHUKWU STREET, OFF ALCON ROAD, WOJI, PORTHARCOURT'),
+  (399, 1, 'WOKOMA', '32, WOKOMA STREET, MILE 3, DIOBU, PH'),
+  (400, 1, 'ZAAKPON', 'COMMUNITY TOWN HALL, ZAAKPON, KHANA LGA, RIVERS STATE'),
+  (401, 1, 'ZIVEN EVENT CENTRE', 'KM4 IGBO ETCHE ROAD BY POLICE CHECK POINT RUMUKWURUSI, PORT HARCOURT'),
+  (402, 1, 'MGBUORI', 'MGBUORI CHURCH RUMUOKWURUSI CIVIC CENTER'),
+  (403, 2, 'IHIE NDUME, UMUAHIA HQ', 'BESIDE PARADISE CRYSTAL HOTEL, OCHENDO BY-PASS, OFF BENDE ROAD, UMUAHIA'),
+  (404, 2, 'WARRI STREET', '4 WARRI STR. ISI-GATE UMUAHIA'),
+  (405, 2, 'UTURU, ABSU', 'OPP. ARMY CHECKPOINT ABSU ABIA STATE'),
+  (406, 2, 'OVIM', 'OVIM'),
+  (407, 2, 'OLOKORO SANTACRUX', 'OLOKORO SANTACRUX'),
+  (408, 2, 'AMUZUKWU OHAFIA', 'AMUZUKWU OHAFIA'),
+  (409, 2, 'AROCHUKWU', 'AROCHUKWU'),
+  (410, 2, 'KENVILLE AGBAMA', 'KENVILLE AGBAMA'),
+  (411, 2, 'OHAFIA EBEN', 'OHAFIA EBEN'),
+  (412, 2, 'UBAKALA', 'UBAKALA'),
+  (413, 2, 'UMUDIKE', 'UMUDIKE'),
+  (414, 2, 'PATORAIL', '#11 ABA RD, PATORAL HOTEL'),
+  (415, 2, 'AMAEKPU OHAFIA', 'AMAEKPU OHAFIA'),
+  (416, 2, 'ELUAMA', 'ELUAMA'),
+  (417, 2, 'OKIGWE RD, ABA HQ', '135C OKIGWE ROAD ABA'),
+  (418, 2, 'PARK RD ABA', '#2 PARK ROAD ABA'),
+  (419, 2, 'UKAEGBU (OGBOR HILL)', '#1, UKAEGBU RD, OGBOHILL ABA'),
+  (420, 2, 'OSUSU FAULK (ABA)', '#51 FAULKS ROAD, OSUSU'),
+  (421, 2, 'OKPU UMUOBO', 'UNION BANK BAYI ABA'),
+  (422, 2, 'OGWO RD', '#81 OGWO ROAD BY U GWUKE PARK'),
+  (423, 2, 'PH ROAD', '#2, ONUOHA STR BY PH RD'),
+  (424, 2, 'NGWA RD', '#17B, NGWA RD ABA'),
+  (425, 2, 'OHANKU', '#166 OHANKU RD BY IHEOJI MARKET'),
+  (426, 2, 'NNETU', 'EZIUKWU COMMUNITY HALL'),
+  (427, 2, 'ENWEREJI OVOM RD', '#5, EBWEREJI STR OFF AKPU RD BY OVOM'),
+  (428, 2, 'NEW UMUAHIA RD, AGBOR HILL', '#14B, NEW UMUAHIA RD OGBOHILL ABA'),
+  (429, 2, 'OLD EXPRESS', '#252 OLD EXPRESS BY URATTA ABA'),
+  (430, 2, 'ARIARA', '#269 FAULKS RD BY ARIARIA JUNCTION ABA'),
+  (431, 2, 'AZUMINI', 'AGHANIRU WOMEN HALL, UKWA EAST'),
+  (432, 2, 'OBEHIE', 'OBEHIE CENTRAL SCHOOL'),
+  (433, 2, 'UMULE', '#69 UMULE ROAD ABA'),
+  (434, 2, 'ABIRIBA', 'BOURDEX FARM ROAD, ABIRIBA'),
+  (435, 2, 'DIVINE', 'DIVINE FAVOUR HALL, 8 OLD EXPRESS'),
+  (436, 2, 'ABIRIBA-2, AGBAJA NKPORO', 'AGBAJA NKPORO'),
+  (437, 3, 'ABAK', '67 HOSPITAL ROAD ADJACENT TO UNION BANK, ABAK'),
+  (438, 3, 'ABAK ROAD', 'NEAR FLYOVER, ABAK ROAD, OBIO OFFOT UYO'),
+  (439, 3, 'AFAHA NSIT', 'CLOSE TO WATERBOARD STATION, AFAHA NSIT, NSIT IBOM LGA'),
+  (440, 3, 'AFAHA OFFIONG', '#1 CIVIC CENTRE ROAD, AFAHA OFFIONG, NSIT IBOM'),
+  (441, 3, 'IKOT ASURUA', '241 ABA RD, IKOT OSURUA. IKOT EKPENE'),
+  (442, 3, 'CALABAR ITU', '#26 CALABAR ITU HIGH WAY, ITAM UYO'),
+  (443, 3, 'EWET HOUSING', '78 BENNETT BASSEY, C-LINE EWET HOUSING ESTATE, OPP. KILIMAJARO, ORON ROAD, UYO'),
+  (444, 3, 'ETINAN', '#13. UMOH ETUK UDOH STREET, OPPOSITE ETINAN MARKET, ETINAN'),
+  (445, 3, 'ETE-IKOT ABASI', 'ETE BY METHODIST CENTRAL SCHOOL, ETE TOWN'),
+  (446, 3, 'FOUR LANE', 'GRACE AND MERCY HOUSE, #135A EDET AKPAN AVENUE (4 LANE) UYO'),
+  (447, 3, 'IBESIKPO', 'IKOT AKPA ETOK, AFTER HEALTH CENTRE, NUNG UDOE, IBESIKPO'),
+  (448, 3, 'IDORO RD', 'DORO EXPRESS ROAD, BESIDE CRYSTAL FILLING STATION, UYO'),
+  (449, 3, 'IDORO 2', '41 IDORO ROAD, ADJACENT ROAD SAFETY OFFICE, UYO'),
+  (450, 3, 'IBAKA', '6, BASSEY ETIFIT STREET, BEHIND NAVY CHECK POINT, IBAKA'),
+  (451, 3, 'IKOT-AKPADEN', 'AKPANDEN JUNCTION MKPAT ENIN L.G.A'),
+  (452, 3, 'IKOT-EKPENE', 'NO 10B NIGER STREET IKOT EKPENE'),
+  (453, 3, 'NTO OTONG', 'NTO-OTONG MIDIM ABAK, ALONG ETIM EKPO ROAD'),
+  (454, 3, 'IKONO', 'CLUB 999 ETIM-EDIENE IKONO, AKWA IBOM STATE'),
+  (455, 3, 'IKPA ROAD', '#47 IKPA RD, BESIDES UNIUYO ANNEX GATE, UYO'),
+  (456, 3, 'ITAK', 'ITAK BY KRIS-B LOUNGE'),
+  (457, 3, 'MBIEREBE', '178 MBIEREBE OBIO, AFTER MBIEREBE MARKET AKA ETINAN ROAD, UYO'),
+  (458, 3, 'NWANIBA RD', '277 NWANIBA RD, UYO'),
+  (459, 3, 'NDIYA', 'DE-BROWNSON PLAZA, NDIYA, NSIT UBIUM'),
+  (460, 3, 'OKOBO', 'OKOPEDI OKOBO UYO ROAD, OKOBO'),
+  (461, 3, 'ORON', '308 ORON ROAD OPPOSITE NEPA OFFICE, ORON'),
+  (462, 3, 'ORON RD, UYO', '#223 ORON ROAD, UYO (BY TIMBER JUNCTION)'),
+  (463, 3, 'UKANAFUN', '#13 EKPARAKWA ROAD, UKANAFUN'),
+  (464, 3, 'OBOT IDIM', '#112, AKA NUNG UDOE ROAD, BEFORE OBIT IDIM JUNCTION, UYO'),
+  (465, 3, 'UDOTONG, UYO (HQ)', '#9 UDOTUNG UBO STR, OFF AKA ROAD, UYO'),
+  (466, 3, 'INI', 'IKPE IKOT UKON INI LOCAL GOVERNMENT AREA'),
+  (467, 3, 'ABAK RD 2', '121 ABAK RD BY UKANAFFOT TRAFFIC LIGHT, UYO'),
+  (468, 3, 'IKOT EKPENE RD', '1 UDOBIO STREET, OFF IKOT EKPENE RD, BY KILIMANJARO, UYO'),
+  (469, 3, 'ATA UDOSUNG', 'ATA UDOSUNG, IKOT ABASI, UYO, AKWA IBOM STATE'),
+  (470, 3, 'PLAZA ABAK RD', 'ABAK ROAD BY PLAZA, IKOT EKPENE'),
+  (471, 3, 'EKABAM NSUKARA', 'EKABAM NSUKARA'),
+  (472, 3, 'ONNA', 'ONNA'),
+  (473, 3, 'EKOM IMAN', 'EKOM IMAN'),
+  (474, 3, 'OBOT AKARA', 'OBOT AKARA'),
+  (475, 3, 'EKET ORON RD', '#7 AFAHA ATIA ROAD, OFF EKET ORON ROAD, EKET'),
+  (476, 3, 'GRACE BILL EKET-HQ', 'GRACEBILL EKET'),
+  (477, 3, 'EKET IDIAM', '#7 AYAYAK STREET, OFF IDUA, EKET'),
+  (478, 3, 'EKET MARINA', '#10 MARINA RD, EKET'),
+  (479, 3, 'IBENO', '#1 TERMINAL ROAD, IBENO, OPP EXXONMOBIL, IBENO'),
+  (480, 3, 'IKOT OKON RD', 'KM 4, EKET-ETINA ROAD, IKOT OKUDOMO OKON TOWN HALL, BESIDE TIPPER WORKSHOP'),
+  (481, 3, 'IKOT UDOTA', 'IKOT UDOTA ROAD BY HERITAGE POLYTECHNIC, EKET'),
+  (482, 3, 'EKPRI NSUKARA', 'EKPRI NSUKARA'),
+  (483, 4, 'TEMP SITE AWKA', 'DESTINY POT''S FAST FOOD, NO 13 OBY-OKOLI AVENUE UNIZIK TEMP SITE AWKA'),
+  (484, 4, 'OBOSI', '1, ALONG MIKE AJEGBO ROAD, OBOSI MICRO FINANCE BANK BUILDING OBOSI'),
+  (485, 4, 'IHIALA', 'PAAP PLAZA OPPOSITE EZIANI PRIMARY SCHOOL ALONG ORLU ROAD IHIALA'),
+  (486, 4, 'ONITSHA UPPER IWEKA (HQ)', 'NO 18, NEW AMERICAN QUARTERS ONITSHA ANAMBRA STATE'),
+  (487, 4, 'NNEWI 1, LUCO', 'LUCO PLAZA BESIDE ANAEDO HALL OTOLO NNEWI'),
+  (488, 4, 'NNEWI 2, OLD ONITSHA ROAD', 'NO 69 OLD ONITSHA ROAD BESIDE NAU TEACHING HOSPITAL NNEWI'),
+  (489, 4, 'NNEWI 3', 'No 37 Odume Lay out, Ugwumba Junction Nkpor'),
+  (490, 4, 'NNEWI 4, NNOBI', 'ALONG NNOBI/NKPOR ROAD, AFTER UMUAGU JUNCTION NNOBI'),
+  (491, 4, 'NDIKELIONWU', 'BESIDE NDIKELIONWU TOWN HALL, OPPOSITE WHITE HOUSE, EKWULOBI A-OKO-UMUNZE ROAD, NDIKELIONWU'),
+  (492, 4, 'OWERRI RD, ONITSHA', 'OWERRI ONITSHA ROAD'),
+  (493, 4, 'IFITE, AWKA BRANCH', '#295 IFITE ROAD, RUBEZ VILLA JUNCTION IFITE AWKA'),
+  (494, 4, 'ICHI', 'BESIDES ICHI TECHNICAL SECONDARY SCHOOL OFF OLD ONITSHA ROAD, ANAMBRA STATE'),
+  (495, 4, 'OGBUNIKE', 'DIVINE HERITAGE PLAZA, OPP ONWA JUNCTION OGBUNIKE, OGIDI'),
+  (496, 4, 'AWADA', '#17 CC MUOGBO STREET, ODUME OBOSI, THE TOWN UNION HALL, RAINBOWNET BACK OF ARMY BARRACK'),
+  (497, 4, 'OBA', 'CHIBON JUNCTION BESIDE CHIBON HOTEL OBA'),
+  (498, 5, 'LOW COST HOUSE', '39 Iyorchia Ayu road, Wurukum Makurdi'),
+  (499, 5, 'MUBI', 'MUBI'),
+  (500, 5, 'NUMAN', 'GWEDA-MALLAM, BEHIND MAYASIN FILLING STATION, NUMAN'),
+  (501, 6, 'BAUCHI', 'RAFIN-ZURFI, BENCO JUNCTION, BAUCHI'),
+  (502, 6, 'SALAMA-1 YELWAN KUSU', 'SALAMA-1, YELWAN KUSU'),
+  (503, 6, 'TAFAWA BELEWA', 'BASE 10, SABO PLAZA, TAFAWA BELEWA'),
+  (504, 7, 'IMGBI', '18 IMGBI ROAD, AMARATA'),
+  (505, 7, 'EDEPIE', 'MELFORD OKILO EXPRESSWAY, EDEPIE'),
+  (506, 7, 'KPANSIA', 'ZIONHILL: ISAAC BORO EXPRESSWAY, BY OTIOTIO JUNCTION'),
+  (507, 7, 'AMASSOMA', '#4 NDU ROAD, BY NDU MAINGATE'),
+  (508, 7, 'AZIKORO', 'SALVATION DRIVE AZIKORO TOWN'),
+  (509, 7, 'NEMBE', 'UBE PRIMARY SCHOOL HALL, TOMBI'),
+  (510, 7, 'OKAKA', 'LAKEVIEW COMPLEX, OKAKA'),
+  (511, 7, 'IGBOGENE', 'ACHIEVERS FARM, IGBOGENE'),
+  (512, 7, 'MBIAMA', 'NEW LIFE PLAZA, OPPOSITE J.K JUNCTION'),
+  (513, 7, 'OBUNAGHA', 'LNG ROAD BY FIDO WATER'),
+  (514, 7, 'KAIAMA', 'ZUOFA''S RESIDENCE, FORU-WARI, OLOBIRI COMPOUND'),
+  (515, 7, 'ODI', 'IBIMO HALL, OGBOLOMA COMPOUND'),
+  (516, 7, 'OPU-NEMBE', 'SILVA OPUALA CHARLES ROAD, SANDFIELD'),
+  (517, 7, 'HARBOUR ROAD', 'BY SHELL RAMP, DOWN YENAGOA'),
+  (518, 7, 'OTUOKE', 'QUEENS GATE APARTMENT, P.A. ESTATE'),
+  (519, 7, 'SAGBAMA', 'TIMI PLAZA BESIDE GENERAL HOSPITAL, MILE 2'),
+  (520, 7, 'OKUTUKUTU', 'AMASOAMA ROAD'),
+  (521, 7, 'OTUASEGA', 'BESIDE RAYGANA GUEST HOUSE'),
+  (522, 7, 'OGBIA', 'BEFORE GOVERNMENT JETTY'),
+  (523, 7, 'SABAGREIA', 'NO.4 AYAMABIRI COMPOUND'),
+  (524, 7, 'OMPADEC', 'BESIDE OMPADEC SCH.'),
+  (525, 7, 'OBOGORO', 'SHOPRITE SUPERMARKET, ALONG ANYAMA ROAD, OGOGORO'),
+  (526, 7, 'AGBURA', 'MUNA STREET, ALONG AZIKORO/AGBURA ROAD'),
+  (527, 7, 'AGRISABA', 'STELLA OTIOTIO''S RESIDENCE'),
+  (528, 7, 'TWON BRASS', 'CAMEROON-AMA'),
+  (529, 7, 'TORU ORUA', 'CIVIC CENTRE'),
+  (530, 7, 'AKENFA', 'OPP. SOBAZ FILLING STATION'),
+  (531, 7, 'OPOLO', 'OPP. MARKET SQUARE'),
+  (532, 7, 'YENEGWE', 'DIVINE SCHOOL ROAD, BY AGOFA FILLING STATION'),
+  (533, 7, 'IMIRIGI', 'BESIDE U.B.E PRI. SCH'),
+  (534, 7, 'OGOLOMA', 'SALVATION MINISTRIES, GBARAIN KINGDOM'),
+  (535, 7, 'ELEBELE', 'ALONG ELEBELE EMEYAL, FORMER JAMSCO'),
+  (536, 7, 'BEBELEBIRI', 'BESIDE MTN MAST'),
+  (537, 7, 'OKOROBA', 'BESIDE COTTAGE HOSPITAL'),
+  (538, 7, 'EWOI', 'EWOI ROAD, EWOI'),
+  (539, 7, 'TOMBIA', 'SCHOOL OF NURSING ROAD'),
+  (540, 7, 'OTUOKPOTI', 'OPP. CHISPY GUEST HOUSE'),
+  (541, 7, 'ADAGBABIRI', 'OGBENBIRI QUARTERS'),
+  (542, 7, 'NEMBE CREEK', 'NEMBE'),
+  (543, 7, 'IGBOMOTORU 2', 'SOUTHERN IJAW'),
+  (544, 7, 'EKEREMOR', 'EKEREMOR TOWN'),
+  (545, 7, 'ALEIBIRI', 'ALEIBIRI TOWN'),
+  (546, 7, 'KOLO', 'KOLO TOWN'),
+  (547, 7, 'AGUDAMA', 'POWEL PLAZA, #1 DR. PARKINSON MARK MANUEL STREET, AGUDAMA-EPIE'),
+  (548, 7, 'OGU', 'ABRIMA COMPOUND OGU COMMUNITY'),
+  (549, 7, 'TROFANI', 'FORMER AMA-PERE''S PALACE'),
+  (550, 7, 'OKPOAMA BRASS', 'OKPOAMA-BRASS'),
+  (551, 7, 'FANGBE', 'NPN OGBARA QUARTERS OPP. FAMGBE SECONDARY SCHOOL'),
+  (552, 7, 'ETEGWE', 'NO.1 BUILDERS ROAD AVENUE, ETEGWE, ALONG NEW COMMISSIONERS QUARTERS RD. OPOLO'),
+  (553, 7, 'TALBOT', 'TALBOTS HOUSE SANAH1 QUARTERS, PERETORUGBENE, EKEREMOR'),
+  (554, 7, 'EKOWE', 'JACOB COURT IPAINPOLO COMPOUND, EKOWE'),
+  (555, 7, 'SAMPOU', 'OKORO PRIMARY BUILDING, SAMPOU COMMUNITY, KOLGA, BAYELSA STATE'),
+  (556, 7, 'OLOGOAMA', 'OGOLOAMA OUT-OKOROMA, OKOROAMA CLAN NEMBE LGA'),
+  (557, 7, 'AKENFA 2', '#1 OLD MKT/LOCATION OFF GLORY DRIVE'),
+  (558, 8, 'IYORCHIA, WURUKUM', '39 Iyorchia Ayu road, Wurukum Makurdi'),
+  (559, 8, 'UNIAGRIC', 'Opp. Paradise Hostel Southcore Makurdi'),
+  (560, 8, 'GYADO, GBOKO', 'Gyado junction Gboko'),
+  (561, 8, 'FEMAS, OTUKPO', 'New heaven Otukpo, behind David Mark''s house'),
+  (562, 8, 'WELFARE QUARTERS', 'Welfare Quarters beside Suswan farm Makurdi'),
+  (563, 8, 'YINA', 'Yina Junction opp. GOTV Mass Makurdi'),
+  (564, 9, 'MAIDUGURI', '#39B ABUJA STREET, SHAGARI LOW COST A, MAIDUGURI, BORNO STATE'),
+  (565, 10, 'AKAMKPA', 'CALABAR/IKOM HIGHWAY OPPOSITE FIRST BANK AKAMKPA'),
+  (566, 10, 'ATU', 'NO.50 WEBBER/ATU STREET, CALABAR SOUTH'),
+  (567, 10, 'ATAMONU 1', 'NO. 81 ATAMUNU STREET, CALABAR SOUTH'),
+  (568, 10, 'ATAMONU 2', 'NO.2 ATAMUNU LANE CALABAR SOUTH'),
+  (569, 10, 'EBOM', 'HALL 5, PCN PRIMARY SCHOOL, EBOM TOWN'),
+  (570, 10, 'ETTA AGBOR', 'PLOT 206 ETTA AGBOR LAYOUT, HALL 2 RD OFF ETTA AGBOR RD, CALABAR'),
+  (571, 10, 'EDIBA', 'BARACK ROAD OPP HEALTH CARE CENTER, EDIBA'),
+  (572, 10, 'EKORI', 'AKUGOM-EBE TOWN HALL EPENTI EKORI'),
+  (573, 10, 'FEDERAL HOUSING', 'PLOT 14 BLOCK 8 PHASE 2, FEDERAL HOUSING ESTATE'),
+  (574, 10, 'HIGHWAY, CALABAR', 'NO.26 MURTALA MUHAMMAD, HIGH WAY'),
+  (575, 10, 'IKOM', 'EBUSAN HOTEL BANQUET HALL, AGRIC ROAD, IKOM CROSS RIVER'),
+  (576, 10, 'IKOT ANSA', 'NO. 14 JOSEPH MKPANG STREET, IKOT ANSA'),
+  (577, 10, 'MAYNE (ETOI)', 'NO9/11 ETOI STREET, OPPOSITE DSTV GOLDIE'),
+  (578, 10, 'MOUNT ZION', 'NO.16 DANIEL HOGAN STREET, CALABAR SOUTH'),
+  (579, 10, 'NYANGHASANG', 'NO 5 EDEM OKON STREET, NYANGHASAN'),
+  (580, 10, 'OBUBRA 1', 'NO.13 MARKET JUNC, ONYEN OKPON VILLA OBUBRA'),
+  (581, 10, 'OGOJA', 'NO.21 MBUBE ROAD, OPPOSITE NEW NYANYA MOTOR PARK ABAKPA, OGOJA'),
+  (582, 10, 'OTOP ABASI', 'NO 6A OTOP ABASI STREET CALABAR'),
+  (583, 10, 'UGEP 1', 'PLOT 23, OFF ELETANG STREET, MAJOR WINTER''S VILLA EGBIZUM, UGEP'),
+  (584, 10, 'UGEP 2', 'NO.6 IKOM CALABAR HIGHWAY, NTANKPO, UGEP'),
+  (585, 10, 'UGEP 3', 'NO.1 OKOI IKONA STREET, LETEKOM IJMAN, UGEP'),
+  (586, 10, 'ODUKPANI', 'NO.1 SPRING ROAD BY NYSC JUNCTION, ODUKPANI, QUA TOWN'),
+  (587, 10, 'AKPABUYO', 'CROSPIL JUNCTION BY CROSPIL ESTATE ROAD, AKPABUYO'),
+  (588, 10, 'OBUDU', 'NO.72 OGOJA ROAD, OBUDU'),
+  (589, 10, 'EKPO ABASI', 'NO.13B EKPO ABASI STREET, TRUE DIAMOND EVENT HALL, CALABAR'),
+  (590, 10, 'USUMUTONG', 'FORMER CUSTOMARY COURT HALL, ENO KPORE VILLA, USUMUTONG'),
+  (591, 10, 'EKORINIM, HQ', 'PLOT 384 INDUSTRIAL LAYOUT, CALABAR'),
+  (592, 10, 'OBUBRA 2', 'IMOKE HALL OPPOSITE OVONUM ELECTRICITY TRANSFORMER OBUBRA'),
+  (593, 10, 'BAKASSI', 'GIVER''S INTERNATIONAL SCHOOL BAKASI'),
+  (594, 10, '#303 MMHW', '303 MURTALA MUHAMMAD HIGH WAY, BY WALT OVER JUNCTION 8-MILES'),
+  (595, 10, 'WOMEN DEV, OBUBRA-2', 'WOMEN DEVELOPMENT CENTRE ADJACENT FIRST BANK, MILE 1, OBUBRA URBAN'),
+  (596, 10, 'OKANGHA NKPANSI', 'NEW MR PHILIP E. COMPOUND, OKANGHA NKPANSI IKOM'),
+  (597, 11, 'AIRPORT RD', 'DANDANI EVENT CENTER #128 AIRPORT ROAD'),
+  (598, 11, 'AJAMIMOGHA', '#55 AJAMIMOGHA RD, WARRI'),
+  (599, 11, 'AGBARHO', '#6 EWHERHE RD BY MODERN PRY SCH'),
+  (600, 11, 'AGBARHO OTOR', '#6 OKOSE STREET OFF AGBARHA/EMEVO RD, AGBARHA-OTOR'),
+  (601, 11, 'ABRAKA 1', 'FORMER DOUBLE DELIGHT FAST FOOD BY FSP JUNCTION'),
+  (602, 11, 'ABRAKA 2', '#204 OLD ABRAKA/AGBOR RD, BESIDES WIMA CLINIC, OKORHIRHE'),
+  (603, 11, 'AMEKPE (UGHELLI 3)', 'EDAFE EVENT CENTER, END OF OCHUKO LANE, 1ST AMEKPE'),
+  (604, 11, 'BOMADI', 'ORDELE EVENTS HALL, GRA BOMADI, OPP LG CHAIRMAN'),
+  (605, 11, 'ENERHEN HQ', '#11 WARRI/SAPELE RD, BY ENERHEN JUNC'),
+  (606, 11, 'ENHWE', 'EFE-OMOVUDU EVENT CENTER BESIDES ULEWE QUARTER'),
+  (607, 11, 'EKPAN', '#3 NIGER CAT LINK RD, OFF REFINERY RD, AND NEPA EXPRESSWAY, BEHIND CHICKEN REP'),
+  (608, 11, 'EKU', 'OLD AGBOR, SAPELE RD, BY STAFF QUARTERS, OPP SULEMAN POULTRY, EKU'),
+  (609, 11, 'EMEVOR', '#6 OKOSE STREET OFF AGBARHA/EMEVO ROAD'),
+  (610, 11, 'IRRI', '#39 MISSIONS ROAD'),
+  (611, 11, 'JAKPA', '#2 EDU STREET, OFF JAKPA ROAD'),
+  (612, 11, 'JIBALE', 'FORMER JITOS HOTEL OPP JIBALE MKT, ORUWHORUN'),
+  (613, 11, 'KWALE', 'ADEGE STREET BESIDES BENVO TWINS HOTEL OFF ASABA EXPRESS RD'),
+  (614, 11, 'OBIAROKO', 'EDEM ONAH EVENT CENTER ALONG ABRAKA/OBIARUKU EXPRESS ROAD'),
+  (615, 11, 'OTOR UDU', 'EVWOR QUARTERS HALL'),
+  (616, 11, 'MOFOR', '#191 DSC EXPRESS WAY OPP EKETE INLAND JUNCTION'),
+  (617, 11, 'OLEH', '#3 NEW EMEDE RD, BY YANGA MKT, OLEH'),
+  (618, 11, 'OLOMORO', 'UKOLI QUARTERS'),
+  (619, 11, 'OZORO', 'PARADISE HOTEL BEHIND ZOUKUMOR PRIMARY SCHOOL'),
+  (620, 11, 'OWHELOGBO', '#86 HOSPITAL RD'),
+  (621, 11, 'PATANI', 'LOCAL GOVERNMENT COUNCIL CONFERENCE HALL EKISE PATANI'),
+  (622, 11, 'SAPELE 1', 'COMM RD, OPP OKIRIGWHE COMM HALL, SAPELE'),
+  (623, 11, 'SAPELE 2', '#1 EWETA LANE OPP PJ GOLDEN HOTEL GANA'),
+  (624, 11, 'ABRAKA 3', 'POLICE STATION RD, BY LUCAS JUNCTION'),
+  (625, 11, 'UGHELLI 1', '#1 ERUOBOGA STR, BESIDE TOTAL CHILD SCH, AKPODIETE'),
+  (626, 11, 'UGHELLI 2', '#120 ISOKO RD, BY NNPC ROUND ABOUT'),
+  (627, 11, 'UGBOLOKPOSO', '#68 HOSPITAL ROAD'),
+  (628, 11, 'JEDDO', 'OBATTERN PLACE, JEDDO-UGOTON RD, AFTER AIRFORCE MESS'),
+  (629, 11, 'EKREJEBOR', 'QUESSEBEST HOTEL, #70 EKREJEBOR RD'),
+  (630, 11, 'ARUMALA', '#27 ARUMALA STR, JESUS DAUGHTER EVENT CENTER'),
+  (631, 11, 'EKREJEBOR-2', '1ST PIPELINE BEHIND ATMOSPHERE SEC SCH'),
+  (632, 11, 'OKOLOR', 'OKOLOR COMM, TOWN HALL, OKOLOR WATERSIDE'),
+  (633, 11, 'ASABA', 'KM7 ASABA/BENIN EXPRESSWAY, BESIDES FORMER DEPUTY ASABA'),
+  (634, 11, 'BURUTU', 'BURUTU CEMENT PLAZA DRIVE, INFANT JESUS RD'),
+  (635, 11, 'OKPANAM 1', 'VANGUARD AVENUE OPP ASABA AIRPORT'),
+  (636, 11, 'OKPANAM 2', 'OMA CO-OPERATIVE EVENT CENTER'),
+  (637, 11, 'AGBOR-1', '#12 ODIM STR, BY CALVARY GROUP SCH, BOJI'),
+  (638, 11, 'CABLE', 'ANGELIC PLAZA #76 NNEBISI RD, CABLE POINT'),
+  (639, 11, 'IBUSA', 'EZE-IHEGE HALL, UMUOZOMA QUARTERS, OPP UMUION BANK'),
+  (640, 11, 'BEHIND STADIUM', '#13 OBI STR, BEHIND STEPHEN KESHI STADIUM'),
+  (641, 11, 'AGBOR 2', '#49 EKUJOMA RD, UMUNEDE'),
+  (642, 11, 'ODUKE (NEW)', '#38 GOOD SHEPHERD JUNC. ODUKE COMM'),
+  (643, 11, 'OKWE', '#1 ABC CHIEF IYASELE STR, BY POLICE POST'),
+  (644, 11, 'OKWE 2', 'NDUKA PLAZA, OKWE'),
+  (645, 11, 'ALIOKPU', 'OLD SAPOBA RD, BY GENERAL LUCKY IRABOR JUNC, IKA SOUTH, AGBOR'),
+  (646, 12, 'ABAKALIKI, KPIRI KPIRI, HQ', '#101 OLD ENUGU RD, ABAKALIKI'),
+  (647, 12, 'ABAKALIKI-HILLTOP ROAD', '#40 HILLTOP ROAD, OPPOSITE TANKER GARAGE, OFF WATER WORKS, ABAKALIKI'),
+  (648, 12, 'ABATETE-OGOJA ROAD', 'ABATETE HALL, OGOJA ROAD BY VEGAS JUNCTION'),
+  (649, 12, 'EZZANGBO AMIKE', 'AMIKE YOUTH HALL, #135 ENUGU EXPRESS WAY, EZZAMGBO'),
+  (650, 12, 'EZZANGBO ONUORIE', 'PDP, ONUORIE EZZAMGBO BESIDE PDP SECRETARIAT'),
+  (651, 12, 'NGBO', 'NGBO NDULO UMUEZEAKA ACQUISITION CENTER HALL, EBONYI STATE'),
+  (652, 12, 'ISHIEKE', 'ISHIEKE'),
+  (653, 12, 'AZONKU, AFIKPO HQ', 'AZONKU, AFIKPO'),
+  (654, 12, 'AFIKPO, AMURU', 'AMURO TOWN HALL, AFIKPO NORTH, EBONYI STATE'),
+  (655, 12, 'AMASIRI AFIKPO', 'OKIGWE ROAD, BESIDE FORMER SARS OFFICE, AMASIRI, AFIKPO NORTH, EBONYI STATE'),
+  (656, 12, 'UNWANA AFIKPO', 'GOD''S OWN LODGE JUNCTION, AFTER D12 BEFORE FISH POND ALONG POLY EBUNWANA ROAD, UNWANA'),
+  (657, 12, 'AKABA', 'ONU-EBONYI, OBODOMA UKABA, ONICHA LGA, EBONYI STATE'),
+  (658, 13, 'ALOHAN, DUMEZ, HQ', '#19 ALOHAN STR, OFF DUMEZ, OFF SAPELE RD, BENIN CITY'),
+  (659, 13, 'AMUFI, TEXTILE MILL', '#30 TEXTILE MILL RD, BY 2ND WEST RD JUNCTION, BENIN CITY'),
+  (660, 13, 'GUBADIA, GRA', '#10 GUBADIA AVENUE ETET, GRA, BENIN'),
+  (661, 13, 'EKPOMA 1', 'NEAR COLLEGE OF MEDICINE, AAAU'),
+  (662, 13, 'EKPOMA 2', '#37 ILEN-OTUMA STR, OPP FIRST BANK'),
+  (663, 13, 'M.M WAY', '#195 MURTALA MOHAMMED WAY, OPP OHUOBA PRIMARY SCH, BENIN CITY'),
+  (664, 13, 'ZABAYO EKENWA', '#157 EKENWAN RD, BENIN CITY'),
+  (665, 13, 'AUCHI', 'AUCHI/ABUJA EXPRESSWAY, OPP MATRIX PETROL STATION'),
+  (666, 13, 'ROBANOR', 'RABANOR HOTEL BY TONY KABAKA STR, UGBOR RD'),
+  (667, 13, 'UGBOWO', '#11B TECHNICAL RD, UGBOWO'),
+  (668, 13, 'PRESTIGE NEW', '#1 IHAMA RD, BY AIRPORT RD, GRA BENIN CITY'),
+  (669, 14, 'SHELTER VIEW, ADO EKITI', 'SHELTER VIEW COMPLEX OPP CHICKEN REPUBLIC, ADEBAYO, ADO EKITI'),
+  (670, 14, 'DALLIMORE', 'BEHIND STADIUM ROAD'),
+  (671, 14, 'IWOROKO', 'BESIDE BASIC HEALTH CENTER AARE ROAD IWOROKO EKITI STATE'),
+  (672, 14, 'EKUTE', 'OPP THERMOCOL WAREHOUSE, ADO-EKITI'),
+  (673, 14, 'HOUSING ESTATE', 'DON CLEMENT EVENT HALL, TINUOLA ESTATE, HOUSING ROAD'),
+  (674, 14, 'IKERE', 'NYSC ORIENTATION CAMP ROAD, IKERE'),
+  (675, 15, 'OPP ABC TRANSPORT, HQ', '#19 OGUDI RD, ENUGU STATE'),
+  (676, 15, 'NEW HEAVEN', '#95 CHIME AVENUE, OPP ASSEMBLIES BUSTOP, NEW HAVEN'),
+  (677, 15, 'EMENE', '#2 CHUKWUEJIM STREET BY NIGER LINE HOTEL, OFF APOSTLE BUSTOP EMENE'),
+  (678, 15, 'GARIKI', '#366 AGBANI RD, EBONY PAINT JUNC BY RTC OPP, 103 BATTALION BARRACKS, GARIKI'),
+  (679, 15, 'NINTH MILE', '#96 OLD NSUKKA RD, 9TH MILE CORNER NGWO AT LAPO BUILDING'),
+  (680, 15, 'NIKE BRANCH', 'JAZZ DAN PLAZA BY TEXACO JUNCTION, ABAKPA NIKE RD, ABAKPA'),
+  (681, 15, 'ABAKPA', 'NWAYIBUILHE PLAZA BY TEXACO JUNC, ABAKPA NIKE RD, ABAKPA'),
+  (682, 15, 'NSUKKA', '#30 OLOTO STR, ERINAH GUEST HOUSE, ODINIGBO, NSUKKA'),
+  (683, 15, 'NOWAS', '#107 AMURI RD, FED HOUSING, TRANSEKULU BY NOWAS JUNC'),
+  (684, 15, 'EKE-AGANI BRANCH', 'OPP ST JOHNS PRIMARY SCH, AMURI RD'),
+  (685, 15, 'AGBANI ROAD', '#102 AGBANI RD, OPP 1ST BANK AMAWBIA BUSTOP'),
+  (686, 15, 'OJI RIVER, AMUZU', 'AMUZU HALL, AMUZU, AGBADALA, OJI RIVER'),
+  (687, 15, 'LUCKZON PLAZA', 'SUITE A-47, MARYLAND PLAZA, #189 UGWUAJI RD, MARYLAND OPP AGIDI HOUSE'),
+  (688, 15, 'CHYMEZ PLAZA', 'PLOT 33 CHIEF IYKE OGBODO STREET OGBUODOR LAYOUT UGWUAJI RD'),
+  (689, 15, 'GRA1 BRANCH', 'VICTORIA GARDEN SUITE, #1 MOUNT LANE STR, GRA'),
+  (690, 15, 'NGWO', 'AMACHALLA TOWN HALL NGWO'),
+  (691, 15, 'AMAECHI', '2774 ONWA PLAZA, AMAECHI RD, UWANI'),
+  (692, 15, 'NEW HEAVEN EXTENSION', 'NKPOLUOGU CIVIC CENTER, ABAKALIKI EXPRESS WAY'),
+  (693, 16, 'JABI (HQTRS)', 'ONEAL CENTER, PLOT 360 OBAFEMI AWOLOWO WAY, JABI'),
+  (694, 16, 'MAITAMA', '#64 LASALE STR, OFF SHEHU SHAGARI WAY, BESIDE CBN TRAINING INSTITUTE, MAITAMA'),
+  (695, 16, 'KUBWA', 'GODS OWN PLAZA, BY BYAZHIN JUNCTION, KUBWA'),
+  (696, 16, 'EXCELLENT PLAZA, GWARINPA', 'EXCELLENT PLAZA, 1ST AVENUE, GWARINPA'),
+  (697, 16, 'BWARI', 'PLOT 30 BWARI EXTENSION, ADJACENT NIMA SCH, OFF SABONGARI RD, BEFORE POLICE POST'),
+  (698, 16, 'APEX PLAZA, DEIDEI', 'APEX PLAZA 220 W.H.O DISTRICT, BEHIND ZENITH BANK DEIDEI BUILDING MATERIAL'),
+  (699, 16, 'PRECIOUS PLAZA, DUTSE', 'PRECIOUS SHOPPING MALL, PLOT M10, KUBWA EXT-3, (FCDA SCHEME LAYOUT) ARMY ESTATE'),
+  (700, 16, 'TIPER GARAGE, KUJE', 'PLOT 12/B STREET, LEKPENDU LOWCOST, BEHIND TOTAL FILLING STATION, TIPPER GARAGE KUJE'),
+  (701, 16, 'WADA PLAZA, JIKWOYI', 'WADA PLAZA, BESIDES NEPA OFFICE, JIKWOYI ANGWANGEDE, ALONG NYANYA KARSH U EXPRESS WAY'),
+  (702, 16, 'DEO PLAZA, GWAGWALADA-1', 'DEO PLAZA, OPP GWAGWALADA MAIN MKT'),
+  (703, 16, 'LUGBE', 'PLOT 983, 3RD AVENUE FHA BY BABANGIDA MKT, LUGBE FCT-ABUJA'),
+  (704, 16, 'INFINIMART PLAZA', 'INFINIMART PLAZA, 2-1 JUNCTION KUBWA'),
+  (705, 16, 'OROZO', 'GOLDEN APPLE PLAZA, GIDAN DAYA, BY NEPA OFFICE, KARSHI EXPRESS WAY'),
+  (706, 16, 'BWARI-2', 'JEREMIAH KAKANCHOK CENTER, KOGO3'),
+  (707, 16, 'USHAFA, BWARI', 'GODS GIFT ACADEMY USHAFA'),
+  (708, 16, 'TUNGA-MAJE', 'KM3 LOKOJA KADUNA EXP WAY, BESIDE OANDO FUEL STATION'),
+  (709, 16, 'AREA A-NYANYA, APPLE COURT', 'APPLE COURT NYANYA, FCT'),
+  (710, 16, 'APO SETTLEMENT', 'WEMBLEY PART AND GARDEN APO RESETTLEMENT'),
+  (711, 17, 'SHONGO, GOMBE', 'SHONGO HANMA'),
+  (712, 17, 'YUGUDU, TUMFURE', 'BEHIND INVESTMENT QUARTERS ALONG LAMID YUGUDU, TUMFURE'),
+  (713, 18, 'OWERRI MAIN HQ', 'OWERRI/ONITSHA ROAD, IRETE, OWERRI IMO STATE'),
+  (714, 18, 'AMAUZARI', 'ONE AMAUZARI TOWN, ALONG OKWELLE HALL'),
+  (715, 18, 'AMARAKU', 'LAWRENCE IWU AMADI PLAZA, CLOSE TO AMARAKU JUNCTION'),
+  (716, 18, 'AGGAH-EGBEMA (AWOMMAMA)', 'BEFORE TRANSFORMER, AWOMMAMA'),
+  (717, 18, 'DOUGLAS RD AGGAH', 'NEW IDEA ROAD AGGAH EGBEMA RIVERS STATE'),
+  (718, 18, 'MMAHU-EGBEMA (DOUGLAS RD)', '127 DOUGLAS ROAD OPP NEW MARKET, BESIDE SUNIC FAST FOOD, OWERRI, IMO'),
+  (719, 18, 'EGBU ROAD EGBEMA', 'EGBU ROAD EGBEMA'),
+  (720, 18, 'MBAISE ONE', '49 EGBU ROAD, CLOSE TO MBAISE PARK'),
+  (721, 18, 'MBAISE FOUR', 'EKE AHIARA JUNCTION, CLOSE TO ACCESS BANK, ALONG AFOR ORU ROAD AHIAZU MBAISE'),
+  (722, 18, 'MGBIDI', '98A OWERRI-ONITSHA ROAD MGBIDI OPP. PALO PLACE'),
+  (723, 18, 'ORJI 2', 'ORJI YOUTH HALL, ORJI OWERRI IMO STATE'),
+  (724, 18, 'IMO POLY', 'BESIDE POLYVIEW HOTEL, ALONG PORT HARCOURT ROAD, MGBIRICHI'),
+  (725, 18, 'IKENEGBU', 'PLOT 21 IKENEBU LAYOUT OPPOSITE MARIS SUPERMARKET, OWERRI, IMO STATE'),
+  (726, 18, 'IHIAGWA', 'ALONG UMUOKWO-COURT RD. IHIAGWA'),
+  (727, 18, 'NEKEDE ONE', '8 BUS-STOP, OPPOSITE WATCHMAN, OLD NEKEDE ROAD, OWERRI IMO STATE'),
+  (728, 18, 'NEKEDE TWO', 'OPPOSITE UMUDIBIA PRIMARY SCHOOL NEKEDE, IHIAGWA ROAD'),
+  (729, 18, 'NEKEDE THREE', 'OLD TATA-FISH OPPOSITE GALAXY HOSTEL, ALONG POLY IHIAGWA ROAD, UMUOMA, NEKEDE'),
+  (730, 18, 'GLASS HOUSE-ORLU', '23 ENUGU/IDEATO ROAD BY BEACH, BSC ROAD ORLU TOWN, GLASS HOUSE, IMO STATE'),
+  (731, 18, 'OKIGWE 1', '55 OWERRI ROAD, OPP. ABAKPA MARKET, OKIGWE. IMO STATE'),
+  (732, 18, 'OKWUZI-EGBEMA', '59 AHOADA-OMOKU ROAD, OKWUZI'),
+  (733, 18, 'OKWU-URATTA', 'OKWU-URATTA PRIMARY SCHOOL HALL'),
+  (734, 18, 'ORJI', 'NO. 157 OKIGWE ROAD, OPPOSITE ACCESS BANK, ORJI'),
+  (735, 18, 'OGUTA 1', 'CIVIC CENTER, OGUTA'),
+  (736, 18, 'URATTA', 'OPPOSITE NNPC FILLING STATION BY TORONTO JUNCTION URATTA, OWERRI'),
+  (737, 18, 'WORKS LAYOUT', 'C17 WORKS LAYOUT, OFF IMSU JUNCTION OWERRI'),
+  (738, 18, 'WORLD BANK', 'CHIEF OHAMADIKE PLAZA, AREA ''A'' BY BLACK GATE, WORLD BANK'),
+  (739, 18, 'EZIOBODO FUTO', 'SALVATION MINISTRIES JUNCTION, ALONG FUTO ROAD, EZIOBODO'),
+  (740, 18, 'NAZE', 'NAZE TIMBER ROAD, BY BORO PIT, OBOSHISHI'),
+  (741, 18, 'AMAKOHIA', 'FEDERAL HOUSING ESTATE BY NEW ROAD. AMAKOHIA'),
+  (742, 18, 'AVU', 'OLIVER CASTLE, UMUEHITTA AVU'),
+  (743, 18, 'OBIAKPU', 'OBIAKPU TOWN HALL, OBIAKPU EGBEMA'),
+  (744, 18, 'OBOWO', 'ACHINGALI JUNCTION OPPOSITE MOONSHINE BUILDING'),
+  (745, 18, 'OBINZE', 'GONE-LEE''S HOTEL, KM 10 FUTO ROAD, OBINZE'),
+  (746, 18, 'UMUGUMA', '#3 GREGG AVENUE, BEFORE OWERRI WEST LGA COMPLEX, UMUGUMA'),
+  (747, 18, 'ESHIMESHI-URATTA', 'UMUNAHU ESHIMESHI, OWERRI NORTH'),
+  (748, 18, 'OGUTA 2', 'OGUTA-MGBIDI ROAD, BESIDE OGUTA LGA SECRETARIAT'),
+  (749, 18, 'AKABO', 'KM 7 OWERRI OKIGWE ROAD, UGWU OBIUDO, AKABO IKEDURU L.G.A IMO STATE'),
+  (750, 18, 'MBIERI', 'CHIGAEMEZU PLAZA, OPPOSITE NWEKE MKT JUNCTION MBIERI'),
+  (751, 18, 'MBAISE-3', '#1 OBETITI ROAD NKWOGWU JUNCTION ABOH MBAISE'),
+  (752, 18, 'UMUAKAH', 'UMUAKA BESIDES ORIE-UGBELE, UGBELE-AKAH'),
+  (753, 18, 'IZOMBE', 'IZOMBE'),
+  (754, 18, 'AKOKAH', '2ND FLOOR NEW POST OFFICE BUILDING IDEATO NORTH'),
+  (755, 18, 'OGBAKU', 'OGBAKU'),
+  (756, 18, 'UMUELEM', 'QUEEN OF PEACE JUNCTION CHIEF CHRISTOPHER JENTA ANUFUORO COMPOUND, UMUELEM'),
+  (757, 18, 'ETEKWURU', 'MR UZOMA OKORO COMPOUND ETEKWURU EGBEMA, OHAJI EGBEMA, IMO STATE'),
+  (758, 18, 'MGBEDA', '#4 ECHEAZU STREET MGBEDE, EGBEMA'),
+  (759, 19, 'DUTSE, HQ', 'OPPOSITE AWAJIL FUEL STATION. BESIDES BHT INTER SYSTEM LTD, YALAWAWA DUTSE, JIGAWA STATE'),
+  (760, 19, 'HADEJIA', 'IFEANYI EVENT CENTER, KANO ROAD HADEJIA'),
+  (761, 20, 'SABON TASHA, HQ', 'BEHIND GENERAL HOSPITAL, SABON TASHA'),
+  (762, 20, 'DESTINY PLAZA, JARUWA', 'BY JANRUWA JUNCTION ALONG PATRICK YAKOWA WAY'),
+  (763, 20, 'CHILLOUT, GONINGORA', 'OPP RAIL, GONIN-GORA'),
+  (764, 20, 'CHIDA', 'SIGN POST JUNCTION OPPOSITE STANBIC BANK, SABON TASHA'),
+  (765, 20, 'BARNAWA', 'OPPOSITE GT BANK, ALONG 1&2 ZAIRE ROAD BARNAWA'),
+  (766, 20, 'GBAGYI', 'ALONG YOKOWA STR, RD2, HOPE AVENUE, GBAGYI VILLAGE'),
+  (767, 20, 'JAJI', 'HOLIDAY INN STREET, UNGWAN-PETE, OPP JAJI CANTONMENT, IGABI'),
+  (768, 21, 'EMIR (HQTRS)', '#74 EMIR ROAD BY IBO ROAD, SABON GARI, KANO STATE'),
+  (769, 21, 'BURMA', 'ROSELLE ACADEMY, BURMA SABON GARI, KANO'),
+  (770, 21, 'AGANGARA BADAWA', 'BADAWA AGANGARA NASARAWA LGA, KANO'),
+  (771, 21, 'ENUGU RD', 'BY GOLD COAST SABON GARI, KANO STATE'),
+  (772, 21, 'ENSIK GLOBAL', '66/67 ENSIK GLOBAL EVENT CENTER, BY AIRPORT ROAD AMADI-A'),
+  (773, 22, 'BYAN KOFAR KAURAN', 'BESIDES ZUMUTAL GUEST INN, BYAN, GABI KOFAR KAURAN, KATSINA'),
+  (774, 22, 'DUTSIN-MA, MIAMI', 'DUTSIN-MA'),
+  (775, 23, 'BIRNIN KEBBI', 'FILIN JIRGI, ZURU, KEBBI'),
+  (776, 24, 'DESTINY GARDEN', 'SALVATION MINISTRIES DESTINY GARDEN PLAZA BESIDES FIRST BANK GANAJA JUNCTION LOKOJA'),
+  (777, 24, 'DOMINION PLAZA', 'SALVATION MINISTRIES DOMINION PLAZA 500 HOUSING UNITS LOKOJA'),
+  (778, 24, 'AYNIEGBA', 'SALVATION MINISTRIES SOLAG FUEL STATION. KM 1 ANKPA WAY OPP KOGI STATE UNIVERSITY. AYNIEGBA'),
+  (779, 24, 'FELELE', 'ABUJA LOKOJA EXPRESS WAY, HARMONY COMMUNITY BY WINNERS JUNCTION, FELELE TOWN, LOKOJA, KOGI STATE'),
+  (780, 25, 'TANKE, ILORIN', 'OPPOSITE FIRST ECWA CHURCH, TAIWO ISALE, ILORIN'),
+  (781, 25, 'TAIWO ISALE, HQ', 'TIPPER GARAGE, F DIVISION ROAD, TANKE, ILORIN'),
+  (782, 26, 'LAGOS (LEKKI)', 'KM 20 LEKKI EPE EXPRESS ROAD'),
+  (783, 26, 'DOPEMU', '57 ABEOKUTA EXPRESSWAY BESIDE CONOIL FILLING STATION, CEMENT BUS STOP DOPEMU'),
+  (784, 26, 'IKEJA', '#12 KUDIRAT ABIOLA WAY OREGUN, IKEJA LAGOS'),
+  (785, 26, 'MAGODO', '#2, ASSOCIATION AVENUE SHANGISHA MAGODO LAGOS STATE'),
+  (786, 26, 'IKORODU', '#62 AYANGBUREN ROAD, BY BUKKA HUT RESTAURANT, OLUBI JUNCTION, IKORODU, LAGOS STATE'),
+  (787, 26, 'OKOTA', '#110 AGO PALACE WAY. MARCITY PLAZA. ADJACENT MARKET SQUARE, OKOTA'),
+  (788, 26, 'SURULERE', 'AFRIC PLACE, NO. 7, AFRIC ROAD, IPONRI EBUTE-METTA, OFF FUN SO WILLIAMS AVENUE, LAGOS'),
+  (789, 26, 'ARADAGUN', 'NO 1 OLADIRAN CLOSE, MULTIPLE HEIGHT SCHOOL BESIDE ARADAGUN MARKET, ARADAGUN BADAGRY'),
+  (790, 26, 'MAGBON', 'SKY TRAINE CENTER, ALONG BADAGRY EXPRESSWAY, MAGBON B/STOP'),
+  (791, 26, 'AJAH', 'MTD Event Centre, OPPOSITE BADORE HEALTH CENTRE, BADORE, AJAH'),
+  (792, 26, 'ABIJO', 'TREASURE MALL, OPPOSITE EKO AKETE ESTATE, ABIJO'),
+  (793, 26, 'BADAGRY', 'KL 43 BADAGRY EXPRESSWAY AGBOMALU BUSTOP BADAGRY LAGOS'),
+  (794, 26, 'IYANA', 'KM23, BADAGRY EXPRESS WAY, OPPOSITE TOTAL FILLING STATION, PAKO BUS STOP IYANA ISASHI'),
+  (795, 26, 'IKOTUN', '#145 ABARANJE RD., ABARANJE-IKOTUN'),
+  (796, 26, 'EGBEDA', 'NO 64 IDEMU RD ORELOPE BRT BUS STOP, EGBEDA LAGOS'),
+  (797, 26, 'OJOTA', '#76 ALHAJI AMOO STREET, ALHAJA AMOO BUS-STOP, OJOTA OGUDU ROAD, OJOTA LAGOS'),
+  (798, 26, 'OSHODI', '#33 ADEYEMI STREET, AROWOJOBE BUS STOP, OSHODI, LAGOS'),
+  (799, 26, 'IPAJA', '#8, OLUFEMI CLOSE OFF FAGBEMI STREET, IGBOGILA BUS STOP, IPAJA-AYOBO ROAD, IPAJA LAGOS STATE'),
+  (800, 26, 'AGEGE', 'NO'' 2 OKE-AYO STREET BY AGBOTIKUYO BUS-STOP OFF OLD IPAJA ROAD AGEGE LAGOS'),
+  (801, 26, 'FESTAC', '5TH AVENUE W CLOSE OPP FRANKIDZ AMUSEMENT PARK FESTAC LAGOS'),
+  (802, 26, 'AJEGUNLE', 'NUT MULTI-PURPOSE HALL. 72A CARDOSO STREET, OREGIE OJA B/STOP AJEGUNLE'),
+  (803, 26, 'MOBIL', 'GLORY TO GOD PLAZA, LEKKI AJAH'),
+  (804, 26, 'IKOYI', '2/7 OKUNLA MARTINS CLOSE, OFF OKOTIE EBOH STREET, OFF AWOLOWO RD, IKOYI'),
+  (805, 26, 'ISHERI', '36/38 LIADI DISU STREET, ISHERI OSHUN BUS STOP, ISHERI, LAGOS'),
+  (806, 26, 'AJAO', 'TETRAZZINI FAST FOOD RESTAURANT (BY 7/8 BUS STOP) AJAO ESTATE ISOLO, LAGOS'),
+  (807, 26, 'IJESHA', '#250 IJESHA RD, OPP IJESHA MKT, IJESHATEDO'),
+  (808, 26, 'IGANDO', '15 OREMEJI STREET OKO FILLING BUS STOP LASU-ISHERI ROAD, IGANDO LAGOS'),
+  (809, 26, 'IBEJU LEKKI', 'BESIDE MAGBON GRAMMAR SCHOOL, MAGBON ALADE COMMUNITY, IBEJU LEKKI, LAGOS STATE'),
+  (810, 26, 'IGBOGBO', '#10 CHAIRMAN STREET, BY CHAIRMAN B/STOP, IGBOGBO BAYEKU ROAD, IKORODU'),
+  (811, 26, 'AWOYAYA', 'PLOT 605, IWEREKU GBETU TOWN, AFTER ROYAL LONDON HOTEL, BEFORE SARAFINA INT''L SCHOOL'),
+  (812, 26, 'IJEGUN', '#19 OBASA ADELANI STREET, PRINCE B/STOP, IJEGUN IKOTUN'),
+  (813, 26, 'AGBEBI, SURULERE-2', 'AGBEBI ROAD OFF IJESHA BY OMILANI JUNCTION OPP ULTIMATE FILLING STATION, IJESHA SURULERE'),
+  (814, 27, 'LAFIA', 'FRESHVYLLE HOTEL AND EVENT CENTRE, AGABI STR, BESIDE CBN, OFF JOS ROAD, LAFIA, NASARAWA STATE'),
+  (815, 27, 'EMMADO, MARARABA', '1ST FLOOR, EMMADO PLAZA BY SHARP CORNER, ABUJA-KEFFI EXPRESS ROAD NASSARAWA STATE'),
+  (816, 27, 'MASAKA', 'BETICUT EVENT CENTER MASAKA NEPA OFFICE ALONG KEFFI EXPRESS ROAD NASSARAWA STATE'),
+  (817, 27, 'KEFFI', 'IDEMILI HALL OPPOSITE MTN MASK BY NASARAWA RD, KEFFI'),
+  (818, 27, 'CITY COLLEGE', 'BY NURSES ESTATE, COMMISSIONER HOUSE, ADY SUITE'),
+  (819, 27, 'KABAYI', 'KABAYI BY LIFE CHOICE PURE WATER BEFORE DUNAMIS'),
+  (820, 27, 'AKWANGA', 'ALARAPE PLAZA, AKWANGA, BESIDE ST. PETERS NURSERY AND PRIMARY SCHOOL, KEFFI BY-PASS'),
+  (821, 27, 'ASO-B GURKU', 'CELEBRITY TOURIST HOTEL, ASOB GURKU, KURU'),
+  (822, 28, 'MADALLA', 'BESIDES VICTORY COLLEGE JUNCTION, MADALLA-SULEJA ROAD, MADALLA, NIGER STATE'),
+  (823, 28, 'MINNA', 'BACK OF TUNGA MAIN MARKET, MINNA NIGER STATE'),
+  (824, 29, 'LEME ROAD', 'OLUFUNKE COMPLEX, UNDER THE BRIDGE, LEME ROAD ABEOKUTA, OGUN STATE'),
+  (825, 29, 'SAGAMU OLATUNJI-1', 'OPPOSITE TOTAL FILLING STATION, BESIDE ABEOKUTA GARAGE, EXPRESS JUNCTION, EWOOLIWO, SAGAMU, OGUN STATE'),
+  (826, 29, 'IJEBU ODE 1', '29 AYEGBAMI STREET, BEHIND NEW MARKET, IJEBU ODE, OGUN STATE'),
+  (827, 29, 'IFO', 'JIBSOD HALL, OPPOSITE VESPA BUS-STOP, LAGOS/ABEOKUTA ROAD, IFO OGUN STATE'),
+  (828, 29, 'MOWE', '189 MOWE OFADA ROAD MOWE, OGUN STATE'),
+  (829, 29, 'KUFORIJI ADIGBE GRA, HQ', '7. 32, KUFORIJI OLUBI DRIVE ADIGBE GRA ABEOKUTA OGUN STATE'),
+  (830, 30, 'AKURE, HQ', 'ALAFUATAYO STREET, OPPOSITE ILORO BASIC HEALTH CENTER, BY ILORO MARKET, AKURE'),
+  (831, 30, 'ONDO CITY', '#214 BRIG ADEMULEGUN RD, NDUBUISI HOSPITAL, KOLA REWIRER'),
+  (832, 30, 'OWO', '#14 OWOYEMI ST, IYERE RD BY DOMINION JUNCTION'),
+  (833, 31, 'OKE-FIA, HQ', 'No.12 Iwo Road, Oke-Fia, Osogbo'),
+  (834, 31, 'OKINNI', 'ILOBU ROAD BESIDE EVERGREEN GRAND HOTEL, OKINNI'),
+  (835, 31, 'MAYFAIR', 'No.43 IBADAN ROAD, ILE-IFE'),
+  (836, 31, 'OKE OMIRU-ILLESHA', 'No. 819 OKE OMIRU, OPP. CRUNCHES, ILESHA'),
+  (837, 31, 'IGBOYA', '9 IGBOYA STREET OFF ROAD 7, ILE-IFE'),
+  (838, 32, 'APATA', 'AGBE BUS STOP, OPPOSITE K3 PLAZA, ALONG KUOLA-AKALA EXPRESS ROAD, APATA IBADAN'),
+  (839, 32, 'ELEYEYE', 'RICHBAM BUILDING, BEHIND SANDLAKE PHARMACY, OFF GBAREMU MKT, SANGO-ELEYELE, IBADAN'),
+  (840, 32, 'SAMONDA', 'HEXAGON BUILDING BESIDE PEACE MASS TRANSIT, OPP MOBIL FILLING STATION, SAMONDA, IBADAN'),
+  (841, 32, 'AKOBO', 'MONARCH COMPLEX, POPO B/STOP AFTER AKALA JUNCTION, AKOBO, IBADAN'),
+  (842, 32, 'MOKOULA', '#5 OMITOWOJU ADJACENT ADAMASINGBA STADIUM'),
+  (843, 32, 'D ROVERS', '#114 MKO ABIOLA WAY, BESIDE FORMER D''ROVER HOTEL OPP IYAGANKU QUARTERS, GRA, RING ROAD, IBADAN'),
+  (844, 32, 'OYO TOWN', 'ADJACENT ACE SUPERMARKET BESIDE NIPCO FILLING STATION, OYO TOWN'),
+  (845, 32, 'CHALLENGE', 'EVER LEAD COMPLEX ROAD, OPPOSITE GLO OFFICE, CHALLENGE, IBADAN'),
+  (846, 32, 'OGBOMOSHO', '#10 KARA STREET, TOWN PLANNING SABO, OGBOMOSHO'),
+  (847, 33, 'RAYFIELD', 'SMHOS MARTIN LUTHER AGWE STREET, RAYFIELD, JOS'),
+  (848, 33, 'OLD AIRPORT ROAD (ANGLO)', '#75 YAKUBU GOWON WAY OPPOSITE COCA COLA PLANT, ANGLO, JOS'),
+  (849, 33, 'YAKUBU GOWON (HWOLSHE)', '#3 UTONKON ROAD, ADJACENT NATIONAL LIBRARY, JOS'),
+  (850, 33, 'ANGWAN RING ROAD', 'NANDOM MEMORIAL PLAZA, BETWEEN JEVICHO FILLING STATION AND TINA JUNCTION, JARAWA, JOS'),
+  (851, 33, 'ROCK HEAVEN', 'BUPIA PLAZA, UTAN LANE'),
+  (852, 34, 'SOKOTO', 'BEHIND ACCEPTABLE EMPIRE, TAMAJE, SOKOTO'),
+  (853, 35, 'ZION ANGUWAN KASSA JALINGO, HQ', 'ZION HALL, AGWAN-KASSA, MILE SIX, JALINGO TARABA STATE'),
+  (854, 35, 'NUKKAI', 'UCHE OBI PLAZA, BESIDE CATHOLIC CHURCH, NUKKAI, JALINGO TARABA STATE'),
+  (855, 35, 'KWARARAFA SHOPPING MALL, WUKARI', 'KWARARAFA SHOPPING MALL, WUKARI, TARABA STATE'),
+  (856, 35, 'MAGAMI HALL', '#14 CEE TO CEE PLAZA, HAMMARUWA WAY AFTER GT BANK, BEFORE NGUROJE HOUSE'),
+  (857, 35, 'MILE 6', 'MILE 6, BYPASS BESIDE UTOPIA HOTEL'),
+  (858, 35, 'ISOKWA PLAZA', 'OPPOSITE TARABA STATE 4TH GATE, ATC JALINGO'),
+  (859, 36, 'DAMATURU', '#2 NEW JERUSALEM BEHIND SCHOOL OF NURSING OPPOSITE GENERAL HOSPITAL DAMATURU, YOBE STATE'),
+  (860, 37, 'ZAMFARA', 'HAYIN BUBA OPPOSITE HOUSGASAU ZAMFARA STATE'),
+  (861, 38, 'COLLEGE PARK, MARYLAND', 'GREENBELT ROAD, COLLEGE PARK MARYLAND 20740 STE200'),
+  (862, 38, 'WINDSOR MILL, MARYLAND', '2520 LORD BALTIMORE DRIVE MARYLAND, 21244'),
+  (863, 38, 'ERIE, PENNSYLVANIA', '2249 WEST 38TH STREET, ERIE PA, 16506'),
+  (864, 38, 'RICHMOND, TEXAS', '1819 FIRST OAKS ST, RICHMOND TX, 77406'),
+  (865, 38, 'BIRMINGHAM, ALABAMA', '1225 EAST LAKE BLVD. BIRMINGHAM, AL, 35217'),
+  (866, 39, 'ROMFORD, LONDON, ENGLAND', 'UNIT 5&6 FIRST FLOOR, 248 LONDON ROAD, ROMFORD, RM7 9EL'),
+  (867, 39, 'ABERDEEN, SCOTLAND', '#46 PALMERSTON ROAD, ABERDEEN, SCOTLAND AB11 5NQ'),
+  (868, 39, 'MISSISSAUGA, CANADA', '5560 KENNEDY, ONTARIO L4Z 2A9, CANADA'),
+  (869, 39, 'CROYDON, UK', 'FIRST FLOOR 145-151, LONDON ROAD, CROYDON, CRO 2RG'),
+  (870, 39, 'CYPRUS', 'CYPRUS'),
+  (871, 40, 'GENEVA', 'HOTEL N''VY RUE DE RICHEMONT 18, RUE DE RICHMOND, 1202 GENEVA, SWITZERLAND'),
+  (872, 41, 'DUBAI', 'UNIT 505, SHAIKHA MARIAM BUILDING, P114, MANIYAS, DEIRA, DUBAI'),
+  (873, 42, 'CHINA', 'GUOTAI INTERNATIONAL TRADE CITY, #27 GUANGYUAN WEST ROAD, YUEXIU DISTRICT, GUANGZHOU. 3RD FLOOR #3217'),
+  (874, 43, 'SPINTEX, ACCRA', 'OPPOSITE TEXPO MARKET, SPINTEX ROAD, ACCRA, GHANA'),
+  (875, 43, 'NUNGUA, ACCRA', 'OPPOSITE ADB BANK, NUNGUA MARKET, NUNGUA, ACCRA, GHANA'),
+  (876, 43, 'KUMASI, ASHANTI REGION', 'BESIDE SHELL FILLING STATION, KROFROM ROAD, AIRPORT ROUND ABOUT, DECHEMSCO KUMASI, ASHANTI REGION, GHANA'),
+  (877, 43, 'TEMA', 'BESIDE TOTAL FILLING STATION, PEDU JUNCTION, CAPE COAST, CENTRAL REGION, GHANA'),
+  (878, 43, 'TAKORADI, WESTERN REGION', '#55 LAGOS TOWN MARKET OPPOSITE GOOD BRAND PHARMACY, TAKORADI, WESTERN REGION, GHANA'),
+  (879, 43, 'TABORA-LAPAZ, ACCRA', 'NEW JERUSALEM SCHOOL, TABORA LAPAZ, LAPAZ, ACCRA, GHANA'),
+  (880, 44, 'DEGAKON', 'BESIDES EWELL FILLING STATION, COTONOU, BENIN REPUBLIC'),
+  (881, 44, 'PORT NOVO', 'OPP CELTIS, COTONOU, BENIN REPUBLIC'),
+  (882, 45, 'LIMBE', 'BEHIND EZE1, ISOKOLO, LIMBE SOUTH WEST CAMEROON'),
+  (883, 45, 'DUALLA', 'OPP ECO BANK, QUARTRE ETAGE JUNCTION, BAMBUTUS STREET, BONABERI DOULA, CAMEROON'),
+  (884, 46, 'HAWARA PLAZA', 'JARAWA PLAZA WESTFIELD, KANIFING MUNICIPAL COUNCIL, THE GAMBIA')
+on conflict (id) do update set state_id = excluded.state_id, name = excluded.name, address = excluded.address;
+
+do $salv_churches_legacy$
+begin
+  if to_regclass('public.churches') is not null
+     and not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'churches' and column_name = 'branch_country'
+     ) then
+    execute format(
+      'alter table public.churches rename to %I',
+      'churches_legacy_' || replace(gen_random_uuid()::text, '-', '_')
+    );
+  end if;
+end;
+$salv_churches_legacy$;
+
+create table if not exists public.churches (
+  id bigserial primary key,
+  branch_country text not null,
+  branch_state text not null,
+  name text not null,
+  address text not null default '',
+  directory_branch_id integer references public.directory_branches(id) on delete set null,
+  is_active int not null default 1,
+  created_at timestamptz not null default now()
+);
+
+-- When churches already matched this shape but lacked newer columns, add them here.
+alter table public.churches add column if not exists address text not null default '';
+alter table public.churches add column if not exists directory_branch_id integer;
+alter table public.churches add column if not exists is_active int not null default 1;
+alter table public.churches add column if not exists created_at timestamptz not null default now();
+alter table public.churches drop constraint if exists churches_directory_branch_id_fkey;
+alter table public.churches add constraint churches_directory_branch_id_fkey
+  foreign key (directory_branch_id) references public.directory_branches(id) on delete set null;
+create unique index if not exists churches_branch_country_state_name_uidx on public.churches (branch_country, branch_state, name);
+
+alter table public.registrations add column if not exists satellite_site text not null default '';
+
+alter table public.churches enable row level security;
+drop policy if exists "anon_read_churches" on public.churches;
+create policy "anon_read_churches" on public.churches for select using (is_active = 1);
+grant select on public.churches to anon, authenticated;
+
+-- Refresh churches from directory (idempotent)
+delete from public.churches where directory_branch_id is not null;
+
+insert into public.churches (branch_country, branch_state, name, address, directory_branch_id, is_active) values
+  ('NG', 'RI', 'ABONNEMA', 'ABONNEMA/DEGEMA ROAD, CONSULATE DEGEMA', 1, 1),
+  ('NG', 'RI', 'ABONNEMA 2', 'BE-DON CLOSE OFF ABONNEMA/OBONOMA ROAD, ABONNEMA', 2, 1),
+  ('NG', 'RI', 'SILVER DOVE', 'BESIDE TIMBER MARKET SARS ROAD, RUKPOKWU', 3, 1),
+  ('NG', 'RI', 'SIAT', 'SIAT ESTATE SCHOOL, UBIMA', 4, 1),
+  ('NG', 'RI', 'BIG ELELE 2', '#3/4 OMUSE STREET, MGBUAYIM, BIG ELELE TOWN', 5, 1),
+  ('NG', 'RI', 'AWESOME', 'OFF OLD PH RD, HIGH TENSION, ALETO-ELEME', 6, 1),
+  ('NG', 'RI', 'OBIWALI', '#135 OBIWALI ROAD, NKPOLU JUNCTION, PH', 7, 1),
+  ('NG', 'RI', 'IBANI', 'SAND FILLED, IBANI STREET, BOROKIRI, PORT HARCOURT', 8, 1),
+  ('NG', 'RI', 'OGINIGBA', '#1 CAPINO DRIVE, ANSETH HOSPITAL BY SCHOOL ROAD, NEW LAYOUT OGINIGBA, PORTHARCOURT', 9, 1),
+  ('NG', 'RI', 'RUMUEKINI SCHOOL ROAD', 'SALVATION MINISTRIES RUMUEKINI SCHOOL ROAD BRANCH, RUMUEKINI, PORT HARCOURT', 10, 1),
+  ('NG', 'RI', 'ABALAMABIE', 'ADJACENT TO FEDERAL POLYTECHNIC OF OIL AND GAS, BONNY ISLAND', 11, 1),
+  ('NG', 'RI', 'ELELENWO 3', 'ORANGE BUS STOP, ALONG REFINERY ROAD, ELELENWO, PORT HARCOURT', 12, 1),
+  ('NG', 'RI', 'ABOBIRI', '#4 ABOBIRI STREET OFF HARBOUR ROAD, TOWN, PORT HARCOURT', 13, 1),
+  ('NG', 'RI', 'ABUA 1', '1, SALVATION ROAD OPP ALEX SAW MILL, AYAMA-EMILAGHAN ABUA CENTRAL', 14, 1),
+  ('NG', 'RI', 'MILE 1 DIOBU', '#44 ABAKALIKI STREET, MILE 1 DIOBU, RUMUWOJI COMMUNITY', 15, 1),
+  ('NG', 'RI', 'ABUA 2', 'ALONG OGHORA ROAD AMALEM ABUA CENTRAL ABUA', 16, 1),
+  ('NG', 'RI', 'ABULOMA', '103 ABULOMA ROAD, PH', 17, 1),
+  ('NG', 'RI', 'OZUBOKO', 'ALONG PRIMARY SCHOOL ROAD, OZUBOKO', 18, 1),
+  ('NG', 'RI', 'ADA GEORGE', 'RUMUOKE ROAD, OFF OKILTON JUNCTION OFF ADA GEORGE ROAD', 19, 1),
+  ('NG', 'RI', 'AEROPLANE DRIVE ABULOMA', '37, GEORGE SEKIBO STREET, OFF AEROPLANE DRIVE, ABULOMA, PH', 20, 1),
+  ('NG', 'RI', 'AGBANI DAREGO', 'AGBANI DAREGO COMPLEX, OPP. 136/138 BENDE STREET, TOWN, PORT HARCOURT', 21, 1),
+  ('NG', 'RI', 'AGBA-NDELE', 'EHIOR WOMEN HALL, AGBA-NDELE', 22, 1),
+  ('NG', 'RI', 'AGGREY ROAD', '77, AGGREY ROAD, PH', 23, 1),
+  ('NG', 'RI', 'AGGREY ESTATE', 'AGGREY HOUSING ESTATE INVENT CENTRE SATELLITE CHURCH, PORT HARCOURT', 24, 1),
+  ('NG', 'RI', 'AGIP', '#41 AGIP ROAD BY ESTATE JUNCTION, PORT HARCOURT', 25, 1),
+  ('NG', 'RI', 'AGIP 2', 'PLOT 3, ROAD 26, AGIP ESTATE, PHC', 26, 1),
+  ('NG', 'RI', 'AHOADA', '60, OMUKU ROAD AHOADA', 27, 1),
+  ('NG', 'RI', 'FOUNTAIN OF WISDOM (AHOADA)', 'FOUNTAIN OF WISDOM SCHOOL, OPPOSITE MOUNTAIN OF FIRE, CIVIL DEFENCE ROAD, AHOADA EAST', 28, 1),
+  ('NG', 'RI', 'NWAGBOGWE', '#5 NWAGBOGWE-WAOBIKEZE STREET, OMOKU', 29, 1),
+  ('NG', 'RI', 'AKPAJO-IRIEBE', 'SALVATION MINISTRIES AKPAJO ROAD CHURCH, IRIEBE, OYIGBO', 30, 1),
+  ('NG', 'RI', 'AKPAJO', 'BESIDE AKPAJO MARKET, FARM ROAD, BY ARISE AND SHINE BUSTOP, AKPAJO', 31, 1),
+  ('NG', 'RI', 'ALAKAHIA', 'ANWURI PAVILION, KM16, EAST WEST ROAD, ALAKAHIA, OBIO AKPOR', 32, 1),
+  ('NG', 'RI', 'ALAKAHIA-ALOGU', 'OPPOSITE COLLEGE COURT SUITES, ALAKAHIA ROAD, PHC', 33, 1),
+  ('NG', 'RI', 'ALODE-ELEME', 'LIPZA PLAZA, 17 MARKET ROAD, ALODE-ELEME, RIVERS STATE', 34, 1),
+  ('NG', 'RI', 'AGBONCHIA-ELEME', 'AGBONCHIA CHURCH, ELEME', 35, 1),
+  ('NG', 'RI', 'AGBONCHIA-II', 'BY EPISTEME SCHOOL HEALTH CENTRE ROAD, ELEME, RIVERS STATE', 36, 1),
+  ('NG', 'RI', 'ALUU', 'ALONG RUMUEKINI ROAD, ALUU', 37, 1),
+  ('NG', 'RI', 'PRAISE ARENA ALUU-OMUIKE', 'ALONG OMUODA OMUAGWA LINK ROAD, OMUIKE, ALUU', 38, 1),
+  ('NG', 'RI', 'ALUU-OMUIGWE', 'ABUJA PHASE 2, ALUU, PH', 39, 1),
+  ('NG', 'RI', 'ALUU OMUOKIRI', 'WOLI STREET ALUU OMUOKIRI ALONG CHOBA UNIPORT ROAD, PH', 40, 1),
+  ('NG', 'RI', 'ALUU OMUOKO', 'ALUU OMUOKO TOWN HALL', 41, 1),
+  ('NG', 'RI', 'ALUU MBODO', 'NO 13 ALUU MBODO OFF AIRPORT ROAD', 42, 1),
+  ('NG', 'RI', 'AMAECHI DRIVE GRA', 'AMAECHI DRIVE GRA PHASE 3, PH', 43, 1),
+  ('NG', 'RI', 'ATC-OKRIKA', 'ATC BY-PASS ROAD ATC, OKRIKA', 44, 1),
+  ('NG', 'RI', 'AMEH PLAZA', 'NO 166 RUMUAGHUOLU RD OPP JBECS ALUMINIUM & WATER COMPANY RUMUAGHUOLU CLUB OBIO AKPOR, PH', 45, 1),
+  ('NG', 'RI', 'ANDONI-UNYEADA', 'TOWN/NECO HALL UNYEADA TOWN, ANDONI, RIVERS STATE', 46, 1),
+  ('NG', 'RI', 'IBOTIREM', 'IBOTIREM, ANDONI', 47, 1),
+  ('NG', 'RI', 'AKWETE', 'AKWETE OYIGBO', 48, 1),
+  ('NG', 'RI', 'OGBOSO', 'SALVATION MINISTRIES, OGBOSO', 49, 1),
+  ('NG', 'RI', 'AZIKIWE', '#5 AZIKIWE STREET, MILE 2, DIOBU, PORT HARCOURT', 50, 1),
+  ('NG', 'RI', 'OKUJAGU-AZUABIE', '54 AMONI STREET AZUABIE TOWN, BESIDE BANGA, OKUJAGU', 51, 1),
+  ('NG', 'RI', 'OKUJAGU-2', 'SALVATION MINISTRIES CHURCH, OKUJAGU-2, AZUABIE', 52, 1),
+  ('NG', 'RI', 'OWHONDA', '#22 OWHONDA STREET ATALI, OBIAKPO', 53, 1),
+  ('NG', 'RI', 'IGNATIUS AJURU', 'BESIDE NEW HEAVEN HOSTEL, IGNATIUS AJURU UNIVERSITY OF EDUCATION', 54, 1),
+  ('NG', 'RI', 'BANE', 'MAA-OR CHURCH, BANE, KHANA LGA, BORI REGION', 55, 1),
+  ('NG', 'RI', 'BAEN', 'OPPOSITE BAEN TOWN SQUARE, BAEN', 56, 1),
+  ('NG', 'RI', 'B-DERE', 'B-DERE COMMUNITY TOWN HALL, B-DERE GOKHANA', 57, 1),
+  ('NG', 'RI', 'BEERI', 'MODEL PRIMARY SCHOOL 2, BEERI', 58, 1),
+  ('NG', 'RI', 'BERA', 'BERA CIVIC CENTER, GOKANA', 59, 1),
+  ('NG', 'RI', 'BEN PARADISE', 'BRILLIANT INT''L SCHOOL, BEN PARADISE STREET, ABIRIBA QTRS, OYIGBO', 60, 1),
+  ('NG', 'RI', 'BEULAH LAND', 'LOCATION 15, UMUEBULU 2, OYIGBO', 61, 1),
+  ('NG', 'RI', 'BETTER LIFE', 'BY NDDC ROAD, OYIGBO', 62, 1),
+  ('NG', 'RI', 'BIG ELELE', 'ELELE CIVIC CENTER, BIG ELELE TOWN LGA', 63, 1),
+  ('NG', 'RI', 'DIAMOND PLAZA', 'ALONG SARS ROAD, (CELESTINE OMEHIA ROAD), BETWEEN AKWAKA JUNCTION AND NEW ROAD JUNCTION, RUKPOKWU', 64, 1),
+  ('NG', 'RI', 'BODO', 'TOWN HALL, NEW MARKET, BOTOR VILLAGE BODO CITY', 65, 1),
+  ('NG', 'RI', 'BOLO', 'OPPOSITE VICTOR ALABO OIL & GAS GRA, BOLO', 66, 1),
+  ('NG', 'RI', 'WAKAMA', 'WAKAMA AMA COMMUNITY TOWN SQUARE', 67, 1),
+  ('NG', 'RI', 'BOMU SATELLITE', '78 KABANI ROAD BOMU', 68, 1),
+  ('NG', 'RI', 'BONNY ISLAND', '8 KING EDWARD ASIMINI BYPASS (BERGER ROAD) BONNY ISLAND', 69, 1),
+  ('NG', 'RI', 'BONNY ISLAND 2', 'BONNY HERITAGE CENTER, #39 KING WILLIAM DAPPA ROAD, BONNY ISLAND', 70, 1),
+  ('NG', 'RI', 'BOROBARA/KIRA', 'BOROBARA COMMUNITY TOWN HALL, TAI LGA, RIVERS STATE', 71, 1),
+  ('NG', 'RI', 'BORI', 'YEGHE BORI-ROAD BEFORE YEGHE-BRIDGE, 43 HOSPITAL ROAD, BORI', 72, 1),
+  ('NG', 'RI', 'LUEKE', 'SALVATION MINISTRIES LUEKE BRANCH', 73, 1),
+  ('NG', 'RI', 'GIO', 'GIO COMMUNITY TOWN HALL', 74, 1),
+  ('NG', 'RI', 'NWEOL', 'NWEOL TOWN HALL', 75, 1),
+  ('NG', 'RI', 'EEKEN', 'EEKEN COMMUNITY TOWN HALL', 76, 1),
+  ('NG', 'RI', 'KEN POLY', '#45 ZAAKPON ROAD, GODDY PLAZA, BORI', 77, 1),
+  ('NG', 'RI', 'UEGWERE', 'EEGWERE TOWN SQUARE', 78, 1),
+  ('NG', 'RI', 'BORI 2 TIMER SATELLITE', 'SHOPPING MALL OPPOSITE, GENERAL HOSPITAL BORI', 79, 1),
+  ('NG', 'RI', 'BORIKIRI', '6 KOLOKUMA STREET, BORIKIRI PH', 80, 1),
+  ('NG', 'RI', 'BOTEM', 'BOTEM PRIMARY AUDITORIUM, BOTEM TAI', 81, 1),
+  ('NG', 'RI', 'BUGUMA CITY', 'DETEME SAND FILLED BEHIND MODEL PRIMARY SCHOOL, CLOSE TO POLICE STATION, BUGUMA CITY', 82, 1),
+  ('NG', 'RI', 'ABALAMA BUGUMA', 'ALABAMA ROAD, OFF ABALAMA POLICE STATION, ABALAMA, ASALGA', 83, 1),
+  ('NG', 'RI', 'ISIODU', 'RUMU NWONBUEZE FAMILY HALL, ISIODU EMOHUA', 84, 1),
+  ('NG', 'RI', 'BUGUMA 2', 'EGILE''S COMPOUND, BUGUMA CITY', 85, 1),
+  ('NG', 'RI', 'BUKUMA (AGUMA)', 'SCHOOL ROAD BUKUMA DELGA, RIVERS STATE', 86, 1),
+  ('NG', 'RI', 'IDO', 'CHIEF PETER BAGSHAW ALAWAIFAA''S HOUSE, ESUKU''S COMPOUND, IDO, ASALGA', 87, 1),
+  ('NG', 'RI', 'RUMUODOMAYA 2', '#2 ICHIEGBO STREET OFF AIRPORT ROAD BY NNPC FILLING STATION, RUMUODOMAYA', 88, 1),
+  ('NG', 'RI', 'CHINDA', '#109 SOLID PALM PLAZA BY TRANSFORMER, CHINDA ROAD OFF ADA-GEORGE, PORT HARCOURT', 89, 1),
+  ('NG', 'RI', 'AGIP 3', '#7 ROAD 1 EXTENSION, AGIP ESTATE', 90, 1),
+  ('NG', 'RI', 'CHOBA', '17/19, HABITAT DRIVE, RUMUALOGU TOWN, CHOBA', 91, 1),
+  ('NG', 'RI', 'CHOBA 2', '#10 OFF OKOCHA STREET OWHIPA, CHOBA', 92, 1),
+  ('NG', 'RI', 'CHOBA 3', '16, IGBOGO ROAD (BACK OF CHEM) CHOBA, PHC', 93, 1),
+  ('NG', 'RI', 'CHOKOCHO ETCHE', '15, UMU-OKORO NWADI STREAM ROAD, CHOKOCHO, OFF IGBO-ETCHE, PHC', 94, 1),
+  ('NG', 'RI', 'CHOKOTA IGBO ETCHE 1', 'UMUONA STREAM ROAD, OFF ABA ROAD, CHOKOTA IGBO-ETCHE, RIVERS STATE', 95, 1),
+  ('NG', 'RI', 'CHOKOTA IGBO ETCHE 2', 'OUR GLORIOUS INT''L. ACADEMY UMUAKONU, IGBO ETCHE, RIVERS STATE', 96, 1),
+  ('NG', 'RI', 'CHOKOTA 3 IGBO ETCHE', 'UMUAKONU FARM ROAD IGBO ETCHE, RIVERS STATE', 97, 1),
+  ('NG', 'RI', 'CHOKOATA 4 UMOTUBE', 'ROBERT FARM ROAD, UMOTUBE IGBO-ETCHE', 98, 1),
+  ('NG', 'RI', 'CHOKOTA 5 IGBO ETCHE', 'EBI PLAZA, UMUCHOKO FARM ROAD, CHOTOTA IGBO ETCHE', 99, 1),
+  ('NG', 'RI', 'ABARA', 'ABARA, ETCHE', 100, 1),
+  ('NG', 'RI', 'UMUOYE', 'UMUOYE, ETCHE', 101, 1),
+  ('NG', 'RI', 'CONRIS PLACE', 'NEW ROAD, ROAD 9, 2ND AVENUE OFF MGBUOBA PORT HARCOURT', 102, 1),
+  ('NG', 'RI', 'DE-AMEN', '24 EGBELU AKAMI ROAD, OFF NTA ROAD, CORNERSTONE, OZUOBA PH', 103, 1),
+  ('NG', 'RI', 'CREAM DE LA CREAM', '#4 KPAKANI STREET, OFF OBI-WALI ROAD, RUMUIGBO', 104, 1),
+  ('NG', 'RI', 'DEKEN', 'DEKEN ULTRA MODERN PRIMARY AUDITORIUM, DEKEN', 105, 1),
+  ('NG', 'RI', 'DESS JEFF', 'DESS JEFF RECREATION CENTRE SHELL LOCATION ROAD BY CAR WASH, OYIGBO', 106, 1),
+  ('NG', 'RI', 'D/LINE', '15, OMOKU STREET, D/LINE PORT HARCOURT', 107, 1),
+  ('NG', 'RI', 'D/LINE 2', '3 AKOBO STREET D-LINE, BEHIND ASSOTEL BUILDING, GARRISON, PORT HARCOURT', 108, 1),
+  ('NG', 'RI', 'EAGLE ISLAND 1', 'PLOT 247, ALHAJI ORLU AVENUE, OFF CALVARY TEMPLE ROAD, EAGLE ISLAND PORT HARCOURT', 109, 1),
+  ('NG', 'RI', 'GREEN CITY', '#61 GREEN CITY ESTATE ROAD, GREEN CITY ESTATE, ELELENWO', 110, 1),
+  ('NG', 'RI', 'EAGLE ISLAND 2', '32, HON. VICTOR IHUNWO (ANDONI) ROAD, EAGLE ISLAND', 111, 1),
+  ('NG', 'RI', 'EASTERN BY-PASS', 'PLOT 20, OLD GRA EXTENSION, PHC', 112, 1),
+  ('NG', 'RI', 'EBUBU', 'BEFORE BRIDGE ALONG EJAMAH-TRAILER PARK ROAD, EBUBU ELEME, RIVERS STATE', 113, 1),
+  ('NG', 'RI', 'EBUBU EGBALOR', '#1 OBE STREET OFF EGBALOR FARM ROAD, EBUBU ELEME', 114, 1),
+  ('NG', 'RI', 'SIME TAI', 'SYSTEM WORLD GUEST HOUSE, SIME JUNCTION, TAI', 115, 1),
+  ('NG', 'RI', 'ECM PLAZA', 'KM5, EAST WEST ROAD, OPP CHARKINS MARITIME ACADEMY, PORT-HARCOURT', 116, 1),
+  ('NG', 'RI', 'EDEOHA (AHOADA)', 'ALONG ABUA ROAD, BY IKATA JUNCTION, EDEOHA TOWN, AHOADA EAST', 117, 1),
+  ('NG', 'RI', 'AMINIGBOKO', 'AMINIGBOKO', 118, 1),
+  ('NG', 'RI', 'UZOCHI', 'SALVATION MINISTRIES UZOCHI', 119, 1),
+  ('NG', 'RI', 'IDEOKE', 'SALVATION MINISTRIES IDEOKE', 120, 1),
+  ('NG', 'RI', 'OWEREWERE', 'SALVATION MINISTRIES OWEREWERE', 121, 1),
+  ('NG', 'RI', 'EGBU-ETCHE', 'EGBU COMMUNITY HALL, ETCHE', 122, 1),
+  ('NG', 'RI', 'EGBELU 1', 'EGBELU OZODO, ALONG OGBOGORO ROAD, PORT HARCOURT', 123, 1),
+  ('NG', 'RI', 'EGBELU 2', '#1 WORSHIP AVENUE, BESIDES DE FAME HOTEL, EGBELU-OZODO, PORT HARCOURT', 124, 1),
+  ('NG', 'RI', 'EGBEDA', 'EGBEDA CHURCH, IBONIMERE ALONG EGBEDA/UBIMINI ROAD, EMOLGA, RIVERS STATE', 125, 1),
+  ('NG', 'RI', 'UBIMINI', 'UBIMINI COMMUNITY TOWN HALL, UBIMINI', 126, 1),
+  ('NG', 'RI', 'ODUOHA-EMOHUA', 'ODUOHA-EMOHUA COMMUNITY', 127, 1),
+  ('NG', 'RI', 'EGEDE GLORY CENTER', '27 OJOTO STREET, MILE 2, DIOBU, PH', 128, 1),
+  ('NG', 'RI', 'EGWI', 'ALONG ULAKWU RD, EGWI ETCHE', 129, 1),
+  ('NG', 'RI', 'ELECHI DIOBU', '33, ELECHI BEACH MILE 1 DIOBU PHC', 130, 1),
+  ('NG', 'RI', 'ELELE ALIMINI', 'OMUOHIA TOWN HALL, ELELE ALIMINI, OFF EAST-WEST ROAD', 131, 1),
+  ('NG', 'RI', 'ELELENWO 1', '10 OILFIELD ROAD, BEHIND OILFIELD HOTEL, OFF SCHOOL ROAD, ELELENWO, PORTHARCOURT', 132, 1),
+  ('NG', 'RI', 'ELELENWO 2', '70 ODANI ROAD, ELELENWO', 133, 1),
+  ('NG', 'RI', 'ELELENWO ELIMINIGWE', 'ORO JESUS PLAZA, #222 OLD REFINERY ROAD, ELELENWO, PH', 134, 1),
+  ('NG', 'RI', 'EBUKUMA', 'TOWN HALL 2, EBUKUMA ANDONI', 135, 1),
+  ('NG', 'RI', 'UNION HALL ELIOZU', 'NENI TOWN UNION HALL, BESIDE BENVIATTO SCHOOL, ALONG GAS ROAD, POLICE POST, ELIOZU', 136, 1),
+  ('NG', 'RI', 'ELIGBOLO 1', 'SALVATION MINISTRIES MARIS PLAZA, 2ND FLOOR, BESIDE IVORY HEIGHT GARDEN ESTATE, ENEKA LINK ROAD', 137, 1),
+  ('NG', 'RI', 'ELIOGBOLO 2 RUKPOKU', 'BLESSED EDUCATIONAL SYSTEM SCHOOL, RUKPOKWU', 138, 1),
+  ('NG', 'RI', 'ELIOZU 1', 'G.U AKE ROAD, ELIOZU FLYOVER, PH', 139, 1),
+  ('NG', 'RI', '84 ELIOGBOLO', 'PLOT 84, ELIOGBOLO, RUMUODOMAYA, PH', 140, 1),
+  ('NG', 'RI', 'ELIOZU FARM ROAD', 'FARM ROAD 2, ELIOZU', 141, 1),
+  ('NG', 'RI', 'GRACE AND GLORY CENTER', '#8 IYIAKA STREET, OFF CAR WASH JUNCTION ELIOPARANWO/OGBOGORO ROAD, ELIOPARANWO', 142, 1),
+  ('NG', 'RI', 'ELIOPOKWU-ODU CAMBODIAH', 'CAMBODIAH EVENT CENTER ELIOPOKWU-ODU, ALUU LINK ROAD, ELIKPOKODU, RUKPOKWU', 143, 1),
+  ('NG', 'RI', 'ELIOPOKWU-ODU', 'MABEL PLAZA, 155 ELIKPOKWU ODU/ALUU LINK ROAD, ROKPOKWU', 144, 1),
+  ('NG', 'RI', 'TESTIMONY CENTRE', '11 GOLDEN PLAZA ELIOWHANI TESTIMONY CENTRE PORT HARCOURT', 145, 1),
+  ('NG', 'RI', 'ELIMGBU', '#2 MANGO ESTATE, ELIMGBU', 146, 1),
+  ('NG', 'RI', 'RUMUOKPARALI', 'BELIEVE WALI HALL, BAKERY JUNCTION, RUMUOKPARALI, PORT HARCOURT', 147, 1),
+  ('NG', 'RI', 'OMUNWEI', 'SALVATION MINISTRIES OMUNWEI BRANCH, IGWURUTA', 148, 1),
+  ('NG', 'RI', 'EMOHUA GRA', 'ALONG EMOHUA GENERAL HOSPITAL ROAD, G.R.A EMOHUA', 149, 1),
+  ('NG', 'RI', 'ODUOHA-OGBAKIRI', 'ODUOHA-OGBAKIRI NKOROMA ROAD', 150, 1),
+  ('NG', 'RI', 'OKPOROWO OGBAKIRI', 'IHUNWO''S COMPOUND, MGBUOBA STREET, OKPOROWO OGBAKIRI, EMOHUA', 151, 1),
+  ('NG', 'RI', 'EMOHUA ELIBRADA', 'SALVATION MINISTRIES ELIBRADA BRANCH, EMOHUA, RIVERS STATE', 152, 1),
+  ('NG', 'RI', 'OMUDIOGA', 'OMUDEDE COMMUNITY HALL', 153, 1),
+  ('NG', 'RI', 'RUMUEKPE', 'RUMUEKPE COMMUNITY HALL IMOGU, RUMUEKPE, EMOLGA', 154, 1),
+  ('NG', 'RI', 'MBIAMA', 'MBI-AMA', 155, 1),
+  ('NG', 'RI', 'TOMBIA', 'SALVATION MINISTRIES CHURCH, TOMBIA', 156, 1),
+  ('NG', 'RI', 'KRAKRAMA', 'SALVATION MINISTRIES CHURCH KRAKRAMA', 157, 1),
+  ('NG', 'RI', 'EMOHUA 2', 'SALVATION MINISTRIES CHURCH, EMOHUA', 158, 1),
+  ('NG', 'RI', 'ENEKA 1', 'OPPOSITE GOVERNMENT SECONDARY SCHOOL, ENEKA-IGWURUTA ROAD, ENEKA', 159, 1),
+  ('NG', 'RI', 'RUMUOCHIORLU ENEKA', 'RD-27 RUMUOCHIORLU, ENEKA', 160, 1),
+  ('NG', 'RI', 'ENEKA 2', 'APRIL EVENT CENTRE, ENEKA, RUMUOGUWUMMA NEW LAYOUT, PORT HARCOURT', 161, 1),
+  ('NG', 'RI', 'ETEO-ELEME', 'HEALTH CENTRE ROAD, ETEO-ELEME, RIVERS STATE', 162, 1),
+  ('NG', 'RI', 'FINIMA 1', 'BESIDES HEALTH CENTER QUARTERS, ZONE 3, FINIMA, BONNY', 163, 1),
+  ('NG', 'RI', 'FINIMA 2', 'SAVE THE CHILD FOUNDATION AGALANGA, LONG HOUSE FINIMA, BONNY', 164, 1),
+  ('NG', 'RI', 'FINIMA 3', 'WORKER''S CAMP, FINIMA, BONNY', 165, 1),
+  ('NG', 'RI', 'FINIMA 4', 'PLOT 92, ZONE 2, CAR PARK, FINIMA, BONNY ISLAND', 166, 1),
+  ('NG', 'RI', 'BATHURST', '#23 BATHURST STREET, TOWN, PORTHARCOURT', 167, 1),
+  ('NG', 'RI', 'GLASSHOUSE', '28 RUMUOLA-STADIUM LINK ROAD, OFF STADIUM ROAD PORT HARCOURT', 168, 1),
+  ('NG', 'RI', 'GEORGE-AMA', 'CHIEF ENYINNA POLO GEORGE-AMA, OKRIKA', 169, 1),
+  ('NG', 'RI', 'H-PARAGON', 'OLD ONNE ROAD, EJAMAH EBUBU ELEME, RIVERS STATE', 170, 1),
+  ('NG', 'RI', 'MOGHO (GOKANA)', 'MOGHO TOWN HALL, BEHIND MOGHO FOOTBALL FIELD, GOKANA', 171, 1),
+  ('NG', 'RI', 'BIARA', 'BIARA COMMUNITY TOWN HALL, BIARA GOKANA', 172, 1),
+  ('NG', 'RI', 'KPEAN', 'KPEAN CHURCH', 173, 1),
+  ('NG', 'RI', 'OKAWALE', 'OKWALE CHURCH', 174, 1),
+  ('NG', 'RI', 'KONO', 'KM2 BORI-KONO WATERSIDE ROAD KONO TOWN', 175, 1),
+  ('NG', 'RI', 'IBAA TOWN', 'COMMUNITY TOWN HALL, BESIDE STATE PRIMARY SCHOOL 1, IBAA TOWN, RIVERS STATE', 176, 1),
+  ('NG', 'RI', 'IBETO', '32, IBETO ROAD, OFF RECLAMATION ROAD, TOWN, PORT HARCOURT', 177, 1),
+  ('NG', 'RI', 'IBOLOJI', '#4 WORLU EGUMA STREET, IBOLOJI ESTATE, RUMUIGBO, PH', 178, 1),
+  ('NG', 'RI', 'IPO', 'AIRPORT ROAD, IP. KELGA', 179, 1),
+  ('NG', 'RI', 'OMADEME', 'SALVATION MINISTRIES, OMADEME CHURCH', 180, 1),
+  ('NG', 'RI', 'IHIE-ETCHE', 'IHIE COMMUNITY TOWN HALL ETCHE, R/S', 181, 1),
+  ('NG', 'RI', 'IHUGBO AHOADA', 'IHUGBO TOWN BY YKC FILLING STATION EAST-WEST ROAD, IHUGBO, AHOADA', 182, 1),
+  ('NG', 'RI', 'IHUOWO AHOADA', 'WOMEN TOWN HALL, IHUOWO, AHOADA EAST', 183, 1),
+  ('NG', 'RI', 'OBIRI IKWERRE', 'SALVATION CLOSE, OBIRI IKWERRE, BESIDES GRA PHASE 5', 184, 1),
+  ('NG', 'RI', 'IGBO-ETCHE UMULUUMULU', 'IGBO-ETCHE', 185, 1),
+  ('NG', 'RI', 'IGBO-ETCHE UMUALIKPO', 'PEARL FIELD INT''L ACADEMY, IGBO-ETCHE UMUALIKPO', 186, 1),
+  ('NG', 'RI', 'OKOCHE', 'OKOCHE FARM ROAD OPPOSITE, EDEGELEM BIG MARKET, IGBO ETCHE, ETCHE, RIVERS STATE', 187, 1),
+  ('NG', 'RI', 'IGWURUTA', 'OMUOHIA COMMUNITY HALL, IGWURUTA', 188, 1),
+  ('NG', 'RI', 'IGWURUTA 2', 'OFF AIRPORT ROAD', 189, 1),
+  ('NG', 'RI', 'IGWURUTA 3-OMUMAH', 'OMUMAH TOWN HALL BY OMUMAH JUNCTION', 190, 1),
+  ('NG', 'RI', 'IKWERRENGWO ETCHE OYIGBO', 'PROMISE LAND, IKWERENGWO ETCHE', 191, 1),
+  ('NG', 'RI', 'RINCOLL (IGWURUTA-ALI)', 'SALVATION PATH, OFF ALIMINI ROAD, IGWURUTA-ALI', 192, 1),
+  ('NG', 'RI', 'ILLAOBUCHI', '#105, ANOZIE, BY ILAOBUCHI, MILE 2 DIOBU, PH', 193, 1),
+  ('NG', 'RI', 'RUMUEKINI 4', 'SALVATION MINISTRIES TODAY FM DRIVE, RUMEKINI PH', 194, 1),
+  ('NG', 'RI', 'IRIEBE HOUSING ESTATE', 'IRIEBE HOUSING ESTATE, RIVERS STATE, PORT HARCOURT', 195, 1),
+  ('NG', 'RI', 'IWOFE', '#59, IWOFE ROAD, BESIDE CITY CROWN HOTEL, RUMUEPIRIKOM', 196, 1),
+  ('NG', 'RI', 'IWOFE 2', '#101 IWOFE ROAD, RUMUOLUMENI, PH', 197, 1),
+  ('NG', 'RI', 'ISAKA TOWN', 'GYMING SPORT COMPLEX HALL ISAKA TOWN', 198, 1),
+  ('NG', 'RI', 'ALAKIRI', 'ALAKIRI COMMUNITY TOWN HALL, OKIRIKA', 199, 1),
+  ('NG', 'RI', 'EGBELELIE', 'EGBELELIE-AMA BESIDE FUBI PARADISE OKIRIKA', 200, 1),
+  ('NG', 'RI', 'OLD IBAKA', 'OLD IBAKA COMMUNITY TOWN HALL, IBAKA', 201, 1),
+  ('NG', 'RI', 'ISIOKPO', 'OPP/MAC-VIC HOTEL AGWARA ISIOKPO, RIVERS STATE', 202, 1),
+  ('NG', 'RI', 'JOHN FIBERESIMA', '21 ENGR. AMININASOARI BAPAKAYE ROAD, JOHN FIBERESIMA-AMA, MAIN LAND OKRIKA', 203, 1),
+  ('NG', 'RI', 'KARIS EVENT PLACE', '#1 BENDE STREET, RUMUOMASI, PORT-HARCOURT', 204, 1),
+  ('NG', 'RI', 'KAANI', 'BUA-KAANI ULTRA MODEL TOWN HALL, KANI 1, OGONI', 205, 1),
+  ('NG', 'RI', 'K-DERE', 'K-DERE COMMUNITY PRIMARY AUDITORIUM, K-DERE GOKANA', 206, 1),
+  ('NG', 'RI', 'KALIO-AMA', 'BARR. T.O ISHMAEL HOUSE (INDWELLER''S LODGE) 11/12 OBUDIBO OMUARU, KALIO-AMA, OKRIKA', 207, 1),
+  ('NG', 'RI', 'RUMUOLA', '#29 RUMUOLA ROAD, PHC', 208, 1),
+  ('NG', 'RI', 'KINGS SATELLITE CHURCH', 'KM 2 ALFRED PLAZA OPPOSITE SPRINGWELL ACADEMY IZUOMA, NEW LAYOUT OYIGBO, RIVERS STATE', 209, 1),
+  ('NG', 'RI', 'KPITE SATELLITE', 'KPITE COMMUNITY SCHOOL', 210, 1),
+  ('NG', 'RI', 'KOROMA', 'KOROMA PRIMARY AUDITORIUM, KOROMA TAI', 211, 1),
+  ('NG', 'RI', 'KOROKORO-TAI', 'KOROKORO TAI LGA, R/S', 212, 1),
+  ('NG', 'RI', 'KULA', 'COMMUNITY TOWN HALL BY CANAL, KULA', 213, 1),
+  ('NG', 'RI', 'BAKANA', 'CHIEF LULU''S COMPOUND, BAKANA', 214, 1),
+  ('NG', 'RI', 'LEXCEL PLAZA', '#10, AHOADA ROAD, OPPOSITE GENERAL HOSPITAL, OMOKU, ONELGA, RIVERS STATE', 215, 1),
+  ('NG', 'RI', 'LORD EMMANUEL', 'NO1 LORD EMMANUEL STREET, BY AIRFORCE JUNCTION RUMUOMASI, PORTHARCOURT', 216, 1),
+  ('NG', 'RI', 'DE-PRAISE EVENT CENTRE', 'ANNEX ONE MAN VILLAGE, NKPOLU, RUMUIGBO, RIVERS STATE', 217, 1),
+  ('NG', 'RI', 'DEN-BEC SATELLITE', '13B EAST-WEST ROAD, BESIDE GTBANK RUMUODUMAYA, PH', 218, 1),
+  ('NG', 'RI', 'OKAHIA', 'OKAHIA ESTATE RUMUIGBO OPP. NNPC, EAST WEST ROAD, PHC', 219, 1),
+  ('NG', 'RI', 'MARINE BASE', 'FIRISIKA POLO, DOWN MARINE BASE, PORT HARCOURT', 220, 1),
+  ('NG', 'RI', 'MGBARAJA ROYAL HALL', 'EGBELU-MGBARAJA, OGBOGORO, OBIO AKPOR, RIVERS STATE', 221, 1),
+  ('NG', 'RI', 'MGBARAJA NEW ROAD', 'MGBARAJA NEW ROAD, OGBOGORO, R/S', 222, 1),
+  ('NG', 'RI', 'MGBUOBA', '112, NTA ROAD, BY LOCATION JUNCTION, BESIDE GTBANK, MGBUOBA, PH', 223, 1),
+  ('NG', 'RI', 'MGBUODOHIA', '#1 YAKUBU STREET, OFF FARM ROAD, MGBUODOHIA, RUMUOLUMENI', 224, 1),
+  ('NG', 'RI', 'MILE 1', '42, IKWERRE ROAD MILE 1 DIOBU, PHC', 225, 1),
+  ('NG', 'RI', 'MILE 2-DIOBU', '#80 NNAKA STREET, MILE 1, DIOBU', 226, 1),
+  ('NG', 'RI', 'MILE 3', '#9 WOBO STREET, MILE 3', 227, 1),
+  ('NG', 'RI', 'MILE 4', '18, EBARA/OROAZI ROAD, RUMUEPIRIKOM, PH', 228, 1),
+  ('NG', 'RI', 'U.O.E', 'IWOFE ROAD, BY BIDDEL FILLING STATION RUMUOLUMENI, PORT HARCOURT', 229, 1),
+  ('NG', 'RI', 'NEW ROAD (BORIKIRI) 1', 'PLOT 159, ABIYE SEKIBO STREET, NEW ROAD, BORIKIRI, PHC', 230, 1),
+  ('NG', 'RI', 'OBUMUNTON CHIRI', 'OBUMUNTON CHIRI COMMUNITY HALL', 231, 1),
+  ('NG', 'RI', 'NDELE', 'FORMER STATE SCHOOL 1-NDELE', 232, 1),
+  ('NG', 'RI', 'NDONI', 'LUCKY ODILI HALL, OLD MARKET ROAD, NDONI, ONELGA, RIVERS STATE', 233, 1),
+  ('NG', 'RI', 'NGO TOWN', 'NGO CHURCH, NGO TOWN, ANDONI', 234, 1),
+  ('NG', 'RI', 'NKPOGWU', '21 NKPOGWU ROAD TRANS AMADI INDUSTRIAL LAYOUT, PORT HARCOURT', 235, 1),
+  ('NG', 'RI', 'NKPOLU', '2, IGWE STREET, OFF TORUGO STREET, OPP. NKPOLU PRIMARY SCHOOL, NKPOLU, RUMUIGBO, PORT HARCOURT', 236, 1),
+  ('NG', 'RI', 'NKPOLU TOWN', 'NKPOLU, PHC', 237, 1),
+  ('NG', 'RI', 'NKPOR', '29 CHIEF (HON) ADELE ORAGBULE CRESCENTS/NAVY NKPOR ROAD, NKPOR PORT HARCOURT', 238, 1),
+  ('NG', 'RI', 'OZUOBA 2', '5 OKPORO STREET, BY RUMUOSI JUNCTION OFF NTA/CHOBA ROAD OZUOBA, PH', 239, 1),
+  ('NG', 'RI', 'NONWA', 'NONWA ULTRA-MODERN MARKET, CONFERENCE HALL NONWA JUNCTION, TAI L.G.A, RIVERS STATE', 240, 1),
+  ('NG', 'RI', 'NORTEM BORI', 'PRINCE IGBARA STREET, POLYTECHNIC ROAD, BORI', 241, 1),
+  ('NG', 'RI', 'OBUAMA', 'COMMUNITY YOUTH CENTRE, OBUAMA, HARRY''S TOWN DEGEMA', 242, 1),
+  ('NG', 'RI', 'OBRIKOM', 'ALONG EGBEMA ROAD, OBRIKOM, ONELGA, RIVERS STATE', 243, 1),
+  ('NG', 'RI', 'OCHIGBA, AHOADA', 'IHUCHI HALL, OCHIGBA AHOADA EAST', 244, 1),
+  ('NG', 'RI', 'ODIEMERENYI', 'WOMEN TOWN HALL ODIERENYI TOWN AHOADA EAST', 245, 1),
+  ('NG', 'RI', 'ODILI ROAD', '#117, ODILI ROAD, AMADI AMA PORT HARCOURT', 246, 1),
+  ('NG', 'RI', 'OGALE-ELEME', 'OPPOSITE DAUGHTER''S OF CHARITY NCHIA-ELEME', 247, 1),
+  ('NG', 'RI', 'OGALE FARM ROAD', 'BY SHELL LOCATION, ELEME', 248, 1),
+  ('NG', 'RI', 'OGIDAO-ETCHE', 'OGIDA TOWN HALL, OGIDA ETCHE', 249, 1),
+  ('NG', 'RI', 'OGBUNABALI', '10 AHIAMAKARA OFF EDE STREET BY WAJA TRANS AMADI JUNCTION, OGBUNABALI, PORT HARCOURT', 250, 1),
+  ('NG', 'RI', 'OGUNABALI 2', '11 OKWU CRESCENT OFF GADA STREET, OGUNABALI PH', 251, 1),
+  ('NG', 'RI', 'OGBO-AHOADA', 'THRIFT HALL, OKIJA LANE OGBO-AHOADA EAST', 252, 1),
+  ('NG', 'RI', 'OGBOGORO', 'ALONG AKPA AHIA AKANMI, OGBOGORO TOWN, PHC', 253, 1),
+  ('NG', 'RI', 'OGOLOGO (EAGLE HOUSE)', 'NO 3, TIMAYA STREET, RUMUCHIORLU, OFF OHAKWE STREET, RUMUIGBO PH', 254, 1),
+  ('NG', 'RI', 'OGU', 'SALVATION MINISTRIES ROAD SANDFIELD AREA, OGU', 255, 1),
+  ('NG', 'RI', 'OGU 2', 'COURT HALL TOWN SQUARE, OGU', 256, 1),
+  ('NG', 'RI', 'OGU 3', 'NEAR OLD CORPER''S LODGE MISSION, TENDE-AMA, OGU', 257, 1),
+  ('NG', 'RI', 'OHIAMINI', '#15 PSYCHIATRIC ROAD, OHIAMINI, RUMUOLA-RUMUIGBO, PH', 258, 1),
+  ('NG', 'RI', 'OKAKI', '#86 HAROLD WILSON DRIVE, OKAKI BORIKIRI', 259, 1),
+  ('NG', 'RI', 'CAPTAIN AMANAGALA', 'OPPOSITE CAPTAIN AMANGALA JUNCTION, BOROKIRI TOWN, PORT HARCOURT', 260, 1),
+  ('NG', 'RI', 'OKEHI-ETCHE', 'ALONG OKEHI-OMUMA FEDERAL ROAD OKEHI 1, ETCHE, RIVERS STATE', 261, 1),
+  ('NG', 'RI', 'OKEMINI ROAD', 'OKEMINI ROAD BY Y-JUNCTION BEHIND NICEEFIELD SCHOOL, RUMUAGHOLU PORT HARCOURT', 262, 1),
+  ('NG', 'RI', 'OKOCHIRI', 'KING NEMI T. OPUTIBEYA AMA, ISAIAH ROAD, OKOCHIRI KINGDOM, OKRIKA', 263, 1),
+  ('NG', 'RI', 'OKOCHIRI 2', 'DCN. DANIEL IBUBELEYE ESTATE CHURCH OFF MESSIAH ROAD OKOCHIRI KINGDOM OKRIKA', 264, 1),
+  ('NG', 'RI', 'OKOGBE-AHOADA', 'DE PRINCE GUEST HOUSE, ALONG OYAKAMA ROAD OKOGBE-AHOADA WEST', 265, 1),
+  ('NG', 'RI', 'OKOMA HALL', '11, IGIATULO COMMUNITY ROAD BESIDE HIGH TIDE MARINE, ABULOMA', 266, 1),
+  ('NG', 'RI', 'OKOMOKO-ETCHE', 'OKOMOKO COMMUNITY, OKOMOKO ETCHE', 267, 1),
+  ('NG', 'RI', 'ACHIEVER', 'ACHIEVER''S INT''L SCHOOL, UMUDU, OMUMA', 268, 1),
+  ('NG', 'RI', 'UMUATURU', 'UMUATURU COMMUNITY HALL', 269, 1),
+  ('NG', 'RI', 'OKPORO ROAD', '#9 CHETA STREET OFF OKPORO ROAD, RUMUODARA', 270, 1),
+  ('NG', 'RI', 'OKRIKA', 'OGBOGBO COMMUNITY HALL, SAND FILLED AREA, OGBOGBO-OKRIKA', 271, 1),
+  ('NG', 'RI', 'OKRIKA-REFINERY', 'REFINERY MAIN GATE SATELLITE CHURCH, ABAM JUNCTION, OKRIKA', 272, 1),
+  ('NG', 'RI', 'OKRIKA-GREAM AMA', 'GREAM-AMA COMMUNITY HALL, GREM-AMA, OKRIKA', 273, 1),
+  ('NG', 'RI', 'OKRIKA-EKEREKANA', 'EKEREKANA COMMUNITY HALL, EKEREKANA OKRIKA', 274, 1),
+  ('NG', 'RI', 'OKRIKA-OGOLOMA', 'OLD OGOLOMA TOWN HALL, BIKE BUS STOP, OGOLOMA, OKRIKA', 275, 1),
+  ('NG', 'RI', 'OKRIKA-GRA', 'CHIEF AMAKIRI STREET, OFF BERENABO ROAD BEHIND AMATEL HOTELS, GRA-ABAM, OKRIKA', 276, 1),
+  ('NG', 'RI', 'OKILTON', 'JONATHAN PLAZA, #20 ADA GEORGE ROAD BY OKILTON JUNCTION, PHC', 277, 1),
+  ('NG', 'RI', 'OLD ABA ROAD OYIGBO', 'PARADISE INTERNATIONAL SCHOOL, #17 OLD ABA, MBANO CAMP, OYIGBO WEST, RIVERS STATE', 278, 1),
+  ('NG', 'RI', 'OLD GRA', 'TOG HOTELS, #1A YOLA STREET, AMADI FLATS, OLD GRA, P/H', 279, 1),
+  ('NG', 'RI', 'OMAGWA', 'OMUOLO TOWN HALL, OMAGWA', 280, 1),
+  ('NG', 'RI', 'OMAGWA 3', 'ALONG OMUIKUME, AGWAWIRIE ROAD, OMUIKUME, OKPARAGWA, OMAGWA TOWN', 281, 1),
+  ('NG', 'RI', 'OMERELU', 'ALONG OWERRI ROAD, OMOPI, OMERELU', 282, 1),
+  ('NG', 'RI', 'OMEGA HOUSE RUMUODARA', 'KM 4 EAST-WEST ROAD, NANKA HALL RUMUODARA', 283, 1),
+  ('NG', 'RI', 'OMOWEALTH', 'ALONG IMOGU ROAD, BY OMOWEALTH FILLING STATION, OMUEKETU, OMAGWA', 284, 1),
+  ('NG', 'RI', 'OMUANWA', 'OMUTE YOUTHS TOWN HALL, OMUTE, OMUANWA', 285, 1),
+  ('NG', 'RI', 'OMOKU', '#180, AHOADA ROAD (FORMER MR. BIGGS BY IKIRI ROUNDABOUT) OMOKU, ONELGA, RIVERS STATE', 286, 1),
+  ('NG', 'RI', 'OMOKU-OGBOGU', '#14 OMOKU/AHOADA ROAD, OPPOSITE COMMUNITY PRIMARY SCHOOL, OGBOGU TOWN, ONELGA, RIVERS STATE', 287, 1),
+  ('NG', 'RI', 'OMOKU-OBAGI', 'EBERE PLAZA, OPPOSITE OBIBOR ROUND ABOUT, OBAGI, ONELGA, RIVERS STATE', 288, 1),
+  ('NG', 'RI', 'OMOKU-EDE', 'AHOADA/OMOKU ROAD BY AMAH JUNCTION, EDE TOWN, ONELGA, RIVERS STATE', 289, 1),
+  ('NG', 'RI', 'OMOKU-EREMA', 'EREMA SHOPPING MALL, EREMA TOWN-ONELGA, RIVERS STATE', 290, 1),
+  ('NG', 'RI', 'OMOKU-OBOBURU', 'IBAGWA TOWN HALL, OBOBURU TOWN, ONELGA, RIVERS STATE', 291, 1),
+  ('NG', 'RI', 'OMOKU IMMACULATE', 'IMMACULATE HOTEL AND EVENT CENTRE, 88 EREMA STREET, OMOKU, ONELGA, RIVERS STATE', 292, 1),
+  ('NG', 'RI', 'OMOKU-OBOHIA', '15/17 OBOHIA ROAD, OMOKU, ONELGA, RIVERS STATE', 293, 1),
+  ('NG', 'RI', 'OMOKU-OBOR', '#67 OBOR ROAD, BEFORE LOCATION JUNCTION, OBOR ROAD, OMOKU, ONELGA, RIVERS STATE', 294, 1),
+  ('NG', 'RI', 'OMOKU-AKABUKA', '#61 AHOADA/OMOKU ROAD, VIC''S VIEW HOTEL & RESORT, AKABUKA TOWN, ONELGA, RIVERS STATE', 295, 1),
+  ('NG', 'RI', 'OMOKU OBIOZIMINI', 'MELFORD UMESI COMPOUND, OBIOZIMINI TOWN, ONELGA, RIVERS STATE', 296, 1),
+  ('NG', 'RI', 'OMUMA', 'UMUKPOTA CHURCH, OPP EBERI PARK, OMUMA, LGA', 297, 1),
+  ('NG', 'RI', 'ONNE', 'RCCG ROAD, LUBEY, AGBETA-ONNE, ELEME L.G.A. RIVERS STATE', 298, 1),
+  ('NG', 'RI', 'ONNE 2', 'BESIDE ST. MARY CATHOLIC CHURCH I.I.T.A. ROAD, ONNE', 299, 1),
+  ('NG', 'RI', 'IKPO-AMA', 'SANDFIELD (PHASE 1), IKPO-AMA, OGU/BOLO L.G.A', 300, 1),
+  ('NG', 'RI', 'OPOBO', 'BRUCE JAJA''S COMPOUND, OPOBO TOWN', 301, 1),
+  ('NG', 'RI', 'NKORO', 'OPOROKUNO PROGRESSIVE HALL SAND FIELD NKORO TOWN OPOBO/NKORO LGA RIVERS STATE', 302, 1),
+  ('NG', 'RI', 'EPELLEME', 'SALVATION MINISTRIES EPELLEMA CICILIA AVENUE, ALONG UZO-UZO EPELLEMA, OPOBO TOWN', 303, 1),
+  ('NG', 'RI', 'CENTER POINT', '#52 HOSPITAL ROAD, BORI', 304, 1),
+  ('NG', 'RI', 'BUNU', 'BESIDES COMMUNITY MARKET, BUNU TOWN, TAI', 305, 1),
+  ('NG', 'RI', 'KIRA', 'KIRA MODERN TOWN HALL, KIRA, TAI', 306, 1),
+  ('NG', 'RI', 'ORADA-OZUOBA', 'RUMUADOBO CIVIC CENTER, OPPOSITE AKPOR PALACE BY BAKERY JUNCTION OZUOBA', 307, 1),
+  ('NG', 'RI', 'ORAIFITE-NEW RUMUIGBO', '#14 WALI OGBONDA ROAD (NTA-MERCYLAND LINK ROAD) OPPOSITE PEPSI DEPOT NEW LAYOUT, NEW RUMUIGBO PH', 308, 1),
+  ('NG', 'RI', 'OROWORUKWO', '#130 ABA ROAD BY ST. JOHN''S CAMPUS GATE OROWORUKWO', 309, 1),
+  ('NG', 'RI', 'OWUDO', '4 IYO CLOSE, OWUDO COMMUNITY ABULOMA, PORT HARCOURT', 310, 1),
+  ('NG', 'RI', 'OYIGBO', 'BY BAMBOO MKT, TIMBER JUNCTION, OYIGBO, RIVERS STATE', 311, 1),
+  ('NG', 'RI', 'OYIGBO-UNIK EVENT CENTRE IRIEBE', '5 UGOHENZ AVENUE, OPP. TARIBO JUNCTION, EGBELU-IRIEBE', 312, 1),
+  ('NG', 'RI', 'EDDY JOHNSON', '52 SHELL LOCATION ROAD, OYIGBO, RIVERS STATE', 313, 1),
+  ('NG', 'RI', 'NEW HEAVEN', 'G-CLIMAX MODEL SCHOOL, #30 NEW HEAVEN ESTATE, OYIGBO', 314, 1),
+  ('NG', 'RI', 'OZUAHA', 'OMUSI-OZUAHA ROAD BY J.M.S, OZUAHA', 315, 1),
+  ('NG', 'RI', 'OZUOBA 1', 'OPPOSITE AKPOR GRAMMAR SCHOOL, OZUOBA', 316, 1),
+  ('NG', 'RI', 'OZUZU-ETCHE', 'OJIA TOWNHALL OZUZU TOWN ETCHE', 317, 1),
+  ('NG', 'RI', 'RUMUOKWURUSI PIPE LINE', 'WUTCHE STREET, PIPELINE, RUMUOKWURUSHI, PORT HARCOURT, RIVERS STATE', 318, 1),
+  ('NG', 'RI', 'AKWAKA 1-KEN STREET', '#2 KEN STREET, NEW ROAD LAYOUT AKWAKA PHASE 2 RUMUODOMAYA PH', 319, 1),
+  ('NG', 'RI', 'AKWAKA 2-AKPULONU STREET', '#1 CHIEF AKPULONU STREET, OPPOSITE 1ST OPTION SCHOOL, AKWAKA, RUMUODOMAYA, PORT HARCOURT', 320, 1),
+  ('NG', 'RI', 'ROSE HALL', '#148 IKWERRE ROAD, RUMUIGBO, PORT HARCOURT', 321, 1),
+  ('NG', 'RI', 'PETER PLAZA', 'PETER PLAZA 47 OGBOGORO ROAD, BESIDE OGASAM PETROL STATION, OGBOGORO PORTHARCOURT', 322, 1),
+  ('NG', 'RI', 'ELIOPARANWO 2', '64, ELIOPARANWO ROAD, PORT HARCOURT', 323, 1),
+  ('NG', 'RI', 'GRACE CENTER RUMUOKWURUSI PIPELINE-2', 'GRACE CENTER RUMUOKWURUSI, PIPELINE-2, PHC', 324, 1),
+  ('NG', 'RI', 'RUKPOKWU CIVIC CENTER', 'RUKPOKWU CIVIC CENTER, BEHIND STATE PRIMARY SCHOOL', 325, 1),
+  ('NG', 'RI', 'RUMUOKWUTA', '10 MGBUGBA/NTA ROAD, ADA-ODUM PLAZA RUMUOKWUTA PHC', 326, 1),
+  ('NG', 'RI', 'RUKPOKWU', 'KM 18 AIRPORT ROAD BY ALUU POLICE CHECK POINT, RUKPOKWU, PORT HARCOURT', 327, 1),
+  ('NG', 'RI', 'RUMUAGHOLU', 'KING''S CITY BRANCH, RUMUAGHOLU, PORT HARCOURT', 328, 1),
+  ('NG', 'RI', 'RUMUAGHOLU PIPELINE', 'RUMUAGHOLU PIPELINE JUNCTION, RUMUAGHOLU', 329, 1),
+  ('NG', 'RI', 'RUMUAPU-ENEKA ROAD', 'OPPOSITE TENDRIL SCHOOL, RUMUAPU ROAD', 330, 1),
+  ('NG', 'RI', 'ENEKA ROUND ABOUT', 'S.E WORLU PLAZA, ENEKA ROUNDABOUT', 331, 1),
+  ('NG', 'RI', 'RUMUEKINI 1', '9 MARKET ROAD BY MTN MASK, RUMUEKINI', 332, 1),
+  ('NG', 'RI', 'RUMUEKINI 2', 'SALVATION STREET BEFORE FISH FARM RUMUEKINI, PHC', 333, 1),
+  ('NG', 'RI', 'EGBELU ALUU LINK', 'EGBELU CHURCH, ALUU LINK ROAD, RIVERS STATE', 334, 1),
+  ('NG', 'RI', 'RUMUEPIRIKOM', 'ODOLI COMMUNITY HALL, ODOLI ROAD, MILE 4, WIMPY PHC', 335, 1),
+  ('NG', 'RI', 'RUMUEWHARA', '#57 OROIGWE ROAD, RUMUEWHARA, OPPOSITE OROIGWE CIVIC CENTRE, PH', 336, 1),
+  ('NG', 'RI', 'RUMUIBEKWE', 'GLORY LAND EVENT CENTRE 15, PARKER CRESCENT, RUMUIBEKWE ESTATE, PH', 337, 1),
+  ('NG', 'RI', 'GLORY BRANCH ENEKA', 'SALVATION MINISTRIES, GLORY BRANCH, ENEKA', 338, 1),
+  ('NG', 'RI', 'RUMUIGBO BARAKAH', '#8, HARUK ROAD OFF OBI WALI ROAD, RUMUIGBO, PORT HARCOURT', 339, 1),
+  ('NG', 'RI', 'RUMUIGBO Y-JUNCTION', '16, APARA/NTA LINK ROAD RUMUIGBO PH', 340, 1),
+  ('NG', 'RI', 'RUMUIGBO CIVIC CENTRE', 'RUMUIGBO CIVIC CENTRE, BESIDE RUMUIGBO PRI. HEALTH CARE CENTRE, IKWERRE RD. RUMUIGBO, PH', 341, 1),
+  ('NG', 'RI', 'RUMUJI', 'MGBUATAFA HALL, RUMUJI-EMOHUA', 342, 1),
+  ('NG', 'RI', 'RUMUEJIMA', 'RUMUEJIMA COMMUNITY HALL BY RUKPOKWU LAST BUS STOP OFF AIRPORT ROAD RUKPOKWU PHC', 343, 1),
+  ('NG', 'RI', 'RUMUEME', '#295, IKWERRE ROAD, OPPOSITE RUMUEME CIVIC CENTRE, MILE 4, DIOBU', 344, 1),
+  ('NG', 'RI', 'RUMUNDURU', '#118 RD, RUMUNDURU', 345, 1),
+  ('NG', 'RI', 'RUMUNDURU TOWN HALL/CULVERT', 'PLOT 40/42 STREAM ROAD BY CULVERT, RUMUNDURU, PORT HARCOURT', 346, 1),
+  ('NG', 'RI', 'RUMUOGBA', 'MIRACLE PLAZA OPPOSITE HERITAGE BANK BY ARTILLERY JUNCTION, OLD ABA ROAD, PORTHARCOURT', 347, 1),
+  ('NG', 'RI', 'RUMUOBIAKANI', '#3 CONSTRUCTION AVENUE, NEPA QUARTERS, OPPOSITE PROPEL FILLING STATION BY RUMUOBIAKANI ROUND ABOUT', 348, 1),
+  ('NG', 'RI', 'RUMUODARA', 'KM 4, EAST/WEST ROAD, NANKA TOWN HALL RUMUODARA, PORT HARCOURT', 349, 1),
+  ('NG', 'RI', 'EVANGEL PLAZA', '#40 AIRPORT ROAD RUMUODOMAYA OPPOSITE RUMUODOMAYA NEW PARK', 350, 1),
+  ('NG', 'RI', 'RUMUODOMAYA PHINEHAS SHOPPING PLAZA', '#76 AIRPORT RD PHINEHAS SHOPPING PLAZA RUMUODOMAYA PORT HARCOURT', 351, 1),
+  ('NG', 'RI', 'RUMUKALAGBOR', '#28, RUMUKALAGBO/ELEKAHIA LINK ROAD, PH', 352, 1),
+  ('NG', 'RI', 'RUMUOKORO', '#10 ELIEKE STREET OPPOSITE UBA, RUMUOKORO', 353, 1),
+  ('NG', 'RI', 'RUMUOKWACHI', '#13, RUMUOKWACHI STR, RUMUOKWACHI TOWN PHC', 354, 1),
+  ('NG', 'RI', 'RUMUOKWURUSI', 'ABA ROAD, ADJACENT TO UBA, RUMUOKWURUSI, PH', 355, 1),
+  ('NG', 'RI', 'RUMUOLUMENI 1', '#97, AKER ROAD, RUMUOLUMENI, PH', 356, 1),
+  ('NG', 'RI', 'RUMUOLUMENI 5', 'PLOT 2, OPPOSITE JESUS CLOSE, OFF AKER ROAD, RUMUOLUMENI', 357, 1),
+  ('NG', 'RI', 'RUMUOSI', '#4 SALVATION ROAD, OPPOSITE GULF GAS PLANT, RUMUOSI', 358, 1),
+  ('NG', 'RI', 'RUMUOWHA', 'ENEKA/RUKPOKWU ROAD RUMUOWHA, ENEKA, PORT HARCOURT', 359, 1),
+  ('NG', 'RI', 'ENUGU STREET', '#3 ENUGU STREET', 360, 1),
+  ('NG', 'RI', 'RUMUWOJI-ALODE NSUKKA', '#44 ABAKALIKI, MILE 1, DIOBU, RUMUWOJI BRANCH PHC', 361, 1),
+  ('NG', 'RI', 'SAND FIELD (BORIKIRI)', '#1 WILSON BAKERY ROAD, NAVY JUNCTION UPE, BORIKIRI, PH', 362, 1),
+  ('NG', 'RI', 'SARS ROAD', 'PLOT 16, ROAD 6, ROYAL ESTATE, SARS ROAD, PHC', 363, 1),
+  ('NG', 'RI', 'SARS ROAD 2', 'MALL FLORA, SARS ROAD', 364, 1),
+  ('NG', 'RI', 'SILA CENTRE UMACHI', '#4 PEACE AVENUE, BEHIND SILA INT''L SCHOOL, OMACHI, RUMUODOMAYA, PH', 365, 1),
+  ('NG', 'RI', 'GOLF ESTATE', 'OKURUAMA COMMUNITY OFF PETER ODILI ROAD, SLAUGHTER/TRANS AMADI PHC', 366, 1),
+  ('NG', 'RI', 'ST PATRICK PLAZA ENEKA', 'NEW LAYOUT ROAD RUMUEWHARA ROAD, PH', 367, 1),
+  ('NG', 'RI', 'TAABAA', 'TAABAA PRIMARY SCHOOL 2', 368, 1),
+  ('NG', 'RI', 'TIMBER JUNCTION', 'EAST-WEST ROAD RUMUOSI, KILOMETER 15 EAST WEST ROAD, RUMUOSI', 369, 1),
+  ('NG', 'RI', 'IMMANUEL BRANCH', '#1 SALVATION CLOSE, IMMANUEL ROAD, ABULOMA, PHC', 370, 1),
+  ('NG', 'RI', 'GLORIOUS HOUSE ELEME', 'ALONG TRAILER PARK ROAD, EAST/WEST ROAD, EBUBU ELEME', 371, 1),
+  ('NG', 'RI', 'UBETA AHOADA', 'UBETA YOUTH CENTRE, UBETA TOWN', 372, 1),
+  ('NG', 'RI', 'UBIMA', 'EBERE COMPOUND OMUORDU, UBIMA', 373, 1),
+  ('NG', 'RI', 'UMUAGBAI', 'WEAVING CENTRE UMUAGBAI OYIGBO', 374, 1),
+  ('NG', 'RI', 'UMUAKURU', 'UMUAKURU COMMUNITY TOWN HALL, IGBO ETCHE', 375, 1),
+  ('NG', 'RI', 'UMUASUKPU', 'CHILDREN FOUNDATION SCHOOL, UMUASUKPU, IGBO-ETCHE', 376, 1),
+  ('NG', 'RI', 'UMUECHEM-ETCHE', 'UMUNWAMBE TOWN HALL UMUOGO UMUECHEM ETCHE ALONG IGWURUTA ROAD', 377, 1),
+  ('NG', 'RI', 'UMUOGODO', 'DE REPUBLIC, BESIDE NNPC FILLING STATION, UMUOGODO, IGBO-ETCHE', 378, 1),
+  ('NG', 'RI', 'UMUEBULE 1', 'CHUMA JUO RESORT 1, SANDFIELD ROAD, UMUEBULE 1, ETCHE LGA, RIVERS STATE', 379, 1),
+  ('NG', 'RI', 'UMUEBULE 2-NJOKU PLAZA', 'BESIDE EVENING MARKET, UMUEBULE 2, ETCHE PHC', 380, 1),
+  ('NG', 'RI', 'UMUEBULE 4', 'UMUEBULU 4 BUNCHY HALL OYIGBO, RIVERS STATE', 381, 1),
+  ('NG', 'RI', 'ULA-UPATA', 'OPP. ULA-UPATA SEC. SCH. ULAUPATA-AHOADA EAST', 382, 1),
+  ('NG', 'RI', 'GRACE CENTER ELIGBOLO', 'NO. 5 NEPA ROAD, BRAINFIELD SCHOOL ROAD ELIGBOLO OFF EAST WEST ROAD, PH', 383, 1),
+  ('NG', 'RI', 'UPATABO', 'EVENT CENTRE BY SECONDARY SCHOOL UPATABO AHOADA WEST', 384, 1),
+  ('NG', 'RI', 'USOKUN-DEGEMA', 'ODERI HOTEL USOKUN DEGEMA', 385, 1),
+  ('NG', 'RI', 'UST CAMPUS', 'RIVERS STATE UNIVERSITY SATELLITE CHURCH, ROAD A, BESIDE STAFF SCHOOL', 386, 1),
+  ('NG', 'RI', 'UZUAKA', 'NDDC NEW HEALTH CENTRE UZUAKU, IMO GATE', 387, 1),
+  ('NG', 'RI', 'VICZAAC-NTA ROAD', 'VICZAAC RENTAL EVENT, #309 NTA ROAD BESIDE NNPC FILLING STATION MGBUOBA PHC', 388, 1),
+  ('NG', 'RI', 'VICTORY HOUSE', 'BEFORE REFINERY JUNCTION (FORMER FESTIVE FAVOUR BUILDING) ALETO ELEME, RIVERS STATE', 389, 1),
+  ('NG', 'RI', 'WIIYAAKARA', 'PYAWUGAH HALL WIIYAAKARA KHANA LGA RIVERS STATE', 390, 1),
+  ('NG', 'RI', 'WOJI 1', 'NO.1 CHURCH CLOSE, BEHIND UBA BANK, YKC JUNCTION, WOJI, PH', 391, 1),
+  ('NG', 'RI', 'WOJI 2', 'REES PLAZA #27 EZEGBAKAGBAKA STREET WOJI PHC, RIVERS STATE', 392, 1),
+  ('NG', 'RI', 'WOJI 3', '25 CIRCULAR ROAD OFF ALCON WOJI TOWN GBALAJAM PORT HARCOURT, RIVERS STATE', 393, 1),
+  ('NG', 'RI', 'WOJI APAMINI', '#13 OMACHI LANE RUMUROLU, APAMINI', 394, 1),
+  ('NG', 'RI', 'WOJI-5 ELIJIJI', '38 ELIJIJI AVENUE RUMUROLU', 395, 1),
+  ('NG', 'RI', 'WOJI 6 NVIGWE', '44 NVIGWE ROAD, WOJI', 396, 1),
+  ('NG', 'RI', 'WOJI 7', 'SALVATION MINISTRIES PALACE JUNCTION BRANCH, WOJI', 397, 1),
+  ('NG', 'RI', 'WOJI 8', 'FAITH INTERNATIONAL SECONDARY SCHOOL, HALL 1, #9 FYNEFACE CHUKWU STREET, OFF ALCON ROAD, WOJI, PORTHARCOURT', 398, 1),
+  ('NG', 'RI', 'WOKOMA', '32, WOKOMA STREET, MILE 3, DIOBU, PH', 399, 1),
+  ('NG', 'RI', 'ZAAKPON', 'COMMUNITY TOWN HALL, ZAAKPON, KHANA LGA, RIVERS STATE', 400, 1),
+  ('NG', 'RI', 'ZIVEN EVENT CENTRE', 'KM4 IGBO ETCHE ROAD BY POLICE CHECK POINT RUMUKWURUSI, PORT HARCOURT', 401, 1),
+  ('NG', 'RI', 'MGBUORI', 'MGBUORI CHURCH RUMUOKWURUSI CIVIC CENTER', 402, 1),
+  ('NG', 'ABI', 'IHIE NDUME, UMUAHIA HQ', 'BESIDE PARADISE CRYSTAL HOTEL, OCHENDO BY-PASS, OFF BENDE ROAD, UMUAHIA', 403, 1),
+  ('NG', 'ABI', 'WARRI STREET', '4 WARRI STR. ISI-GATE UMUAHIA', 404, 1),
+  ('NG', 'ABI', 'UTURU, ABSU', 'OPP. ARMY CHECKPOINT ABSU ABIA STATE', 405, 1),
+  ('NG', 'ABI', 'OVIM', 'OVIM', 406, 1),
+  ('NG', 'ABI', 'OLOKORO SANTACRUX', 'OLOKORO SANTACRUX', 407, 1),
+  ('NG', 'ABI', 'AMUZUKWU OHAFIA', 'AMUZUKWU OHAFIA', 408, 1),
+  ('NG', 'ABI', 'AROCHUKWU', 'AROCHUKWU', 409, 1),
+  ('NG', 'ABI', 'KENVILLE AGBAMA', 'KENVILLE AGBAMA', 410, 1),
+  ('NG', 'ABI', 'OHAFIA EBEN', 'OHAFIA EBEN', 411, 1),
+  ('NG', 'ABI', 'UBAKALA', 'UBAKALA', 412, 1),
+  ('NG', 'ABI', 'UMUDIKE', 'UMUDIKE', 413, 1),
+  ('NG', 'ABI', 'PATORAIL', '#11 ABA RD, PATORAL HOTEL', 414, 1),
+  ('NG', 'ABI', 'AMAEKPU OHAFIA', 'AMAEKPU OHAFIA', 415, 1),
+  ('NG', 'ABI', 'ELUAMA', 'ELUAMA', 416, 1),
+  ('NG', 'ABI', 'OKIGWE RD, ABA HQ', '135C OKIGWE ROAD ABA', 417, 1),
+  ('NG', 'ABI', 'PARK RD ABA', '#2 PARK ROAD ABA', 418, 1),
+  ('NG', 'ABI', 'UKAEGBU (OGBOR HILL)', '#1, UKAEGBU RD, OGBOHILL ABA', 419, 1),
+  ('NG', 'ABI', 'OSUSU FAULK (ABA)', '#51 FAULKS ROAD, OSUSU', 420, 1),
+  ('NG', 'ABI', 'OKPU UMUOBO', 'UNION BANK BAYI ABA', 421, 1),
+  ('NG', 'ABI', 'OGWO RD', '#81 OGWO ROAD BY U GWUKE PARK', 422, 1),
+  ('NG', 'ABI', 'PH ROAD', '#2, ONUOHA STR BY PH RD', 423, 1),
+  ('NG', 'ABI', 'NGWA RD', '#17B, NGWA RD ABA', 424, 1),
+  ('NG', 'ABI', 'OHANKU', '#166 OHANKU RD BY IHEOJI MARKET', 425, 1),
+  ('NG', 'ABI', 'NNETU', 'EZIUKWU COMMUNITY HALL', 426, 1),
+  ('NG', 'ABI', 'ENWEREJI OVOM RD', '#5, EBWEREJI STR OFF AKPU RD BY OVOM', 427, 1),
+  ('NG', 'ABI', 'NEW UMUAHIA RD, AGBOR HILL', '#14B, NEW UMUAHIA RD OGBOHILL ABA', 428, 1),
+  ('NG', 'ABI', 'OLD EXPRESS', '#252 OLD EXPRESS BY URATTA ABA', 429, 1),
+  ('NG', 'ABI', 'ARIARA', '#269 FAULKS RD BY ARIARIA JUNCTION ABA', 430, 1),
+  ('NG', 'ABI', 'AZUMINI', 'AGHANIRU WOMEN HALL, UKWA EAST', 431, 1),
+  ('NG', 'ABI', 'OBEHIE', 'OBEHIE CENTRAL SCHOOL', 432, 1),
+  ('NG', 'ABI', 'UMULE', '#69 UMULE ROAD ABA', 433, 1),
+  ('NG', 'ABI', 'ABIRIBA', 'BOURDEX FARM ROAD, ABIRIBA', 434, 1),
+  ('NG', 'ABI', 'DIVINE', 'DIVINE FAVOUR HALL, 8 OLD EXPRESS', 435, 1),
+  ('NG', 'ABI', 'ABIRIBA-2, AGBAJA NKPORO', 'AGBAJA NKPORO', 436, 1),
+  ('NG', 'AKB', 'ABAK', '67 HOSPITAL ROAD ADJACENT TO UNION BANK, ABAK', 437, 1),
+  ('NG', 'AKB', 'ABAK ROAD', 'NEAR FLYOVER, ABAK ROAD, OBIO OFFOT UYO', 438, 1),
+  ('NG', 'AKB', 'AFAHA NSIT', 'CLOSE TO WATERBOARD STATION, AFAHA NSIT, NSIT IBOM LGA', 439, 1),
+  ('NG', 'AKB', 'AFAHA OFFIONG', '#1 CIVIC CENTRE ROAD, AFAHA OFFIONG, NSIT IBOM', 440, 1),
+  ('NG', 'AKB', 'IKOT ASURUA', '241 ABA RD, IKOT OSURUA. IKOT EKPENE', 441, 1),
+  ('NG', 'AKB', 'CALABAR ITU', '#26 CALABAR ITU HIGH WAY, ITAM UYO', 442, 1),
+  ('NG', 'AKB', 'EWET HOUSING', '78 BENNETT BASSEY, C-LINE EWET HOUSING ESTATE, OPP. KILIMAJARO, ORON ROAD, UYO', 443, 1),
+  ('NG', 'AKB', 'ETINAN', '#13. UMOH ETUK UDOH STREET, OPPOSITE ETINAN MARKET, ETINAN', 444, 1),
+  ('NG', 'AKB', 'ETE-IKOT ABASI', 'ETE BY METHODIST CENTRAL SCHOOL, ETE TOWN', 445, 1),
+  ('NG', 'AKB', 'FOUR LANE', 'GRACE AND MERCY HOUSE, #135A EDET AKPAN AVENUE (4 LANE) UYO', 446, 1),
+  ('NG', 'AKB', 'IBESIKPO', 'IKOT AKPA ETOK, AFTER HEALTH CENTRE, NUNG UDOE, IBESIKPO', 447, 1),
+  ('NG', 'AKB', 'IDORO RD', 'DORO EXPRESS ROAD, BESIDE CRYSTAL FILLING STATION, UYO', 448, 1),
+  ('NG', 'AKB', 'IDORO 2', '41 IDORO ROAD, ADJACENT ROAD SAFETY OFFICE, UYO', 449, 1),
+  ('NG', 'AKB', 'IBAKA', '6, BASSEY ETIFIT STREET, BEHIND NAVY CHECK POINT, IBAKA', 450, 1),
+  ('NG', 'AKB', 'IKOT-AKPADEN', 'AKPANDEN JUNCTION MKPAT ENIN L.G.A', 451, 1),
+  ('NG', 'AKB', 'IKOT-EKPENE', 'NO 10B NIGER STREET IKOT EKPENE', 452, 1),
+  ('NG', 'AKB', 'NTO OTONG', 'NTO-OTONG MIDIM ABAK, ALONG ETIM EKPO ROAD', 453, 1),
+  ('NG', 'AKB', 'IKONO', 'CLUB 999 ETIM-EDIENE IKONO, AKWA IBOM STATE', 454, 1),
+  ('NG', 'AKB', 'IKPA ROAD', '#47 IKPA RD, BESIDES UNIUYO ANNEX GATE, UYO', 455, 1),
+  ('NG', 'AKB', 'ITAK', 'ITAK BY KRIS-B LOUNGE', 456, 1),
+  ('NG', 'AKB', 'MBIEREBE', '178 MBIEREBE OBIO, AFTER MBIEREBE MARKET AKA ETINAN ROAD, UYO', 457, 1),
+  ('NG', 'AKB', 'NWANIBA RD', '277 NWANIBA RD, UYO', 458, 1),
+  ('NG', 'AKB', 'NDIYA', 'DE-BROWNSON PLAZA, NDIYA, NSIT UBIUM', 459, 1),
+  ('NG', 'AKB', 'OKOBO', 'OKOPEDI OKOBO UYO ROAD, OKOBO', 460, 1),
+  ('NG', 'AKB', 'ORON', '308 ORON ROAD OPPOSITE NEPA OFFICE, ORON', 461, 1),
+  ('NG', 'AKB', 'ORON RD, UYO', '#223 ORON ROAD, UYO (BY TIMBER JUNCTION)', 462, 1),
+  ('NG', 'AKB', 'UKANAFUN', '#13 EKPARAKWA ROAD, UKANAFUN', 463, 1),
+  ('NG', 'AKB', 'OBOT IDIM', '#112, AKA NUNG UDOE ROAD, BEFORE OBIT IDIM JUNCTION, UYO', 464, 1),
+  ('NG', 'AKB', 'UDOTONG, UYO (HQ)', '#9 UDOTUNG UBO STR, OFF AKA ROAD, UYO', 465, 1),
+  ('NG', 'AKB', 'INI', 'IKPE IKOT UKON INI LOCAL GOVERNMENT AREA', 466, 1),
+  ('NG', 'AKB', 'ABAK RD 2', '121 ABAK RD BY UKANAFFOT TRAFFIC LIGHT, UYO', 467, 1),
+  ('NG', 'AKB', 'IKOT EKPENE RD', '1 UDOBIO STREET, OFF IKOT EKPENE RD, BY KILIMANJARO, UYO', 468, 1),
+  ('NG', 'AKB', 'ATA UDOSUNG', 'ATA UDOSUNG, IKOT ABASI, UYO, AKWA IBOM STATE', 469, 1),
+  ('NG', 'AKB', 'PLAZA ABAK RD', 'ABAK ROAD BY PLAZA, IKOT EKPENE', 470, 1),
+  ('NG', 'AKB', 'EKABAM NSUKARA', 'EKABAM NSUKARA', 471, 1),
+  ('NG', 'AKB', 'ONNA', 'ONNA', 472, 1),
+  ('NG', 'AKB', 'EKOM IMAN', 'EKOM IMAN', 473, 1),
+  ('NG', 'AKB', 'OBOT AKARA', 'OBOT AKARA', 474, 1),
+  ('NG', 'AKB', 'EKET ORON RD', '#7 AFAHA ATIA ROAD, OFF EKET ORON ROAD, EKET', 475, 1),
+  ('NG', 'AKB', 'GRACE BILL EKET-HQ', 'GRACEBILL EKET', 476, 1),
+  ('NG', 'AKB', 'EKET IDIAM', '#7 AYAYAK STREET, OFF IDUA, EKET', 477, 1),
+  ('NG', 'AKB', 'EKET MARINA', '#10 MARINA RD, EKET', 478, 1),
+  ('NG', 'AKB', 'IBENO', '#1 TERMINAL ROAD, IBENO, OPP EXXONMOBIL, IBENO', 479, 1),
+  ('NG', 'AKB', 'IKOT OKON RD', 'KM 4, EKET-ETINA ROAD, IKOT OKUDOMO OKON TOWN HALL, BESIDE TIPPER WORKSHOP', 480, 1),
+  ('NG', 'AKB', 'IKOT UDOTA', 'IKOT UDOTA ROAD BY HERITAGE POLYTECHNIC, EKET', 481, 1),
+  ('NG', 'AKB', 'EKPRI NSUKARA', 'EKPRI NSUKARA', 482, 1),
+  ('NG', 'ANA', 'TEMP SITE AWKA', 'DESTINY POT''S FAST FOOD, NO 13 OBY-OKOLI AVENUE UNIZIK TEMP SITE AWKA', 483, 1),
+  ('NG', 'ANA', 'OBOSI', '1, ALONG MIKE AJEGBO ROAD, OBOSI MICRO FINANCE BANK BUILDING OBOSI', 484, 1),
+  ('NG', 'ANA', 'IHIALA', 'PAAP PLAZA OPPOSITE EZIANI PRIMARY SCHOOL ALONG ORLU ROAD IHIALA', 485, 1),
+  ('NG', 'ANA', 'ONITSHA UPPER IWEKA (HQ)', 'NO 18, NEW AMERICAN QUARTERS ONITSHA ANAMBRA STATE', 486, 1),
+  ('NG', 'ANA', 'NNEWI 1, LUCO', 'LUCO PLAZA BESIDE ANAEDO HALL OTOLO NNEWI', 487, 1),
+  ('NG', 'ANA', 'NNEWI 2, OLD ONITSHA ROAD', 'NO 69 OLD ONITSHA ROAD BESIDE NAU TEACHING HOSPITAL NNEWI', 488, 1),
+  ('NG', 'ANA', 'NNEWI 3', 'No 37 Odume Lay out, Ugwumba Junction Nkpor', 489, 1),
+  ('NG', 'ANA', 'NNEWI 4, NNOBI', 'ALONG NNOBI/NKPOR ROAD, AFTER UMUAGU JUNCTION NNOBI', 490, 1),
+  ('NG', 'ANA', 'NDIKELIONWU', 'BESIDE NDIKELIONWU TOWN HALL, OPPOSITE WHITE HOUSE, EKWULOBI A-OKO-UMUNZE ROAD, NDIKELIONWU', 491, 1),
+  ('NG', 'ANA', 'OWERRI RD, ONITSHA', 'OWERRI ONITSHA ROAD', 492, 1),
+  ('NG', 'ANA', 'IFITE, AWKA BRANCH', '#295 IFITE ROAD, RUBEZ VILLA JUNCTION IFITE AWKA', 493, 1),
+  ('NG', 'ANA', 'ICHI', 'BESIDES ICHI TECHNICAL SECONDARY SCHOOL OFF OLD ONITSHA ROAD, ANAMBRA STATE', 494, 1),
+  ('NG', 'ANA', 'OGBUNIKE', 'DIVINE HERITAGE PLAZA, OPP ONWA JUNCTION OGBUNIKE, OGIDI', 495, 1),
+  ('NG', 'ANA', 'AWADA', '#17 CC MUOGBO STREET, ODUME OBOSI, THE TOWN UNION HALL, RAINBOWNET BACK OF ARMY BARRACK', 496, 1),
+  ('NG', 'ANA', 'OBA', 'CHIBON JUNCTION BESIDE CHIBON HOTEL OBA', 497, 1),
+  ('NG', 'ADM', 'LOW COST HOUSE', '39 Iyorchia Ayu road, Wurukum Makurdi', 498, 1),
+  ('NG', 'ADM', 'MUBI', 'MUBI', 499, 1),
+  ('NG', 'ADM', 'NUMAN', 'GWEDA-MALLAM, BEHIND MAYASIN FILLING STATION, NUMAN', 500, 1),
+  ('NG', 'BAU', 'BAUCHI', 'RAFIN-ZURFI, BENCO JUNCTION, BAUCHI', 501, 1),
+  ('NG', 'BAU', 'SALAMA-1 YELWAN KUSU', 'SALAMA-1, YELWAN KUSU', 502, 1),
+  ('NG', 'BAU', 'TAFAWA BELEWA', 'BASE 10, SABO PLAZA, TAFAWA BELEWA', 503, 1),
+  ('NG', 'BAY', 'IMGBI', '18 IMGBI ROAD, AMARATA', 504, 1),
+  ('NG', 'BAY', 'EDEPIE', 'MELFORD OKILO EXPRESSWAY, EDEPIE', 505, 1),
+  ('NG', 'BAY', 'KPANSIA', 'ZIONHILL: ISAAC BORO EXPRESSWAY, BY OTIOTIO JUNCTION', 506, 1),
+  ('NG', 'BAY', 'AMASSOMA', '#4 NDU ROAD, BY NDU MAINGATE', 507, 1),
+  ('NG', 'BAY', 'AZIKORO', 'SALVATION DRIVE AZIKORO TOWN', 508, 1),
+  ('NG', 'BAY', 'NEMBE', 'UBE PRIMARY SCHOOL HALL, TOMBI', 509, 1),
+  ('NG', 'BAY', 'OKAKA', 'LAKEVIEW COMPLEX, OKAKA', 510, 1),
+  ('NG', 'BAY', 'IGBOGENE', 'ACHIEVERS FARM, IGBOGENE', 511, 1),
+  ('NG', 'BAY', 'MBIAMA', 'NEW LIFE PLAZA, OPPOSITE J.K JUNCTION', 512, 1),
+  ('NG', 'BAY', 'OBUNAGHA', 'LNG ROAD BY FIDO WATER', 513, 1),
+  ('NG', 'BAY', 'KAIAMA', 'ZUOFA''S RESIDENCE, FORU-WARI, OLOBIRI COMPOUND', 514, 1),
+  ('NG', 'BAY', 'ODI', 'IBIMO HALL, OGBOLOMA COMPOUND', 515, 1),
+  ('NG', 'BAY', 'OPU-NEMBE', 'SILVA OPUALA CHARLES ROAD, SANDFIELD', 516, 1),
+  ('NG', 'BAY', 'HARBOUR ROAD', 'BY SHELL RAMP, DOWN YENAGOA', 517, 1),
+  ('NG', 'BAY', 'OTUOKE', 'QUEENS GATE APARTMENT, P.A. ESTATE', 518, 1),
+  ('NG', 'BAY', 'SAGBAMA', 'TIMI PLAZA BESIDE GENERAL HOSPITAL, MILE 2', 519, 1),
+  ('NG', 'BAY', 'OKUTUKUTU', 'AMASOAMA ROAD', 520, 1),
+  ('NG', 'BAY', 'OTUASEGA', 'BESIDE RAYGANA GUEST HOUSE', 521, 1),
+  ('NG', 'BAY', 'OGBIA', 'BEFORE GOVERNMENT JETTY', 522, 1),
+  ('NG', 'BAY', 'SABAGREIA', 'NO.4 AYAMABIRI COMPOUND', 523, 1),
+  ('NG', 'BAY', 'OMPADEC', 'BESIDE OMPADEC SCH.', 524, 1),
+  ('NG', 'BAY', 'OBOGORO', 'SHOPRITE SUPERMARKET, ALONG ANYAMA ROAD, OGOGORO', 525, 1),
+  ('NG', 'BAY', 'AGBURA', 'MUNA STREET, ALONG AZIKORO/AGBURA ROAD', 526, 1),
+  ('NG', 'BAY', 'AGRISABA', 'STELLA OTIOTIO''S RESIDENCE', 527, 1),
+  ('NG', 'BAY', 'TWON BRASS', 'CAMEROON-AMA', 528, 1),
+  ('NG', 'BAY', 'TORU ORUA', 'CIVIC CENTRE', 529, 1),
+  ('NG', 'BAY', 'AKENFA', 'OPP. SOBAZ FILLING STATION', 530, 1),
+  ('NG', 'BAY', 'OPOLO', 'OPP. MARKET SQUARE', 531, 1),
+  ('NG', 'BAY', 'YENEGWE', 'DIVINE SCHOOL ROAD, BY AGOFA FILLING STATION', 532, 1),
+  ('NG', 'BAY', 'IMIRIGI', 'BESIDE U.B.E PRI. SCH', 533, 1),
+  ('NG', 'BAY', 'OGOLOMA', 'SALVATION MINISTRIES, GBARAIN KINGDOM', 534, 1),
+  ('NG', 'BAY', 'ELEBELE', 'ALONG ELEBELE EMEYAL, FORMER JAMSCO', 535, 1),
+  ('NG', 'BAY', 'BEBELEBIRI', 'BESIDE MTN MAST', 536, 1),
+  ('NG', 'BAY', 'OKOROBA', 'BESIDE COTTAGE HOSPITAL', 537, 1),
+  ('NG', 'BAY', 'EWOI', 'EWOI ROAD, EWOI', 538, 1),
+  ('NG', 'BAY', 'TOMBIA', 'SCHOOL OF NURSING ROAD', 539, 1),
+  ('NG', 'BAY', 'OTUOKPOTI', 'OPP. CHISPY GUEST HOUSE', 540, 1),
+  ('NG', 'BAY', 'ADAGBABIRI', 'OGBENBIRI QUARTERS', 541, 1),
+  ('NG', 'BAY', 'NEMBE CREEK', 'NEMBE', 542, 1),
+  ('NG', 'BAY', 'IGBOMOTORU 2', 'SOUTHERN IJAW', 543, 1),
+  ('NG', 'BAY', 'EKEREMOR', 'EKEREMOR TOWN', 544, 1),
+  ('NG', 'BAY', 'ALEIBIRI', 'ALEIBIRI TOWN', 545, 1),
+  ('NG', 'BAY', 'KOLO', 'KOLO TOWN', 546, 1),
+  ('NG', 'BAY', 'AGUDAMA', 'POWEL PLAZA, #1 DR. PARKINSON MARK MANUEL STREET, AGUDAMA-EPIE', 547, 1),
+  ('NG', 'BAY', 'OGU', 'ABRIMA COMPOUND OGU COMMUNITY', 548, 1),
+  ('NG', 'BAY', 'TROFANI', 'FORMER AMA-PERE''S PALACE', 549, 1),
+  ('NG', 'BAY', 'OKPOAMA BRASS', 'OKPOAMA-BRASS', 550, 1),
+  ('NG', 'BAY', 'FANGBE', 'NPN OGBARA QUARTERS OPP. FAMGBE SECONDARY SCHOOL', 551, 1),
+  ('NG', 'BAY', 'ETEGWE', 'NO.1 BUILDERS ROAD AVENUE, ETEGWE, ALONG NEW COMMISSIONERS QUARTERS RD. OPOLO', 552, 1),
+  ('NG', 'BAY', 'TALBOT', 'TALBOTS HOUSE SANAH1 QUARTERS, PERETORUGBENE, EKEREMOR', 553, 1),
+  ('NG', 'BAY', 'EKOWE', 'JACOB COURT IPAINPOLO COMPOUND, EKOWE', 554, 1),
+  ('NG', 'BAY', 'SAMPOU', 'OKORO PRIMARY BUILDING, SAMPOU COMMUNITY, KOLGA, BAYELSA STATE', 555, 1),
+  ('NG', 'BAY', 'OLOGOAMA', 'OGOLOAMA OUT-OKOROMA, OKOROAMA CLAN NEMBE LGA', 556, 1),
+  ('NG', 'BAY', 'AKENFA 2', '#1 OLD MKT/LOCATION OFF GLORY DRIVE', 557, 1),
+  ('NG', 'BEN', 'IYORCHIA, WURUKUM', '39 Iyorchia Ayu road, Wurukum Makurdi', 558, 1),
+  ('NG', 'BEN', 'UNIAGRIC', 'Opp. Paradise Hostel Southcore Makurdi', 559, 1),
+  ('NG', 'BEN', 'GYADO, GBOKO', 'Gyado junction Gboko', 560, 1),
+  ('NG', 'BEN', 'FEMAS, OTUKPO', 'New heaven Otukpo, behind David Mark''s house', 561, 1),
+  ('NG', 'BEN', 'WELFARE QUARTERS', 'Welfare Quarters beside Suswan farm Makurdi', 562, 1),
+  ('NG', 'BEN', 'YINA', 'Yina Junction opp. GOTV Mass Makurdi', 563, 1),
+  ('NG', 'BOR', 'MAIDUGURI', '#39B ABUJA STREET, SHAGARI LOW COST A, MAIDUGURI, BORNO STATE', 564, 1),
+  ('NG', 'CRV', 'AKAMKPA', 'CALABAR/IKOM HIGHWAY OPPOSITE FIRST BANK AKAMKPA', 565, 1),
+  ('NG', 'CRV', 'ATU', 'NO.50 WEBBER/ATU STREET, CALABAR SOUTH', 566, 1),
+  ('NG', 'CRV', 'ATAMONU 1', 'NO. 81 ATAMUNU STREET, CALABAR SOUTH', 567, 1),
+  ('NG', 'CRV', 'ATAMONU 2', 'NO.2 ATAMUNU LANE CALABAR SOUTH', 568, 1),
+  ('NG', 'CRV', 'EBOM', 'HALL 5, PCN PRIMARY SCHOOL, EBOM TOWN', 569, 1),
+  ('NG', 'CRV', 'ETTA AGBOR', 'PLOT 206 ETTA AGBOR LAYOUT, HALL 2 RD OFF ETTA AGBOR RD, CALABAR', 570, 1),
+  ('NG', 'CRV', 'EDIBA', 'BARACK ROAD OPP HEALTH CARE CENTER, EDIBA', 571, 1),
+  ('NG', 'CRV', 'EKORI', 'AKUGOM-EBE TOWN HALL EPENTI EKORI', 572, 1),
+  ('NG', 'CRV', 'FEDERAL HOUSING', 'PLOT 14 BLOCK 8 PHASE 2, FEDERAL HOUSING ESTATE', 573, 1),
+  ('NG', 'CRV', 'HIGHWAY, CALABAR', 'NO.26 MURTALA MUHAMMAD, HIGH WAY', 574, 1),
+  ('NG', 'CRV', 'IKOM', 'EBUSAN HOTEL BANQUET HALL, AGRIC ROAD, IKOM CROSS RIVER', 575, 1),
+  ('NG', 'CRV', 'IKOT ANSA', 'NO. 14 JOSEPH MKPANG STREET, IKOT ANSA', 576, 1),
+  ('NG', 'CRV', 'MAYNE (ETOI)', 'NO9/11 ETOI STREET, OPPOSITE DSTV GOLDIE', 577, 1),
+  ('NG', 'CRV', 'MOUNT ZION', 'NO.16 DANIEL HOGAN STREET, CALABAR SOUTH', 578, 1),
+  ('NG', 'CRV', 'NYANGHASANG', 'NO 5 EDEM OKON STREET, NYANGHASAN', 579, 1),
+  ('NG', 'CRV', 'OBUBRA 1', 'NO.13 MARKET JUNC, ONYEN OKPON VILLA OBUBRA', 580, 1),
+  ('NG', 'CRV', 'OGOJA', 'NO.21 MBUBE ROAD, OPPOSITE NEW NYANYA MOTOR PARK ABAKPA, OGOJA', 581, 1),
+  ('NG', 'CRV', 'OTOP ABASI', 'NO 6A OTOP ABASI STREET CALABAR', 582, 1),
+  ('NG', 'CRV', 'UGEP 1', 'PLOT 23, OFF ELETANG STREET, MAJOR WINTER''S VILLA EGBIZUM, UGEP', 583, 1),
+  ('NG', 'CRV', 'UGEP 2', 'NO.6 IKOM CALABAR HIGHWAY, NTANKPO, UGEP', 584, 1),
+  ('NG', 'CRV', 'UGEP 3', 'NO.1 OKOI IKONA STREET, LETEKOM IJMAN, UGEP', 585, 1),
+  ('NG', 'CRV', 'ODUKPANI', 'NO.1 SPRING ROAD BY NYSC JUNCTION, ODUKPANI, QUA TOWN', 586, 1),
+  ('NG', 'CRV', 'AKPABUYO', 'CROSPIL JUNCTION BY CROSPIL ESTATE ROAD, AKPABUYO', 587, 1),
+  ('NG', 'CRV', 'OBUDU', 'NO.72 OGOJA ROAD, OBUDU', 588, 1),
+  ('NG', 'CRV', 'EKPO ABASI', 'NO.13B EKPO ABASI STREET, TRUE DIAMOND EVENT HALL, CALABAR', 589, 1),
+  ('NG', 'CRV', 'USUMUTONG', 'FORMER CUSTOMARY COURT HALL, ENO KPORE VILLA, USUMUTONG', 590, 1),
+  ('NG', 'CRV', 'EKORINIM, HQ', 'PLOT 384 INDUSTRIAL LAYOUT, CALABAR', 591, 1),
+  ('NG', 'CRV', 'OBUBRA 2', 'IMOKE HALL OPPOSITE OVONUM ELECTRICITY TRANSFORMER OBUBRA', 592, 1),
+  ('NG', 'CRV', 'BAKASSI', 'GIVER''S INTERNATIONAL SCHOOL BAKASI', 593, 1),
+  ('NG', 'CRV', '#303 MMHW', '303 MURTALA MUHAMMAD HIGH WAY, BY WALT OVER JUNCTION 8-MILES', 594, 1),
+  ('NG', 'CRV', 'WOMEN DEV, OBUBRA-2', 'WOMEN DEVELOPMENT CENTRE ADJACENT FIRST BANK, MILE 1, OBUBRA URBAN', 595, 1),
+  ('NG', 'CRV', 'OKANGHA NKPANSI', 'NEW MR PHILIP E. COMPOUND, OKANGHA NKPANSI IKOM', 596, 1),
+  ('NG', 'DE', 'AIRPORT RD', 'DANDANI EVENT CENTER #128 AIRPORT ROAD', 597, 1),
+  ('NG', 'DE', 'AJAMIMOGHA', '#55 AJAMIMOGHA RD, WARRI', 598, 1),
+  ('NG', 'DE', 'AGBARHO', '#6 EWHERHE RD BY MODERN PRY SCH', 599, 1),
+  ('NG', 'DE', 'AGBARHO OTOR', '#6 OKOSE STREET OFF AGBARHA/EMEVO RD, AGBARHA-OTOR', 600, 1),
+  ('NG', 'DE', 'ABRAKA 1', 'FORMER DOUBLE DELIGHT FAST FOOD BY FSP JUNCTION', 601, 1),
+  ('NG', 'DE', 'ABRAKA 2', '#204 OLD ABRAKA/AGBOR RD, BESIDES WIMA CLINIC, OKORHIRHE', 602, 1),
+  ('NG', 'DE', 'AMEKPE (UGHELLI 3)', 'EDAFE EVENT CENTER, END OF OCHUKO LANE, 1ST AMEKPE', 603, 1),
+  ('NG', 'DE', 'BOMADI', 'ORDELE EVENTS HALL, GRA BOMADI, OPP LG CHAIRMAN', 604, 1),
+  ('NG', 'DE', 'ENERHEN HQ', '#11 WARRI/SAPELE RD, BY ENERHEN JUNC', 605, 1),
+  ('NG', 'DE', 'ENHWE', 'EFE-OMOVUDU EVENT CENTER BESIDES ULEWE QUARTER', 606, 1),
+  ('NG', 'DE', 'EKPAN', '#3 NIGER CAT LINK RD, OFF REFINERY RD, AND NEPA EXPRESSWAY, BEHIND CHICKEN REP', 607, 1),
+  ('NG', 'DE', 'EKU', 'OLD AGBOR, SAPELE RD, BY STAFF QUARTERS, OPP SULEMAN POULTRY, EKU', 608, 1),
+  ('NG', 'DE', 'EMEVOR', '#6 OKOSE STREET OFF AGBARHA/EMEVO ROAD', 609, 1),
+  ('NG', 'DE', 'IRRI', '#39 MISSIONS ROAD', 610, 1),
+  ('NG', 'DE', 'JAKPA', '#2 EDU STREET, OFF JAKPA ROAD', 611, 1),
+  ('NG', 'DE', 'JIBALE', 'FORMER JITOS HOTEL OPP JIBALE MKT, ORUWHORUN', 612, 1),
+  ('NG', 'DE', 'KWALE', 'ADEGE STREET BESIDES BENVO TWINS HOTEL OFF ASABA EXPRESS RD', 613, 1),
+  ('NG', 'DE', 'OBIAROKO', 'EDEM ONAH EVENT CENTER ALONG ABRAKA/OBIARUKU EXPRESS ROAD', 614, 1),
+  ('NG', 'DE', 'OTOR UDU', 'EVWOR QUARTERS HALL', 615, 1),
+  ('NG', 'DE', 'MOFOR', '#191 DSC EXPRESS WAY OPP EKETE INLAND JUNCTION', 616, 1),
+  ('NG', 'DE', 'OLEH', '#3 NEW EMEDE RD, BY YANGA MKT, OLEH', 617, 1),
+  ('NG', 'DE', 'OLOMORO', 'UKOLI QUARTERS', 618, 1),
+  ('NG', 'DE', 'OZORO', 'PARADISE HOTEL BEHIND ZOUKUMOR PRIMARY SCHOOL', 619, 1),
+  ('NG', 'DE', 'OWHELOGBO', '#86 HOSPITAL RD', 620, 1),
+  ('NG', 'DE', 'PATANI', 'LOCAL GOVERNMENT COUNCIL CONFERENCE HALL EKISE PATANI', 621, 1),
+  ('NG', 'DE', 'SAPELE 1', 'COMM RD, OPP OKIRIGWHE COMM HALL, SAPELE', 622, 1),
+  ('NG', 'DE', 'SAPELE 2', '#1 EWETA LANE OPP PJ GOLDEN HOTEL GANA', 623, 1),
+  ('NG', 'DE', 'ABRAKA 3', 'POLICE STATION RD, BY LUCAS JUNCTION', 624, 1),
+  ('NG', 'DE', 'UGHELLI 1', '#1 ERUOBOGA STR, BESIDE TOTAL CHILD SCH, AKPODIETE', 625, 1),
+  ('NG', 'DE', 'UGHELLI 2', '#120 ISOKO RD, BY NNPC ROUND ABOUT', 626, 1),
+  ('NG', 'DE', 'UGBOLOKPOSO', '#68 HOSPITAL ROAD', 627, 1),
+  ('NG', 'DE', 'JEDDO', 'OBATTERN PLACE, JEDDO-UGOTON RD, AFTER AIRFORCE MESS', 628, 1),
+  ('NG', 'DE', 'EKREJEBOR', 'QUESSEBEST HOTEL, #70 EKREJEBOR RD', 629, 1),
+  ('NG', 'DE', 'ARUMALA', '#27 ARUMALA STR, JESUS DAUGHTER EVENT CENTER', 630, 1),
+  ('NG', 'DE', 'EKREJEBOR-2', '1ST PIPELINE BEHIND ATMOSPHERE SEC SCH', 631, 1),
+  ('NG', 'DE', 'OKOLOR', 'OKOLOR COMM, TOWN HALL, OKOLOR WATERSIDE', 632, 1),
+  ('NG', 'DE', 'ASABA', 'KM7 ASABA/BENIN EXPRESSWAY, BESIDES FORMER DEPUTY ASABA', 633, 1),
+  ('NG', 'DE', 'BURUTU', 'BURUTU CEMENT PLAZA DRIVE, INFANT JESUS RD', 634, 1),
+  ('NG', 'DE', 'OKPANAM 1', 'VANGUARD AVENUE OPP ASABA AIRPORT', 635, 1),
+  ('NG', 'DE', 'OKPANAM 2', 'OMA CO-OPERATIVE EVENT CENTER', 636, 1),
+  ('NG', 'DE', 'AGBOR-1', '#12 ODIM STR, BY CALVARY GROUP SCH, BOJI', 637, 1),
+  ('NG', 'DE', 'CABLE', 'ANGELIC PLAZA #76 NNEBISI RD, CABLE POINT', 638, 1),
+  ('NG', 'DE', 'IBUSA', 'EZE-IHEGE HALL, UMUOZOMA QUARTERS, OPP UMUION BANK', 639, 1),
+  ('NG', 'DE', 'BEHIND STADIUM', '#13 OBI STR, BEHIND STEPHEN KESHI STADIUM', 640, 1),
+  ('NG', 'DE', 'AGBOR 2', '#49 EKUJOMA RD, UMUNEDE', 641, 1),
+  ('NG', 'DE', 'ODUKE (NEW)', '#38 GOOD SHEPHERD JUNC. ODUKE COMM', 642, 1),
+  ('NG', 'DE', 'OKWE', '#1 ABC CHIEF IYASELE STR, BY POLICE POST', 643, 1),
+  ('NG', 'DE', 'OKWE 2', 'NDUKA PLAZA, OKWE', 644, 1),
+  ('NG', 'DE', 'ALIOKPU', 'OLD SAPOBA RD, BY GENERAL LUCKY IRABOR JUNC, IKA SOUTH, AGBOR', 645, 1),
+  ('NG', 'EBY', 'ABAKALIKI, KPIRI KPIRI, HQ', '#101 OLD ENUGU RD, ABAKALIKI', 646, 1),
+  ('NG', 'EBY', 'ABAKALIKI-HILLTOP ROAD', '#40 HILLTOP ROAD, OPPOSITE TANKER GARAGE, OFF WATER WORKS, ABAKALIKI', 647, 1),
+  ('NG', 'EBY', 'ABATETE-OGOJA ROAD', 'ABATETE HALL, OGOJA ROAD BY VEGAS JUNCTION', 648, 1),
+  ('NG', 'EBY', 'EZZANGBO AMIKE', 'AMIKE YOUTH HALL, #135 ENUGU EXPRESS WAY, EZZAMGBO', 649, 1),
+  ('NG', 'EBY', 'EZZANGBO ONUORIE', 'PDP, ONUORIE EZZAMGBO BESIDE PDP SECRETARIAT', 650, 1),
+  ('NG', 'EBY', 'NGBO', 'NGBO NDULO UMUEZEAKA ACQUISITION CENTER HALL, EBONYI STATE', 651, 1),
+  ('NG', 'EBY', 'ISHIEKE', 'ISHIEKE', 652, 1),
+  ('NG', 'EBY', 'AZONKU, AFIKPO HQ', 'AZONKU, AFIKPO', 653, 1),
+  ('NG', 'EBY', 'AFIKPO, AMURU', 'AMURO TOWN HALL, AFIKPO NORTH, EBONYI STATE', 654, 1),
+  ('NG', 'EBY', 'AMASIRI AFIKPO', 'OKIGWE ROAD, BESIDE FORMER SARS OFFICE, AMASIRI, AFIKPO NORTH, EBONYI STATE', 655, 1),
+  ('NG', 'EBY', 'UNWANA AFIKPO', 'GOD''S OWN LODGE JUNCTION, AFTER D12 BEFORE FISH POND ALONG POLY EBUNWANA ROAD, UNWANA', 656, 1),
+  ('NG', 'EBY', 'AKABA', 'ONU-EBONYI, OBODOMA UKABA, ONICHA LGA, EBONYI STATE', 657, 1),
+  ('NG', 'EDO', 'ALOHAN, DUMEZ, HQ', '#19 ALOHAN STR, OFF DUMEZ, OFF SAPELE RD, BENIN CITY', 658, 1),
+  ('NG', 'EDO', 'AMUFI, TEXTILE MILL', '#30 TEXTILE MILL RD, BY 2ND WEST RD JUNCTION, BENIN CITY', 659, 1),
+  ('NG', 'EDO', 'GUBADIA, GRA', '#10 GUBADIA AVENUE ETET, GRA, BENIN', 660, 1),
+  ('NG', 'EDO', 'EKPOMA 1', 'NEAR COLLEGE OF MEDICINE, AAAU', 661, 1),
+  ('NG', 'EDO', 'EKPOMA 2', '#37 ILEN-OTUMA STR, OPP FIRST BANK', 662, 1),
+  ('NG', 'EDO', 'M.M WAY', '#195 MURTALA MOHAMMED WAY, OPP OHUOBA PRIMARY SCH, BENIN CITY', 663, 1),
+  ('NG', 'EDO', 'ZABAYO EKENWA', '#157 EKENWAN RD, BENIN CITY', 664, 1),
+  ('NG', 'EDO', 'AUCHI', 'AUCHI/ABUJA EXPRESSWAY, OPP MATRIX PETROL STATION', 665, 1),
+  ('NG', 'EDO', 'ROBANOR', 'RABANOR HOTEL BY TONY KABAKA STR, UGBOR RD', 666, 1),
+  ('NG', 'EDO', 'UGBOWO', '#11B TECHNICAL RD, UGBOWO', 667, 1),
+  ('NG', 'EDO', 'PRESTIGE NEW', '#1 IHAMA RD, BY AIRPORT RD, GRA BENIN CITY', 668, 1),
+  ('NG', 'EKI', 'SHELTER VIEW, ADO EKITI', 'SHELTER VIEW COMPLEX OPP CHICKEN REPUBLIC, ADEBAYO, ADO EKITI', 669, 1),
+  ('NG', 'EKI', 'DALLIMORE', 'BEHIND STADIUM ROAD', 670, 1),
+  ('NG', 'EKI', 'IWOROKO', 'BESIDE BASIC HEALTH CENTER AARE ROAD IWOROKO EKITI STATE', 671, 1),
+  ('NG', 'EKI', 'EKUTE', 'OPP THERMOCOL WAREHOUSE, ADO-EKITI', 672, 1),
+  ('NG', 'EKI', 'HOUSING ESTATE', 'DON CLEMENT EVENT HALL, TINUOLA ESTATE, HOUSING ROAD', 673, 1),
+  ('NG', 'EKI', 'IKERE', 'NYSC ORIENTATION CAMP ROAD, IKERE', 674, 1),
+  ('NG', 'ENU', 'OPP ABC TRANSPORT, HQ', '#19 OGUDI RD, ENUGU STATE', 675, 1),
+  ('NG', 'ENU', 'NEW HEAVEN', '#95 CHIME AVENUE, OPP ASSEMBLIES BUSTOP, NEW HAVEN', 676, 1),
+  ('NG', 'ENU', 'EMENE', '#2 CHUKWUEJIM STREET BY NIGER LINE HOTEL, OFF APOSTLE BUSTOP EMENE', 677, 1),
+  ('NG', 'ENU', 'GARIKI', '#366 AGBANI RD, EBONY PAINT JUNC BY RTC OPP, 103 BATTALION BARRACKS, GARIKI', 678, 1),
+  ('NG', 'ENU', 'NINTH MILE', '#96 OLD NSUKKA RD, 9TH MILE CORNER NGWO AT LAPO BUILDING', 679, 1),
+  ('NG', 'ENU', 'NIKE BRANCH', 'JAZZ DAN PLAZA BY TEXACO JUNCTION, ABAKPA NIKE RD, ABAKPA', 680, 1),
+  ('NG', 'ENU', 'ABAKPA', 'NWAYIBUILHE PLAZA BY TEXACO JUNC, ABAKPA NIKE RD, ABAKPA', 681, 1),
+  ('NG', 'ENU', 'NSUKKA', '#30 OLOTO STR, ERINAH GUEST HOUSE, ODINIGBO, NSUKKA', 682, 1),
+  ('NG', 'ENU', 'NOWAS', '#107 AMURI RD, FED HOUSING, TRANSEKULU BY NOWAS JUNC', 683, 1),
+  ('NG', 'ENU', 'EKE-AGANI BRANCH', 'OPP ST JOHNS PRIMARY SCH, AMURI RD', 684, 1),
+  ('NG', 'ENU', 'AGBANI ROAD', '#102 AGBANI RD, OPP 1ST BANK AMAWBIA BUSTOP', 685, 1),
+  ('NG', 'ENU', 'OJI RIVER, AMUZU', 'AMUZU HALL, AMUZU, AGBADALA, OJI RIVER', 686, 1),
+  ('NG', 'ENU', 'LUCKZON PLAZA', 'SUITE A-47, MARYLAND PLAZA, #189 UGWUAJI RD, MARYLAND OPP AGIDI HOUSE', 687, 1),
+  ('NG', 'ENU', 'CHYMEZ PLAZA', 'PLOT 33 CHIEF IYKE OGBODO STREET OGBUODOR LAYOUT UGWUAJI RD', 688, 1),
+  ('NG', 'ENU', 'GRA1 BRANCH', 'VICTORIA GARDEN SUITE, #1 MOUNT LANE STR, GRA', 689, 1),
+  ('NG', 'ENU', 'NGWO', 'AMACHALLA TOWN HALL NGWO', 690, 1),
+  ('NG', 'ENU', 'AMAECHI', '2774 ONWA PLAZA, AMAECHI RD, UWANI', 691, 1),
+  ('NG', 'ENU', 'NEW HEAVEN EXTENSION', 'NKPOLUOGU CIVIC CENTER, ABAKALIKI EXPRESS WAY', 692, 1),
+  ('NG', 'FCT', 'JABI (HQTRS)', 'ONEAL CENTER, PLOT 360 OBAFEMI AWOLOWO WAY, JABI', 693, 1),
+  ('NG', 'FCT', 'MAITAMA', '#64 LASALE STR, OFF SHEHU SHAGARI WAY, BESIDE CBN TRAINING INSTITUTE, MAITAMA', 694, 1),
+  ('NG', 'FCT', 'KUBWA', 'GODS OWN PLAZA, BY BYAZHIN JUNCTION, KUBWA', 695, 1),
+  ('NG', 'FCT', 'EXCELLENT PLAZA, GWARINPA', 'EXCELLENT PLAZA, 1ST AVENUE, GWARINPA', 696, 1),
+  ('NG', 'FCT', 'BWARI', 'PLOT 30 BWARI EXTENSION, ADJACENT NIMA SCH, OFF SABONGARI RD, BEFORE POLICE POST', 697, 1),
+  ('NG', 'FCT', 'APEX PLAZA, DEIDEI', 'APEX PLAZA 220 W.H.O DISTRICT, BEHIND ZENITH BANK DEIDEI BUILDING MATERIAL', 698, 1),
+  ('NG', 'FCT', 'PRECIOUS PLAZA, DUTSE', 'PRECIOUS SHOPPING MALL, PLOT M10, KUBWA EXT-3, (FCDA SCHEME LAYOUT) ARMY ESTATE', 699, 1),
+  ('NG', 'FCT', 'TIPER GARAGE, KUJE', 'PLOT 12/B STREET, LEKPENDU LOWCOST, BEHIND TOTAL FILLING STATION, TIPPER GARAGE KUJE', 700, 1),
+  ('NG', 'FCT', 'WADA PLAZA, JIKWOYI', 'WADA PLAZA, BESIDES NEPA OFFICE, JIKWOYI ANGWANGEDE, ALONG NYANYA KARSH U EXPRESS WAY', 701, 1),
+  ('NG', 'FCT', 'DEO PLAZA, GWAGWALADA-1', 'DEO PLAZA, OPP GWAGWALADA MAIN MKT', 702, 1),
+  ('NG', 'FCT', 'LUGBE', 'PLOT 983, 3RD AVENUE FHA BY BABANGIDA MKT, LUGBE FCT-ABUJA', 703, 1),
+  ('NG', 'FCT', 'INFINIMART PLAZA', 'INFINIMART PLAZA, 2-1 JUNCTION KUBWA', 704, 1),
+  ('NG', 'FCT', 'OROZO', 'GOLDEN APPLE PLAZA, GIDAN DAYA, BY NEPA OFFICE, KARSHI EXPRESS WAY', 705, 1),
+  ('NG', 'FCT', 'BWARI-2', 'JEREMIAH KAKANCHOK CENTER, KOGO3', 706, 1),
+  ('NG', 'FCT', 'USHAFA, BWARI', 'GODS GIFT ACADEMY USHAFA', 707, 1),
+  ('NG', 'FCT', 'TUNGA-MAJE', 'KM3 LOKOJA KADUNA EXP WAY, BESIDE OANDO FUEL STATION', 708, 1),
+  ('NG', 'FCT', 'AREA A-NYANYA, APPLE COURT', 'APPLE COURT NYANYA, FCT', 709, 1),
+  ('NG', 'FCT', 'APO SETTLEMENT', 'WEMBLEY PART AND GARDEN APO RESETTLEMENT', 710, 1),
+  ('NG', 'GOM', 'SHONGO, GOMBE', 'SHONGO HANMA', 711, 1),
+  ('NG', 'GOM', 'YUGUDU, TUMFURE', 'BEHIND INVESTMENT QUARTERS ALONG LAMID YUGUDU, TUMFURE', 712, 1),
+  ('NG', 'IMO', 'OWERRI MAIN HQ', 'OWERRI/ONITSHA ROAD, IRETE, OWERRI IMO STATE', 713, 1),
+  ('NG', 'IMO', 'AMAUZARI', 'ONE AMAUZARI TOWN, ALONG OKWELLE HALL', 714, 1),
+  ('NG', 'IMO', 'AMARAKU', 'LAWRENCE IWU AMADI PLAZA, CLOSE TO AMARAKU JUNCTION', 715, 1),
+  ('NG', 'IMO', 'AGGAH-EGBEMA (AWOMMAMA)', 'BEFORE TRANSFORMER, AWOMMAMA', 716, 1),
+  ('NG', 'IMO', 'DOUGLAS RD AGGAH', 'NEW IDEA ROAD AGGAH EGBEMA RIVERS STATE', 717, 1),
+  ('NG', 'IMO', 'MMAHU-EGBEMA (DOUGLAS RD)', '127 DOUGLAS ROAD OPP NEW MARKET, BESIDE SUNIC FAST FOOD, OWERRI, IMO', 718, 1),
+  ('NG', 'IMO', 'EGBU ROAD EGBEMA', 'EGBU ROAD EGBEMA', 719, 1),
+  ('NG', 'IMO', 'MBAISE ONE', '49 EGBU ROAD, CLOSE TO MBAISE PARK', 720, 1),
+  ('NG', 'IMO', 'MBAISE FOUR', 'EKE AHIARA JUNCTION, CLOSE TO ACCESS BANK, ALONG AFOR ORU ROAD AHIAZU MBAISE', 721, 1),
+  ('NG', 'IMO', 'MGBIDI', '98A OWERRI-ONITSHA ROAD MGBIDI OPP. PALO PLACE', 722, 1),
+  ('NG', 'IMO', 'ORJI 2', 'ORJI YOUTH HALL, ORJI OWERRI IMO STATE', 723, 1),
+  ('NG', 'IMO', 'IMO POLY', 'BESIDE POLYVIEW HOTEL, ALONG PORT HARCOURT ROAD, MGBIRICHI', 724, 1),
+  ('NG', 'IMO', 'IKENEGBU', 'PLOT 21 IKENEBU LAYOUT OPPOSITE MARIS SUPERMARKET, OWERRI, IMO STATE', 725, 1),
+  ('NG', 'IMO', 'IHIAGWA', 'ALONG UMUOKWO-COURT RD. IHIAGWA', 726, 1),
+  ('NG', 'IMO', 'NEKEDE ONE', '8 BUS-STOP, OPPOSITE WATCHMAN, OLD NEKEDE ROAD, OWERRI IMO STATE', 727, 1),
+  ('NG', 'IMO', 'NEKEDE TWO', 'OPPOSITE UMUDIBIA PRIMARY SCHOOL NEKEDE, IHIAGWA ROAD', 728, 1),
+  ('NG', 'IMO', 'NEKEDE THREE', 'OLD TATA-FISH OPPOSITE GALAXY HOSTEL, ALONG POLY IHIAGWA ROAD, UMUOMA, NEKEDE', 729, 1),
+  ('NG', 'IMO', 'GLASS HOUSE-ORLU', '23 ENUGU/IDEATO ROAD BY BEACH, BSC ROAD ORLU TOWN, GLASS HOUSE, IMO STATE', 730, 1),
+  ('NG', 'IMO', 'OKIGWE 1', '55 OWERRI ROAD, OPP. ABAKPA MARKET, OKIGWE. IMO STATE', 731, 1),
+  ('NG', 'IMO', 'OKWUZI-EGBEMA', '59 AHOADA-OMOKU ROAD, OKWUZI', 732, 1),
+  ('NG', 'IMO', 'OKWU-URATTA', 'OKWU-URATTA PRIMARY SCHOOL HALL', 733, 1),
+  ('NG', 'IMO', 'ORJI', 'NO. 157 OKIGWE ROAD, OPPOSITE ACCESS BANK, ORJI', 734, 1),
+  ('NG', 'IMO', 'OGUTA 1', 'CIVIC CENTER, OGUTA', 735, 1),
+  ('NG', 'IMO', 'URATTA', 'OPPOSITE NNPC FILLING STATION BY TORONTO JUNCTION URATTA, OWERRI', 736, 1),
+  ('NG', 'IMO', 'WORKS LAYOUT', 'C17 WORKS LAYOUT, OFF IMSU JUNCTION OWERRI', 737, 1),
+  ('NG', 'IMO', 'WORLD BANK', 'CHIEF OHAMADIKE PLAZA, AREA ''A'' BY BLACK GATE, WORLD BANK', 738, 1),
+  ('NG', 'IMO', 'EZIOBODO FUTO', 'SALVATION MINISTRIES JUNCTION, ALONG FUTO ROAD, EZIOBODO', 739, 1),
+  ('NG', 'IMO', 'NAZE', 'NAZE TIMBER ROAD, BY BORO PIT, OBOSHISHI', 740, 1),
+  ('NG', 'IMO', 'AMAKOHIA', 'FEDERAL HOUSING ESTATE BY NEW ROAD. AMAKOHIA', 741, 1),
+  ('NG', 'IMO', 'AVU', 'OLIVER CASTLE, UMUEHITTA AVU', 742, 1),
+  ('NG', 'IMO', 'OBIAKPU', 'OBIAKPU TOWN HALL, OBIAKPU EGBEMA', 743, 1),
+  ('NG', 'IMO', 'OBOWO', 'ACHINGALI JUNCTION OPPOSITE MOONSHINE BUILDING', 744, 1),
+  ('NG', 'IMO', 'OBINZE', 'GONE-LEE''S HOTEL, KM 10 FUTO ROAD, OBINZE', 745, 1),
+  ('NG', 'IMO', 'UMUGUMA', '#3 GREGG AVENUE, BEFORE OWERRI WEST LGA COMPLEX, UMUGUMA', 746, 1),
+  ('NG', 'IMO', 'ESHIMESHI-URATTA', 'UMUNAHU ESHIMESHI, OWERRI NORTH', 747, 1),
+  ('NG', 'IMO', 'OGUTA 2', 'OGUTA-MGBIDI ROAD, BESIDE OGUTA LGA SECRETARIAT', 748, 1),
+  ('NG', 'IMO', 'AKABO', 'KM 7 OWERRI OKIGWE ROAD, UGWU OBIUDO, AKABO IKEDURU L.G.A IMO STATE', 749, 1),
+  ('NG', 'IMO', 'MBIERI', 'CHIGAEMEZU PLAZA, OPPOSITE NWEKE MKT JUNCTION MBIERI', 750, 1),
+  ('NG', 'IMO', 'MBAISE-3', '#1 OBETITI ROAD NKWOGWU JUNCTION ABOH MBAISE', 751, 1),
+  ('NG', 'IMO', 'UMUAKAH', 'UMUAKA BESIDES ORIE-UGBELE, UGBELE-AKAH', 752, 1),
+  ('NG', 'IMO', 'IZOMBE', 'IZOMBE', 753, 1),
+  ('NG', 'IMO', 'AKOKAH', '2ND FLOOR NEW POST OFFICE BUILDING IDEATO NORTH', 754, 1),
+  ('NG', 'IMO', 'OGBAKU', 'OGBAKU', 755, 1),
+  ('NG', 'IMO', 'UMUELEM', 'QUEEN OF PEACE JUNCTION CHIEF CHRISTOPHER JENTA ANUFUORO COMPOUND, UMUELEM', 756, 1),
+  ('NG', 'IMO', 'ETEKWURU', 'MR UZOMA OKORO COMPOUND ETEKWURU EGBEMA, OHAJI EGBEMA, IMO STATE', 757, 1),
+  ('NG', 'IMO', 'MGBEDA', '#4 ECHEAZU STREET MGBEDE, EGBEMA', 758, 1),
+  ('NG', 'JIG', 'DUTSE, HQ', 'OPPOSITE AWAJIL FUEL STATION. BESIDES BHT INTER SYSTEM LTD, YALAWAWA DUTSE, JIGAWA STATE', 759, 1),
+  ('NG', 'JIG', 'HADEJIA', 'IFEANYI EVENT CENTER, KANO ROAD HADEJIA', 760, 1),
+  ('NG', 'KAD', 'SABON TASHA, HQ', 'BEHIND GENERAL HOSPITAL, SABON TASHA', 761, 1),
+  ('NG', 'KAD', 'DESTINY PLAZA, JARUWA', 'BY JANRUWA JUNCTION ALONG PATRICK YAKOWA WAY', 762, 1),
+  ('NG', 'KAD', 'CHILLOUT, GONINGORA', 'OPP RAIL, GONIN-GORA', 763, 1),
+  ('NG', 'KAD', 'CHIDA', 'SIGN POST JUNCTION OPPOSITE STANBIC BANK, SABON TASHA', 764, 1),
+  ('NG', 'KAD', 'BARNAWA', 'OPPOSITE GT BANK, ALONG 1&2 ZAIRE ROAD BARNAWA', 765, 1),
+  ('NG', 'KAD', 'GBAGYI', 'ALONG YOKOWA STR, RD2, HOPE AVENUE, GBAGYI VILLAGE', 766, 1),
+  ('NG', 'KAD', 'JAJI', 'HOLIDAY INN STREET, UNGWAN-PETE, OPP JAJI CANTONMENT, IGABI', 767, 1),
+  ('NG', 'KAN', 'EMIR (HQTRS)', '#74 EMIR ROAD BY IBO ROAD, SABON GARI, KANO STATE', 768, 1),
+  ('NG', 'KAN', 'BURMA', 'ROSELLE ACADEMY, BURMA SABON GARI, KANO', 769, 1),
+  ('NG', 'KAN', 'AGANGARA BADAWA', 'BADAWA AGANGARA NASARAWA LGA, KANO', 770, 1),
+  ('NG', 'KAN', 'ENUGU RD', 'BY GOLD COAST SABON GARI, KANO STATE', 771, 1),
+  ('NG', 'KAN', 'ENSIK GLOBAL', '66/67 ENSIK GLOBAL EVENT CENTER, BY AIRPORT ROAD AMADI-A', 772, 1),
+  ('NG', 'KAT', 'BYAN KOFAR KAURAN', 'BESIDES ZUMUTAL GUEST INN, BYAN, GABI KOFAR KAURAN, KATSINA', 773, 1),
+  ('NG', 'KAT', 'DUTSIN-MA, MIAMI', 'DUTSIN-MA', 774, 1),
+  ('NG', 'KEB', 'BIRNIN KEBBI', 'FILIN JIRGI, ZURU, KEBBI', 775, 1),
+  ('NG', 'KOG', 'DESTINY GARDEN', 'SALVATION MINISTRIES DESTINY GARDEN PLAZA BESIDES FIRST BANK GANAJA JUNCTION LOKOJA', 776, 1),
+  ('NG', 'KOG', 'DOMINION PLAZA', 'SALVATION MINISTRIES DOMINION PLAZA 500 HOUSING UNITS LOKOJA', 777, 1),
+  ('NG', 'KOG', 'AYNIEGBA', 'SALVATION MINISTRIES SOLAG FUEL STATION. KM 1 ANKPA WAY OPP KOGI STATE UNIVERSITY. AYNIEGBA', 778, 1),
+  ('NG', 'KOG', 'FELELE', 'ABUJA LOKOJA EXPRESS WAY, HARMONY COMMUNITY BY WINNERS JUNCTION, FELELE TOWN, LOKOJA, KOGI STATE', 779, 1),
+  ('NG', 'KWA', 'TANKE, ILORIN', 'OPPOSITE FIRST ECWA CHURCH, TAIWO ISALE, ILORIN', 780, 1),
+  ('NG', 'KWA', 'TAIWO ISALE, HQ', 'TIPPER GARAGE, F DIVISION ROAD, TANKE, ILORIN', 781, 1),
+  ('NG', 'LA', 'LAGOS (LEKKI)', 'KM 20 LEKKI EPE EXPRESS ROAD', 782, 1),
+  ('NG', 'LA', 'DOPEMU', '57 ABEOKUTA EXPRESSWAY BESIDE CONOIL FILLING STATION, CEMENT BUS STOP DOPEMU', 783, 1),
+  ('NG', 'LA', 'IKEJA', '#12 KUDIRAT ABIOLA WAY OREGUN, IKEJA LAGOS', 784, 1),
+  ('NG', 'LA', 'MAGODO', '#2, ASSOCIATION AVENUE SHANGISHA MAGODO LAGOS STATE', 785, 1),
+  ('NG', 'LA', 'IKORODU', '#62 AYANGBUREN ROAD, BY BUKKA HUT RESTAURANT, OLUBI JUNCTION, IKORODU, LAGOS STATE', 786, 1),
+  ('NG', 'LA', 'OKOTA', '#110 AGO PALACE WAY. MARCITY PLAZA. ADJACENT MARKET SQUARE, OKOTA', 787, 1),
+  ('NG', 'LA', 'SURULERE', 'AFRIC PLACE, NO. 7, AFRIC ROAD, IPONRI EBUTE-METTA, OFF FUN SO WILLIAMS AVENUE, LAGOS', 788, 1),
+  ('NG', 'LA', 'ARADAGUN', 'NO 1 OLADIRAN CLOSE, MULTIPLE HEIGHT SCHOOL BESIDE ARADAGUN MARKET, ARADAGUN BADAGRY', 789, 1),
+  ('NG', 'LA', 'MAGBON', 'SKY TRAINE CENTER, ALONG BADAGRY EXPRESSWAY, MAGBON B/STOP', 790, 1),
+  ('NG', 'LA', 'AJAH', 'MTD Event Centre, OPPOSITE BADORE HEALTH CENTRE, BADORE, AJAH', 791, 1),
+  ('NG', 'LA', 'ABIJO', 'TREASURE MALL, OPPOSITE EKO AKETE ESTATE, ABIJO', 792, 1),
+  ('NG', 'LA', 'BADAGRY', 'KL 43 BADAGRY EXPRESSWAY AGBOMALU BUSTOP BADAGRY LAGOS', 793, 1),
+  ('NG', 'LA', 'IYANA', 'KM23, BADAGRY EXPRESS WAY, OPPOSITE TOTAL FILLING STATION, PAKO BUS STOP IYANA ISASHI', 794, 1),
+  ('NG', 'LA', 'IKOTUN', '#145 ABARANJE RD., ABARANJE-IKOTUN', 795, 1),
+  ('NG', 'LA', 'EGBEDA', 'NO 64 IDEMU RD ORELOPE BRT BUS STOP, EGBEDA LAGOS', 796, 1),
+  ('NG', 'LA', 'OJOTA', '#76 ALHAJI AMOO STREET, ALHAJA AMOO BUS-STOP, OJOTA OGUDU ROAD, OJOTA LAGOS', 797, 1),
+  ('NG', 'LA', 'OSHODI', '#33 ADEYEMI STREET, AROWOJOBE BUS STOP, OSHODI, LAGOS', 798, 1),
+  ('NG', 'LA', 'IPAJA', '#8, OLUFEMI CLOSE OFF FAGBEMI STREET, IGBOGILA BUS STOP, IPAJA-AYOBO ROAD, IPAJA LAGOS STATE', 799, 1),
+  ('NG', 'LA', 'AGEGE', 'NO'' 2 OKE-AYO STREET BY AGBOTIKUYO BUS-STOP OFF OLD IPAJA ROAD AGEGE LAGOS', 800, 1),
+  ('NG', 'LA', 'FESTAC', '5TH AVENUE W CLOSE OPP FRANKIDZ AMUSEMENT PARK FESTAC LAGOS', 801, 1),
+  ('NG', 'LA', 'AJEGUNLE', 'NUT MULTI-PURPOSE HALL. 72A CARDOSO STREET, OREGIE OJA B/STOP AJEGUNLE', 802, 1),
+  ('NG', 'LA', 'MOBIL', 'GLORY TO GOD PLAZA, LEKKI AJAH', 803, 1),
+  ('NG', 'LA', 'IKOYI', '2/7 OKUNLA MARTINS CLOSE, OFF OKOTIE EBOH STREET, OFF AWOLOWO RD, IKOYI', 804, 1),
+  ('NG', 'LA', 'ISHERI', '36/38 LIADI DISU STREET, ISHERI OSHUN BUS STOP, ISHERI, LAGOS', 805, 1),
+  ('NG', 'LA', 'AJAO', 'TETRAZZINI FAST FOOD RESTAURANT (BY 7/8 BUS STOP) AJAO ESTATE ISOLO, LAGOS', 806, 1),
+  ('NG', 'LA', 'IJESHA', '#250 IJESHA RD, OPP IJESHA MKT, IJESHATEDO', 807, 1),
+  ('NG', 'LA', 'IGANDO', '15 OREMEJI STREET OKO FILLING BUS STOP LASU-ISHERI ROAD, IGANDO LAGOS', 808, 1),
+  ('NG', 'LA', 'IBEJU LEKKI', 'BESIDE MAGBON GRAMMAR SCHOOL, MAGBON ALADE COMMUNITY, IBEJU LEKKI, LAGOS STATE', 809, 1),
+  ('NG', 'LA', 'IGBOGBO', '#10 CHAIRMAN STREET, BY CHAIRMAN B/STOP, IGBOGBO BAYEKU ROAD, IKORODU', 810, 1),
+  ('NG', 'LA', 'AWOYAYA', 'PLOT 605, IWEREKU GBETU TOWN, AFTER ROYAL LONDON HOTEL, BEFORE SARAFINA INT''L SCHOOL', 811, 1),
+  ('NG', 'LA', 'IJEGUN', '#19 OBASA ADELANI STREET, PRINCE B/STOP, IJEGUN IKOTUN', 812, 1),
+  ('NG', 'LA', 'AGBEBI, SURULERE-2', 'AGBEBI ROAD OFF IJESHA BY OMILANI JUNCTION OPP ULTIMATE FILLING STATION, IJESHA SURULERE', 813, 1),
+  ('NG', 'NAS', 'LAFIA', 'FRESHVYLLE HOTEL AND EVENT CENTRE, AGABI STR, BESIDE CBN, OFF JOS ROAD, LAFIA, NASARAWA STATE', 814, 1),
+  ('NG', 'NAS', 'EMMADO, MARARABA', '1ST FLOOR, EMMADO PLAZA BY SHARP CORNER, ABUJA-KEFFI EXPRESS ROAD NASSARAWA STATE', 815, 1),
+  ('NG', 'NAS', 'MASAKA', 'BETICUT EVENT CENTER MASAKA NEPA OFFICE ALONG KEFFI EXPRESS ROAD NASSARAWA STATE', 816, 1),
+  ('NG', 'NAS', 'KEFFI', 'IDEMILI HALL OPPOSITE MTN MASK BY NASARAWA RD, KEFFI', 817, 1),
+  ('NG', 'NAS', 'CITY COLLEGE', 'BY NURSES ESTATE, COMMISSIONER HOUSE, ADY SUITE', 818, 1),
+  ('NG', 'NAS', 'KABAYI', 'KABAYI BY LIFE CHOICE PURE WATER BEFORE DUNAMIS', 819, 1),
+  ('NG', 'NAS', 'AKWANGA', 'ALARAPE PLAZA, AKWANGA, BESIDE ST. PETERS NURSERY AND PRIMARY SCHOOL, KEFFI BY-PASS', 820, 1),
+  ('NG', 'NAS', 'ASO-B GURKU', 'CELEBRITY TOURIST HOTEL, ASOB GURKU, KURU', 821, 1),
+  ('NG', 'NIE', 'MADALLA', 'BESIDES VICTORY COLLEGE JUNCTION, MADALLA-SULEJA ROAD, MADALLA, NIGER STATE', 822, 1),
+  ('NG', 'NIE', 'MINNA', 'BACK OF TUNGA MAIN MARKET, MINNA NIGER STATE', 823, 1),
+  ('NG', 'OGU', 'LEME ROAD', 'OLUFUNKE COMPLEX, UNDER THE BRIDGE, LEME ROAD ABEOKUTA, OGUN STATE', 824, 1),
+  ('NG', 'OGU', 'SAGAMU OLATUNJI-1', 'OPPOSITE TOTAL FILLING STATION, BESIDE ABEOKUTA GARAGE, EXPRESS JUNCTION, EWOOLIWO, SAGAMU, OGUN STATE', 825, 1),
+  ('NG', 'OGU', 'IJEBU ODE 1', '29 AYEGBAMI STREET, BEHIND NEW MARKET, IJEBU ODE, OGUN STATE', 826, 1),
+  ('NG', 'OGU', 'IFO', 'JIBSOD HALL, OPPOSITE VESPA BUS-STOP, LAGOS/ABEOKUTA ROAD, IFO OGUN STATE', 827, 1),
+  ('NG', 'OGU', 'MOWE', '189 MOWE OFADA ROAD MOWE, OGUN STATE', 828, 1),
+  ('NG', 'OGU', 'KUFORIJI ADIGBE GRA, HQ', '7. 32, KUFORIJI OLUBI DRIVE ADIGBE GRA ABEOKUTA OGUN STATE', 829, 1),
+  ('NG', 'OND', 'AKURE, HQ', 'ALAFUATAYO STREET, OPPOSITE ILORO BASIC HEALTH CENTER, BY ILORO MARKET, AKURE', 830, 1),
+  ('NG', 'OND', 'ONDO CITY', '#214 BRIG ADEMULEGUN RD, NDUBUISI HOSPITAL, KOLA REWIRER', 831, 1),
+  ('NG', 'OND', 'OWO', '#14 OWOYEMI ST, IYERE RD BY DOMINION JUNCTION', 832, 1),
+  ('NG', 'OSU', 'OKE-FIA, HQ', 'No.12 Iwo Road, Oke-Fia, Osogbo', 833, 1),
+  ('NG', 'OSU', 'OKINNI', 'ILOBU ROAD BESIDE EVERGREEN GRAND HOTEL, OKINNI', 834, 1),
+  ('NG', 'OSU', 'MAYFAIR', 'No.43 IBADAN ROAD, ILE-IFE', 835, 1),
+  ('NG', 'OSU', 'OKE OMIRU-ILLESHA', 'No. 819 OKE OMIRU, OPP. CRUNCHES, ILESHA', 836, 1),
+  ('NG', 'OSU', 'IGBOYA', '9 IGBOYA STREET OFF ROAD 7, ILE-IFE', 837, 1),
+  ('NG', 'OYO', 'APATA', 'AGBE BUS STOP, OPPOSITE K3 PLAZA, ALONG KUOLA-AKALA EXPRESS ROAD, APATA IBADAN', 838, 1),
+  ('NG', 'OYO', 'ELEYEYE', 'RICHBAM BUILDING, BEHIND SANDLAKE PHARMACY, OFF GBAREMU MKT, SANGO-ELEYELE, IBADAN', 839, 1),
+  ('NG', 'OYO', 'SAMONDA', 'HEXAGON BUILDING BESIDE PEACE MASS TRANSIT, OPP MOBIL FILLING STATION, SAMONDA, IBADAN', 840, 1),
+  ('NG', 'OYO', 'AKOBO', 'MONARCH COMPLEX, POPO B/STOP AFTER AKALA JUNCTION, AKOBO, IBADAN', 841, 1),
+  ('NG', 'OYO', 'MOKOULA', '#5 OMITOWOJU ADJACENT ADAMASINGBA STADIUM', 842, 1),
+  ('NG', 'OYO', 'D ROVERS', '#114 MKO ABIOLA WAY, BESIDE FORMER D''ROVER HOTEL OPP IYAGANKU QUARTERS, GRA, RING ROAD, IBADAN', 843, 1),
+  ('NG', 'OYO', 'OYO TOWN', 'ADJACENT ACE SUPERMARKET BESIDE NIPCO FILLING STATION, OYO TOWN', 844, 1),
+  ('NG', 'OYO', 'CHALLENGE', 'EVER LEAD COMPLEX ROAD, OPPOSITE GLO OFFICE, CHALLENGE, IBADAN', 845, 1),
+  ('NG', 'OYO', 'OGBOMOSHO', '#10 KARA STREET, TOWN PLANNING SABO, OGBOMOSHO', 846, 1),
+  ('NG', 'PLA', 'RAYFIELD', 'SMHOS MARTIN LUTHER AGWE STREET, RAYFIELD, JOS', 847, 1),
+  ('NG', 'PLA', 'OLD AIRPORT ROAD (ANGLO)', '#75 YAKUBU GOWON WAY OPPOSITE COCA COLA PLANT, ANGLO, JOS', 848, 1),
+  ('NG', 'PLA', 'YAKUBU GOWON (HWOLSHE)', '#3 UTONKON ROAD, ADJACENT NATIONAL LIBRARY, JOS', 849, 1),
+  ('NG', 'PLA', 'ANGWAN RING ROAD', 'NANDOM MEMORIAL PLAZA, BETWEEN JEVICHO FILLING STATION AND TINA JUNCTION, JARAWA, JOS', 850, 1),
+  ('NG', 'PLA', 'ROCK HEAVEN', 'BUPIA PLAZA, UTAN LANE', 851, 1),
+  ('NG', 'SOK', 'SOKOTO', 'BEHIND ACCEPTABLE EMPIRE, TAMAJE, SOKOTO', 852, 1),
+  ('NG', 'TAR', 'ZION ANGUWAN KASSA JALINGO, HQ', 'ZION HALL, AGWAN-KASSA, MILE SIX, JALINGO TARABA STATE', 853, 1),
+  ('NG', 'TAR', 'NUKKAI', 'UCHE OBI PLAZA, BESIDE CATHOLIC CHURCH, NUKKAI, JALINGO TARABA STATE', 854, 1),
+  ('NG', 'TAR', 'KWARARAFA SHOPPING MALL, WUKARI', 'KWARARAFA SHOPPING MALL, WUKARI, TARABA STATE', 855, 1),
+  ('NG', 'TAR', 'MAGAMI HALL', '#14 CEE TO CEE PLAZA, HAMMARUWA WAY AFTER GT BANK, BEFORE NGUROJE HOUSE', 856, 1),
+  ('NG', 'TAR', 'MILE 6', 'MILE 6, BYPASS BESIDE UTOPIA HOTEL', 857, 1),
+  ('NG', 'TAR', 'ISOKWA PLAZA', 'OPPOSITE TARABA STATE 4TH GATE, ATC JALINGO', 858, 1),
+  ('NG', 'YOB', 'DAMATURU', '#2 NEW JERUSALEM BEHIND SCHOOL OF NURSING OPPOSITE GENERAL HOSPITAL DAMATURU, YOBE STATE', 859, 1),
+  ('NG', 'ZAM', 'ZAMFARA', 'HAYIN BUBA OPPOSITE HOUSGASAU ZAMFARA STATE', 860, 1),
+  ('US', 'TX', 'COLLEGE PARK, MARYLAND', 'GREENBELT ROAD, COLLEGE PARK MARYLAND 20740 STE200', 861, 1),
+  ('US', 'TX', 'WINDSOR MILL, MARYLAND', '2520 LORD BALTIMORE DRIVE MARYLAND, 21244', 862, 1),
+  ('US', 'TX', 'ERIE, PENNSYLVANIA', '2249 WEST 38TH STREET, ERIE PA, 16506', 863, 1),
+  ('US', 'TX', 'RICHMOND, TEXAS', '1819 FIRST OAKS ST, RICHMOND TX, 77406', 864, 1),
+  ('US', 'TX', 'BIRMINGHAM, ALABAMA', '1225 EAST LAKE BLVD. BIRMINGHAM, AL, 35217', 865, 1),
+  ('GB', 'GB', 'ROMFORD, LONDON, ENGLAND', 'UNIT 5&6 FIRST FLOOR, 248 LONDON ROAD, ROMFORD, RM7 9EL', 866, 1),
+  ('GB', 'GB', 'ABERDEEN, SCOTLAND', '#46 PALMERSTON ROAD, ABERDEEN, SCOTLAND AB11 5NQ', 867, 1),
+  ('GB', 'GB', 'MISSISSAUGA, CANADA', '5560 KENNEDY, ONTARIO L4Z 2A9, CANADA', 868, 1),
+  ('GB', 'GB', 'CROYDON, UK', 'FIRST FLOOR 145-151, LONDON ROAD, CROYDON, CRO 2RG', 869, 1),
+  ('GB', 'GB', 'CYPRUS', 'CYPRUS', 870, 1),
+  ('CH', 'CH', 'GENEVA', 'HOTEL N''VY RUE DE RICHEMONT 18, RUE DE RICHMOND, 1202 GENEVA, SWITZERLAND', 871, 1),
+  ('AE', 'AE', 'DUBAI', 'UNIT 505, SHAIKHA MARIAM BUILDING, P114, MANIYAS, DEIRA, DUBAI', 872, 1),
+  ('ASIA', 'ASIA', 'CHINA', 'GUOTAI INTERNATIONAL TRADE CITY, #27 GUANGYUAN WEST ROAD, YUEXIU DISTRICT, GUANGZHOU. 3RD FLOOR #3217', 873, 1),
+  ('GH', 'GA', 'SPINTEX, ACCRA', 'OPPOSITE TEXPO MARKET, SPINTEX ROAD, ACCRA, GHANA', 874, 1),
+  ('GH', 'GA', 'NUNGUA, ACCRA', 'OPPOSITE ADB BANK, NUNGUA MARKET, NUNGUA, ACCRA, GHANA', 875, 1),
+  ('GH', 'AS', 'KUMASI, ASHANTI REGION', 'BESIDE SHELL FILLING STATION, KROFROM ROAD, AIRPORT ROUND ABOUT, DECHEMSCO KUMASI, ASHANTI REGION, GHANA', 876, 1),
+  ('GH', 'GA', 'TEMA', 'BESIDE TOTAL FILLING STATION, PEDU JUNCTION, CAPE COAST, CENTRAL REGION, GHANA', 877, 1),
+  ('GH', 'GA', 'TAKORADI, WESTERN REGION', '#55 LAGOS TOWN MARKET OPPOSITE GOOD BRAND PHARMACY, TAKORADI, WESTERN REGION, GHANA', 878, 1),
+  ('GH', 'GA', 'TABORA-LAPAZ, ACCRA', 'NEW JERUSALEM SCHOOL, TABORA LAPAZ, LAPAZ, ACCRA, GHANA', 879, 1),
+  ('BJ', 'BJ', 'DEGAKON', 'BESIDES EWELL FILLING STATION, COTONOU, BENIN REPUBLIC', 880, 1),
+  ('BJ', 'BJ', 'PORT NOVO', 'OPP CELTIS, COTONOU, BENIN REPUBLIC', 881, 1),
+  ('CM', 'CM', 'LIMBE', 'BEHIND EZE1, ISOKOLO, LIMBE SOUTH WEST CAMEROON', 882, 1),
+  ('CM', 'CM', 'DUALLA', 'OPP ECO BANK, QUARTRE ETAGE JUNCTION, BAMBUTUS STREET, BONABERI DOULA, CAMEROON', 883, 1),
+  ('GM', 'GM', 'HAWARA PLAZA', 'JARAWA PLAZA WESTFIELD, KANIFING MUNICIPAL COUNCIL, THE GAMBIA', 884, 1)
+on conflict (branch_country, branch_state, name) do update set
+  address = excluded.address,
+  directory_branch_id = excluded.directory_branch_id,
+  is_active = 1;
+
+-- skipped 0 rows (see script log)
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605200001_directory_branch_codes.sql
+-- -----------------------------------------------------------------------------
+-- Stable codes on directory tables for admin-managed catalog + public form.
+alter table public.directory_countries add column if not exists branch_country_code text;
+alter table public.directory_states add column if not exists branch_state_code text;
+
+update public.directory_countries c set branch_country_code = v.code
+from (values
+  (1, 'NG'), (2, 'ASIA'), (3, 'BJ'), (4, 'CM'), (5, 'GM'),
+  (6, 'GH'), (7, 'CH'), (8, 'AE'), (9, 'GB'), (10, 'US')
+) as v(id, code) where c.id = v.id;
+
+-- Prefer live churches.branch_state per directory state (one pick if multiple churches disagree).
+update public.directory_states ds
+set branch_state_code = upper(trim(x.branch_state))
+from (
+  select distinct on (db.state_id) db.state_id, ch.branch_state
+  from public.directory_branches db
+  join public.churches ch on ch.directory_branch_id = db.id and ch.is_active = 1
+  order by db.state_id, ch.branch_state
+) x
+where ds.id = x.state_id
+  and (ds.branch_state_code is null or trim(ds.branch_state_code) = '');
+
+-- Nigeria states not linked to any church yet (match by canonical codes).
+update public.directory_states set branch_state_code = case id
+  when 1 then 'RI' when 2 then 'ABI' when 3 then 'AKB' when 4 then 'ANA' when 5 then 'ADM'
+  when 6 then 'BAU' when 7 then 'BAY' when 8 then 'BEN' when 9 then 'BOR' when 10 then 'CRV'
+  when 11 then 'DE' when 12 then 'EBY' when 13 then 'EDO' when 14 then 'EKI' when 15 then 'ENU'
+  when 16 then 'FCT' when 17 then 'GOM' when 18 then 'IMO' when 19 then 'JIG' when 20 then 'KAD'
+  when 21 then 'KAN' when 22 then 'KAT' when 23 then 'KEB' when 24 then 'KOG' when 25 then 'KWA'
+  when 26 then 'LA' when 27 then 'NAS' when 28 then 'NIE' when 29 then 'OGU' when 30 then 'OND'
+  when 31 then 'OSU' when 32 then 'OYO' when 33 then 'PLA' when 34 then 'SOK' when 35 then 'TAR'
+  when 36 then 'YOB' when 37 then 'ZAM'
+end
+where country_id = 1 and (branch_state_code is null or trim(branch_state_code) = '');
+
+-- Other countries: single region row → use country code as state code when still empty.
+update public.directory_states ds
+set branch_state_code = upper(trim(dc.branch_country_code))
+from public.directory_countries dc
+where ds.country_id = dc.id
+  and dc.id not in (1)
+  and (ds.branch_state_code is null or trim(ds.branch_state_code) = '')
+  and dc.branch_country_code is not null;
+
+create unique index if not exists directory_countries_branch_country_code_uidx
+  on public.directory_countries (branch_country_code)
+  where branch_country_code is not null and trim(branch_country_code) <> '';
+
+create unique index if not exists directory_states_country_branch_state_uidx
+  on public.directory_states (country_id, branch_state_code)
+  where branch_state_code is not null and trim(branch_state_code) <> '';
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605210001_merge_duplicate_ng_abia_directory_states.sql
+-- -----------------------------------------------------------------------------
+-- Merge mistaken duplicate "Abia" directory_states (slug codes like ABIASTATE) into canonical NG / ABI.
+-- Re-point directory_branches, churches, and satellite_church_sites; then remove duplicate rows.
+
+DO $$
+DECLARE
+  ng_country_id integer;
+  canon_id integer;
+  canon_code text := 'ABI';
+  dup record;
+BEGIN
+  SELECT id INTO ng_country_id FROM public.directory_countries WHERE upper(trim(branch_country_code)) = 'NG' LIMIT 1;
+  IF ng_country_id IS NULL THEN
+    RAISE NOTICE 'merge_abia_dup: no NG country row';
+    RETURN;
+  END IF;
+
+  SELECT id INTO canon_id
+  FROM public.directory_states
+  WHERE country_id = ng_country_id AND upper(trim(branch_state_code)) = canon_code
+  ORDER BY id
+  LIMIT 1;
+
+  IF canon_id IS NULL THEN
+    RAISE NOTICE 'merge_abia_dup: no canonical ABI state';
+    RETURN;
+  END IF;
+
+  FOR dup IN
+    SELECT ds.id, ds.branch_state_code
+    FROM public.directory_states ds
+    WHERE ds.country_id = ng_country_id
+      AND ds.id <> canon_id
+      AND upper(trim(ds.branch_state_code)) <> canon_code
+      AND (
+        upper(trim(ds.branch_state_code)) LIKE 'ABI%'
+        OR upper(trim(ds.branch_state_code)) IN ('ABIASTATE', 'ABIASTAT', 'ABIA')
+      )
+  LOOP
+    UPDATE public.directory_branches SET state_id = canon_id WHERE state_id = dup.id;
+
+    UPDATE public.churches
+    SET branch_state = canon_code
+    WHERE upper(trim(branch_country)) = 'NG'
+      AND trim(branch_state) = dup.branch_state_code;
+
+    UPDATE public.satellite_church_sites
+    SET branch_state = canon_code
+    WHERE upper(trim(branch_country)) = 'NG'
+      AND trim(branch_state) = dup.branch_state_code;
+
+    DELETE FROM public.directory_states WHERE id = dup.id;
+  END LOOP;
+END $$;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605220001_merge_duplicate_directory_states_by_name.sql
+-- -----------------------------------------------------------------------------
+-- Merge directory_states duplicated by normalized name (e.g. Abia vs ABIASTATE) under the same country.
+-- Keeps the row with the shortest branch_state_code; re-points branches, churches, satellite sites.
+
+DO $$
+DECLARE
+  rec record;
+  canon_id integer;
+  canon_code text;
+BEGIN
+  FOR rec IN
+    SELECT
+      ds.country_id,
+      lower(regexp_replace(trim(ds.name), '\s+state\s*$', '', 'i')) AS nname,
+      array_agg(ds.id ORDER BY length(coalesce(nullif(trim(ds.branch_state_code), ''), 'ZZZZ')), ds.id) AS ids,
+      array_agg(trim(ds.branch_state_code) ORDER BY length(coalesce(nullif(trim(ds.branch_state_code), ''), 'ZZZZ')), ds.id) AS codes
+    FROM public.directory_states ds
+    WHERE trim(coalesce(ds.name, '')) <> ''
+    GROUP BY ds.country_id, lower(regexp_replace(trim(ds.name), '\s+state\s*$', '', 'i'))
+    HAVING count(*) > 1
+  LOOP
+    canon_id := rec.ids[1];
+    canon_code := rec.codes[1];
+    IF canon_code IS NULL OR canon_code = '' THEN
+      CONTINUE;
+    END IF;
+
+    FOR i IN 2..array_length(rec.ids, 1) LOOP
+      UPDATE public.directory_branches SET state_id = canon_id WHERE state_id = rec.ids[i];
+
+      UPDATE public.churches ch
+      SET branch_state = canon_code
+      FROM public.directory_countries dc
+      WHERE dc.id = rec.country_id
+        AND upper(trim(ch.branch_country)) = upper(trim(dc.branch_country_code))
+        AND trim(ch.branch_state) = rec.codes[i];
+
+      -- Drop duplicate-state satellite rows when canonical (country, state, lga, site) already exists
+      DELETE FROM public.satellite_church_sites sat_old
+      USING public.directory_countries dc
+      WHERE dc.id = rec.country_id
+        AND upper(trim(sat_old.branch_country)) = upper(trim(dc.branch_country_code))
+        AND trim(sat_old.branch_state) = rec.codes[i]
+        AND EXISTS (
+          SELECT 1
+          FROM public.satellite_church_sites sat_keep
+          WHERE upper(trim(sat_keep.branch_country)) = upper(trim(sat_old.branch_country))
+            AND upper(trim(sat_keep.branch_state)) = upper(canon_code)
+            AND trim(sat_keep.lga) = trim(sat_old.lga)
+            AND trim(sat_keep.site_name) = trim(sat_old.site_name)
+            AND sat_keep.id <> sat_old.id
+        );
+
+      UPDATE public.satellite_church_sites sat
+      SET branch_state = canon_code
+      FROM public.directory_countries dc
+      WHERE dc.id = rec.country_id
+        AND upper(trim(sat.branch_country)) = upper(trim(dc.branch_country_code))
+        AND trim(sat.branch_state) = rec.codes[i];
+
+      UPDATE public.registrations reg
+      SET branch_state = canon_code
+      FROM public.directory_countries dc
+      WHERE dc.id = rec.country_id
+        AND upper(trim(reg.branch_country)) = upper(trim(dc.branch_country_code))
+        AND trim(reg.branch_state) = rec.codes[i];
+
+      DELETE FROM public.directory_states WHERE id = rec.ids[i];
+    END LOOP;
+  END LOOP;
+END $$;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605230001_dedupe_ng_abia_directory_state.sql
+-- -----------------------------------------------------------------------------
+-- Ensure a single NG / Abia directory state (canonical ABI) and re-point branches & churches.
+
+DO $$
+DECLARE
+  ng_country_id integer;
+  canon_id integer;
+  canon_code text := 'ABI';
+  dup record;
+BEGIN
+  SELECT id INTO ng_country_id FROM public.directory_countries WHERE upper(trim(branch_country_code)) = 'NG' LIMIT 1;
+  IF ng_country_id IS NULL THEN RETURN; END IF;
+
+  SELECT ds.id INTO canon_id
+  FROM public.directory_states ds
+  WHERE ds.country_id = ng_country_id AND upper(trim(ds.branch_state_code)) = canon_code
+  ORDER BY ds.id
+  LIMIT 1;
+
+  IF canon_id IS NULL THEN
+    SELECT ds.id INTO canon_id
+    FROM public.directory_states ds
+    WHERE ds.country_id = ng_country_id
+      AND lower(regexp_replace(trim(ds.name), '\s+state\s*$', '', 'i')) = 'abia'
+    ORDER BY length(coalesce(nullif(trim(ds.branch_state_code), ''), 'ZZZZ')), ds.id
+    LIMIT 1;
+    IF canon_id IS NOT NULL THEN
+      UPDATE public.directory_states SET branch_state_code = canon_code, name = 'Abia' WHERE id = canon_id;
+    END IF;
+  END IF;
+
+  IF canon_id IS NULL THEN RETURN; END IF;
+
+  FOR dup IN
+    SELECT ds.id, ds.branch_state_code
+    FROM public.directory_states ds
+    WHERE ds.country_id = ng_country_id
+      AND ds.id <> canon_id
+      AND (
+        lower(regexp_replace(trim(ds.name), '\s+state\s*$', '', 'i')) = 'abia'
+        OR upper(trim(ds.branch_state_code)) LIKE 'ABI%'
+        OR upper(trim(ds.branch_state_code)) IN ('ABIASTATE', 'ABIASTAT', 'ABIA')
+      )
+  LOOP
+    UPDATE public.directory_branches SET state_id = canon_id WHERE state_id = dup.id;
+
+    UPDATE public.churches SET branch_state = canon_code
+    WHERE upper(trim(branch_country)) = 'NG' AND trim(branch_state) = dup.branch_state_code;
+
+    DELETE FROM public.satellite_church_sites sat_old
+    WHERE upper(trim(sat_old.branch_country)) = 'NG'
+      AND trim(sat_old.branch_state) = dup.branch_state_code
+      AND EXISTS (
+        SELECT 1
+        FROM public.satellite_church_sites sat_keep
+        WHERE upper(trim(sat_keep.branch_country)) = 'NG'
+          AND upper(trim(sat_keep.branch_state)) = canon_code
+          AND trim(sat_keep.lga) = trim(sat_old.lga)
+          AND trim(sat_keep.site_name) = trim(sat_old.site_name)
+          AND sat_keep.id <> sat_old.id
+      );
+
+    UPDATE public.satellite_church_sites SET branch_state = canon_code
+    WHERE upper(trim(branch_country)) = 'NG' AND trim(branch_state) = dup.branch_state_code;
+
+    UPDATE public.registrations SET branch_state = canon_code
+    WHERE upper(trim(branch_country)) = 'NG' AND trim(branch_state) = dup.branch_state_code;
+
+    DELETE FROM public.directory_states WHERE id = dup.id;
+  END LOOP;
+END $$;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605240001_announcements_broadcast.sql
+-- -----------------------------------------------------------------------------
+-- Broadcast announcements: destination, medium, workflow (draft / scheduled / sent / archived).
+
+alter table public.announcements add column if not exists workflow_status text not null default 'sent';
+alter table public.announcements add column if not exists destination_type text not null default 'admins';
+alter table public.announcements add column if not exists destination_config jsonb not null default '{}'::jsonb;
+alter table public.announcements add column if not exists medium_email smallint not null default 0;
+alter table public.announcements add column if not exists medium_sms smallint not null default 0;
+alter table public.announcements add column if not exists scheduled_at timestamptz;
+alter table public.announcements add column if not exists sent_at timestamptz;
+alter table public.announcements add column if not exists archived_at timestamptz;
+
+update public.announcements
+set
+  workflow_status = 'sent',
+  sent_at = coalesce(sent_at, created_at)
+where workflow_status is null or workflow_status = '';
+
+create index if not exists idx_announcements_workflow on public.announcements (workflow_status, scheduled_at);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605250001_registration_identity_unique.sql
+-- -----------------------------------------------------------------------------
+-- Normalized phone/email identifiers for duplicate registration prevention.
+
+alter table public.registrations
+  add column if not exists phone1_digits text,
+  add column if not exists phone2_digits text,
+  add column if not exists email_normalized text;
+
+update public.registrations
+set
+  phone1_digits = nullif(regexp_replace(coalesce(phone1, ''), '[^0-9]', '', 'g'), ''),
+  phone2_digits = case
+    when phone2 is null or trim(phone2) = '' then null
+    else nullif(regexp_replace(phone2, '[^0-9]', '', 'g'), '')
+  end,
+  email_normalized = case
+    when email is null or trim(email) = '' then null
+    else lower(trim(email))
+  end;
+
+-- Drop too-short phone keys so unique index does not block empty strings
+update public.registrations set phone1_digits = null where phone1_digits is not null and length(phone1_digits) < 7;
+update public.registrations set phone2_digits = null where phone2_digits is not null and length(phone2_digits) < 7;
+
+-- Existing data may contain duplicate active phones/emails; archive extras before unique indexes.
+-- Keeps the best pipeline record per key (accepted > in progress > new), then earliest submission.
+do $$
+declare
+  dup_note text := E'\n[Migration] Auto-archived: duplicate identity (phone or email) — kept the primary active application.';
+begin
+  with dup_phone as (
+    select phone1_digits
+    from public.registrations
+    where phone1_digits is not null
+      and length(phone1_digits) >= 7
+      and status not in ('rejected', 'archived')
+    group by phone1_digits
+    having count(*) > 1
+  ),
+  phone_ranked as (
+    select r.id,
+      row_number() over (
+        partition by r.phone1_digits
+        order by
+          case r.status
+            when 'accepted' then 0
+            when 'in_progress' then 1
+            when 'new' then 2
+            else 3
+          end,
+          r.submitted_at asc nulls last,
+          r.id asc
+      ) as rn
+    from public.registrations r
+    inner join dup_phone d on d.phone1_digits = r.phone1_digits
+    where r.status not in ('rejected', 'archived')
+  )
+  update public.registrations r
+  set
+    status = 'archived',
+    notes = case
+      when coalesce(trim(r.notes), '') = '' then trim(dup_note)
+      else trim(r.notes) || dup_note
+    end
+  from phone_ranked p
+  where r.id = p.id and p.rn > 1;
+
+  with dup_email as (
+    select email_normalized
+    from public.registrations
+    where email_normalized is not null
+      and status not in ('rejected', 'archived')
+    group by email_normalized
+    having count(*) > 1
+  ),
+  email_ranked as (
+    select r.id,
+      row_number() over (
+        partition by r.email_normalized
+        order by
+          case r.status
+            when 'accepted' then 0
+            when 'in_progress' then 1
+            when 'new' then 2
+            else 3
+          end,
+          r.submitted_at asc nulls last,
+          r.id asc
+      ) as rn
+    from public.registrations r
+    inner join dup_email d on d.email_normalized = r.email_normalized
+    where r.status not in ('rejected', 'archived')
+  )
+  update public.registrations r
+  set
+    status = 'archived',
+    notes = case
+      when coalesce(trim(r.notes), '') = '' then trim(dup_note)
+      else trim(r.notes) || dup_note
+    end
+  from email_ranked e
+  where r.id = e.id and e.rn > 1;
+end $$;
+
+create unique index if not exists idx_registrations_phone1_digits_active
+  on public.registrations (phone1_digits)
+  where phone1_digits is not null
+    and length(phone1_digits) >= 7
+    and status not in ('rejected', 'archived');
+
+create unique index if not exists idx_registrations_email_normalized_active
+  on public.registrations (email_normalized)
+  where email_normalized is not null
+    and status not in ('rejected', 'archived');
+
+create or replace function public.registrations_sync_identity_columns()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.phone1_digits := nullif(regexp_replace(coalesce(new.phone1, ''), '[^0-9]', '', 'g'), '');
+  if new.phone1_digits is not null and length(new.phone1_digits) < 7 then
+    new.phone1_digits := null;
+  end if;
+
+  if new.phone2 is null or trim(new.phone2) = '' then
+    new.phone2_digits := null;
+  else
+    new.phone2_digits := nullif(regexp_replace(new.phone2, '[^0-9]', '', 'g'), '');
+    if new.phone2_digits is not null and length(new.phone2_digits) < 7 then
+      new.phone2_digits := null;
+    end if;
+  end if;
+
+  if new.email is null or trim(new.email) = '' then
+    new.email_normalized := null;
+  else
+    new.email_normalized := lower(trim(new.email));
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_registrations_sync_identity on public.registrations;
+create trigger trg_registrations_sync_identity
+  before insert or update of phone1, phone2, email
+  on public.registrations
+  for each row
+  execute function public.registrations_sync_identity_columns();
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605260001_overdue_days_and_escalation.sql
+-- -----------------------------------------------------------------------------
+-- Overdue threshold in days (1–30), optional per service unit; escalation tracking.
+
+alter table public.app_settings
+  add column if not exists overdue_threshold_days int not null default 3;
+
+update public.app_settings
+set overdue_threshold_days = greatest(
+  1,
+  least(30, coalesce(nullif(ceil(overdue_threshold_hours / 24.0)::int, 0), 3))
+)
+where id = 1;
+
+alter table public.service_units
+  add column if not exists overdue_threshold_days int;
+
+alter table public.service_units
+  drop constraint if exists service_units_overdue_threshold_days_check;
+
+alter table public.service_units
+  add constraint service_units_overdue_threshold_days_check
+  check (
+    overdue_threshold_days is null
+    or (overdue_threshold_days >= 1 and overdue_threshold_days <= 30)
+  );
+
+create table if not exists public.overdue_escalation (
+  registration_id uuid primary key references public.registrations (id) on delete cascade,
+  threshold_crossed_at timestamptz not null default now(),
+  sub_notified_at timestamptz,
+  unit_escalated_at timestamptz,
+  satellite_escalated_at timestamptz
+);
+
+create index if not exists idx_overdue_escalation_crossed on public.overdue_escalation (threshold_crossed_at);
+
+alter table public.overdue_escalation enable row level security;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202605280001_country_admin_headquarters_state.sql
+-- -----------------------------------------------------------------------------
+-- Country Admin accounts include a headquarters state (dual Country + State role).
+-- Existing rows without branch_state get the first valid state for their country (Abia for NG).
+
+UPDATE admins
+SET branch_state = 'ABI'
+WHERE role = 'country_super_admin'
+  AND branch_country = 'NG'
+  AND (branch_state IS NULL OR TRIM(branch_state) = '');
+
+UPDATE admins
+SET branch_state = branch_country
+WHERE role = 'country_super_admin'
+  AND branch_country IS NOT NULL
+  AND TRIM(branch_country) <> ''
+  AND (branch_state IS NULL OR TRIM(branch_state) = '')
+  AND branch_country <> 'NG';
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606030001_admin_invite_columns.sql
+-- -----------------------------------------------------------------------------
+-- Admin invite / first-login password setup (Super & General Admin created accounts).
+
+alter table public.admins
+  add column if not exists must_change_password smallint not null default 0;
+
+alter table public.admins
+  add column if not exists invite_token text;
+
+alter table public.admins
+  add column if not exists invite_expires_at timestamptz;
+
+create unique index if not exists idx_admins_invite_token
+  on public.admins (invite_token)
+  where invite_token is not null;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606040001_deactivate_non_super_admins.sql
+-- -----------------------------------------------------------------------------
+-- Deactivate all admin accounts except Super Admin so downline must be re-onboarded via email invite.
+
+update public.admins
+set
+  is_active = 0,
+  invite_token = null,
+  invite_expires_at = null
+where role is distinct from 'super_admin';
+
+update public.admins
+set
+  is_active = 1,
+  must_change_password = 0,
+  invite_token = null,
+  invite_expires_at = null
+where role = 'super_admin';
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606040002_clear_pending_admin_invites.sql
+-- -----------------------------------------------------------------------------
+-- Pause email invite gate: clear pending invite tokens so password login works immediately.
+
+update public.admins
+set
+  invite_token = null,
+  invite_expires_at = null,
+  must_change_password = 0
+where invite_token is not null or must_change_password = 1;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606050001_announcement_push_medium.sql
+-- -----------------------------------------------------------------------------
+-- Replace SMS with in-app push for announcements.
+
+alter table public.announcements
+  add column if not exists medium_push smallint not null default 0;
+
+-- Legacy rows that used SMS are not migrated to push automatically.
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606060001_delete_non_super_admins.sql
+-- -----------------------------------------------------------------------------
+-- Remove all admin accounts except Super Admin.
+-- Downline must be re-created via email invite only.
+-- Cascades: admin_requests, admin_notifications, overdue_notify_dedup.
+
+delete from public.admins
+where role is distinct from 'super_admin';
+
+update public.admins
+set
+  is_active = 1,
+  must_change_password = 0,
+  invite_token = null,
+  invite_expires_at = null
+where role = 'super_admin';
+
+select setval(
+  pg_get_serial_sequence('public.admins', 'id'),
+  coalesce((select max(id) from public.admins), 1)
+);
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606070001_admin_login_otp.sql
+-- -----------------------------------------------------------------------------
+-- Email OTP challenges for admin login (all roles).
+
+create table if not exists public.admin_login_otp_challenges (
+  id uuid primary key default gen_random_uuid(),
+  admin_id integer not null references public.admins(id) on delete cascade,
+  otp_hash text not null,
+  attempts integer not null default 0,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  last_sent_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  ip_address text not null default ''
+);
+
+create index if not exists idx_admin_login_otp_admin_active
+  on public.admin_login_otp_challenges (admin_id, created_at desc)
+  where used_at is null;
+
+create index if not exists idx_admin_login_otp_expires
+  on public.admin_login_otp_challenges (expires_at)
+  where used_at is null;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606090001_admin_totp_mfa.sql
+-- -----------------------------------------------------------------------------
+-- Authenticator (TOTP) MFA for admins + 11-day enrollment grace tracking.
+
+alter table public.admins
+  add column if not exists dashboard_activated_at timestamptz,
+  add column if not exists totp_enabled boolean not null default false,
+  add column if not exists totp_secret_encrypted text,
+  add column if not exists totp_enrolled_at timestamptz;
+
+alter table public.admin_login_otp_challenges
+  add column if not exists otp_emailed_at timestamptz;
+
+create index if not exists idx_admins_totp_enabled on public.admins (totp_enabled) where totp_enabled = true;
+create index if not exists idx_admins_dashboard_activated on public.admins (dashboard_activated_at);
+
+update public.admins
+set dashboard_activated_at = coalesce(last_login, now())
+where dashboard_activated_at is null
+  and role is distinct from 'super_admin'
+  and coalesce(must_change_password, 0) = 0
+  and invite_token is null;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration: 202606100001_critical_threshold_and_notify_queue.sql
+-- -----------------------------------------------------------------------------
+-- Critical threshold (days overdue before "critical") + leader notification queue for batched digests.
+
+alter table public.app_settings
+  add column if not exists critical_threshold_days int not null default 30;
+
+alter table public.app_settings
+  drop constraint if exists app_settings_critical_threshold_days_check;
+
+alter table public.app_settings
+  add constraint app_settings_critical_threshold_days_check
+  check (critical_threshold_days >= 1 and critical_threshold_days <= 90);
+
+update public.app_settings
+set critical_threshold_days = 30
+where id = 1 and critical_threshold_days is null;
+
+alter table public.overdue_escalation
+  add column if not exists critical_notified_at timestamptz;
+
+-- Pending new-registration digests for sub-unit leaders (batched email).
+create table if not exists public.registration_notify_queue (
+  id bigserial primary key,
+  registration_id uuid not null references public.registrations (id) on delete cascade,
+  admin_id bigint not null references public.admins (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  notified_at timestamptz,
+  unique (registration_id, admin_id)
+);
+
+create index if not exists idx_registration_notify_queue_pending
+  on public.registration_notify_queue (admin_id, notified_at)
+  where notified_at is null;
+
+alter table public.registration_notify_queue enable row level security;
+

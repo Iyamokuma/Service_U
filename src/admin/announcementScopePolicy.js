@@ -56,6 +56,12 @@ const LEADER_MODES_COUNTRY = [
   { value: "sub_unit", label: "Sub-unit heads (select unit + sub-unit)" },
 ];
 
+const DESTINATION_TABS_GLOBAL = [
+  { id: "members", label: "Unit members" },
+  { id: "leaders", label: "Leaders" },
+  { id: "admins", label: "Admins" },
+];
+
 const DESTINATION_TABS_BROADCAST = [
   { id: "members", label: "Unit members" },
   { id: "leaders", label: "Leaders" },
@@ -344,6 +350,31 @@ export function getAnnouncementDestinationLabels(policy) {
       usesBranchAudienceLabels: true,
     };
   }
+  if (policy?.isPlatformGlobal) {
+    return {
+      destinationTabs: DESTINATION_TABS_GLOBAL,
+      typePrefix: {
+        members: "Members",
+        leaders: "Leaders",
+        admins: "Admins",
+      },
+      pastorsSubtitle: "",
+      broadcastSubtitle: "Broadcast to members, leaders, or admins by email and/or push notification.",
+      leaderModeOptions: LEADER_MODES_DEFAULT,
+      leaderModeDisplay: {
+        all: "All leaders",
+        service_unit: "Service unit leaders",
+        sub_unit: "Sub-unit leaders",
+      },
+      allRolesLabel: "All admins",
+      adminRolesSectionTitle: "Admin roles",
+      adminRolesHint: "",
+      leaderTypeTitle: "Leader type",
+      leaderTypeLabel: "Leaders",
+      leaderTypeHint: "",
+      usesBranchAudienceLabels: false,
+    };
+  }
   return {
     destinationTabs: DESTINATION_TABS_DEFAULT,
     typePrefix: {
@@ -429,6 +460,7 @@ export function getAnnouncementScopePolicy(admin, viewMode) {
 
   const base = {
     isGlobal,
+    isPlatformGlobal: isGlobalAdminRole(role),
     isCountryAdmin,
     isSatellitePastor,
     isServiceUnitLeader,
