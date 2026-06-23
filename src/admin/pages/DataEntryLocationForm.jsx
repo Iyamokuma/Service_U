@@ -9,6 +9,7 @@ import { branchCountryLabel, branchCountryCodeFromIso2, branchStateLabel } from 
 import { api } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { useAdminLocationCatalog } from "../hooks/useAdminLocationCatalog.js";
+import { StateRegionSelect } from "../components/StateRegionSelect.jsx";
 import { emitAdminRequestsChanged } from "../adminLiveRefresh.js";
 
 export function DataEntryLocationForm() {
