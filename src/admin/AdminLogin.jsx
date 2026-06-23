@@ -4,15 +4,14 @@ import { api } from "./api.js";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { AdminAuthCard } from "./components/AdminAuthCard.jsx";
 import { PasswordField } from "./components/PasswordField.jsx";
+import { useToast } from "./components/Toast.jsx";
 import { SmhLoader } from "../components/SmhLoader.jsx";
 import { clearLoginChallenge, readLoginChallenge, saveLoginChallenge } from "./loginChallenge.js";
 
 const LOGIN_STEPS = ["Sign in", "Verify"];
 
-const RESET_LINK_SENT =
-  "We sent a password reset link to that email when an account is registered. Check your inbox and spam folder.";
-
 export function AdminLogin({ initialStep = "credentials" }) {
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     startLogin,
@@ -40,12 +39,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
   const [resendIn, setResendIn] = useState(() => challenge?.resendAfter ?? 0);
   const [emailSent, setEmailSent] = useState(() => !!challenge?.emailSent);
   const [resetSending, setResetSending] = useState(false);
-  const [resetNotice, setResetNotice] = useState(() => {
-    if (searchParams.get("reset") === "success") {
-      return "Your password was updated. Sign in with your new password below.";
-    }
-    return "";
-  });
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -59,7 +52,7 @@ export function AdminLogin({ initialStep = "credentials" }) {
     const email = String(searchParams.get("email") || "").trim();
     if (email) setForm((f) => ({ ...f, email }));
     if (searchParams.get("reset") === "success") {
-      setResetNotice("Your password was updated. Sign in with your new password below.");
+      toast("Password updated. Sign in with your new password.", "success");
       const next = new URLSearchParams(searchParams);
       next.delete("reset");
       setSearchParams(next, { replace: true });
@@ -94,7 +87,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
   async function onCredentialsSubmit(e) {
     e.preventDefault();
     clearLoginError();
-    setResetNotice("");
     const res = await startLogin(form.email, form.password);
     if (res?.needsDualVerify && res.challengeId) {
       beginVerifyStep(
@@ -130,7 +122,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
   async function onForgotPassword(e) {
     e.preventDefault();
     clearLoginError();
-    setResetNotice("");
     const email = String(form.email || "").trim();
     if (!email) {
       setLoginError("Enter your email above, then click Forgot password.");
@@ -138,10 +129,10 @@ export function AdminLogin({ initialStep = "credentials" }) {
     }
     setResetSending(true);
     try {
-      const res = await api.requestPasswordReset(email);
-      setResetNotice(res?.message || RESET_LINK_SENT);
+      await api.requestPasswordReset(email);
+      toast("Password reset link sent", "success");
     } catch {
-      setResetNotice(RESET_LINK_SENT);
+      toast("Password reset link sent", "success");
     } finally {
       setResetSending(false);
     }
@@ -229,9 +220,6 @@ export function AdminLogin({ initialStep = "credentials" }) {
       footer="Secure admin access · Salvation Ministries"
     >
       {error ? <div className="sa-login-err" role="alert">{error}</div> : null}
-      {resetNotice && step === "credentials" ? (
-        <div className="sa-login-success" role="status">{resetNotice}</div>
-      ) : null}
 
       <form onSubmit={onSubmit}>
         {step === "credentials" ? (
