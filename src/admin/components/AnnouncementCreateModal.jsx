@@ -11,6 +11,8 @@ import {
   getAnnouncementScopePolicy,
   initialAnnouncementGeoForm,
   pastorRoleSelectionFromAdminRoles,
+  sendAllAudienceGeoPatch,
+  sendAllAudienceGeoLocks,
   sendAllAudienceOptionsForPolicy,
 } from "../announcementScopePolicy.js";
 import { unitHasSubUnits } from "../../serviceUnitUtils.js";
@@ -78,7 +80,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
       setScheduleLater(false);
       return;
     }
-    const base = emptyForm();
+    let base = emptyForm();
     const audienceOptions = sendAllAudienceOptionsForPolicy(policy);
     if (policy.membersOnly) {
       base.destination_type = "members";
@@ -104,6 +106,7 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
         base.leaders = { ...base.leaders, ...geo };
         base.admins = { ...base.admins, ...geo, roles: [...policy.defaultAdminRoles] };
       }
+      base = applySharedGeoPatch(base, sendAllAudienceGeoPatch(base.send_all.audiences));
     } else if (!policy.isGlobal && admin) {
       const geo = initialAnnouncementGeoForm(admin, policy);
       base.members = { ...base.members, ...geo };
@@ -218,6 +221,13 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
     form.destination_type === "admins" &&
     policy.isStateBranchAudience;
   const showPastorRoleSectionInScope = showPastorRoleInScope || showPastorRoleFixedInScope;
+  const sendAllGeoLocks = useMemo(
+    () =>
+      form.destination_type === "send_all"
+        ? sendAllAudienceGeoLocks(form.send_all.audiences)
+        : { forceAllStates: false, forceAllSatellites: false },
+    [form.destination_type, form.send_all.audiences],
+  );
   const pastorRoleSelection = useMemo(
     () => pastorRoleSelectionFromAdminRoles(form.admins.roles),
     [form.admins.roles],
@@ -343,6 +353,9 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           },
         };
       }
+      if (type === "send_all") {
+        next = applySharedGeoPatch(next, sendAllAudienceGeoPatch(next.send_all.audiences));
+      }
       return next;
     });
   const scopeHint = policy.scopeHint;
@@ -409,7 +422,13 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           sendAllAudiences={policy.showSendAllTab ? sendAllAudienceOptions : null}
           selectedAudiences={form.send_all.audiences}
           onAudiencesChange={(audiences) =>
-            setForm((f) => ({ ...f, send_all: { ...f.send_all, audiences } }))
+            setForm((f) => {
+              let next = { ...f, send_all: { ...f.send_all, audiences } };
+              if (f.destination_type === "send_all") {
+                next = applySharedGeoPatch(next, sendAllAudienceGeoPatch(audiences));
+              }
+              return next;
+            })
           }
         />
       ) : (
@@ -431,6 +450,8 @@ export function AnnouncementCreateModal({ open, onClose, onSubmit, saving, unitL
           lockedCountryCode={policy.lockedCountry}
           lockedStateCode={policy.lockedState}
           lockedSatelliteSite={policy.lockedSatellite}
+          forceAllStates={sendAllGeoLocks.forceAllStates}
+          forceAllSatellites={sendAllGeoLocks.forceAllSatellites}
           showLeaderType={showLeaderTypeInScope}
           leaderMode={form.leaders.mode}
           leaderModeOptions={leaderModeOptions}

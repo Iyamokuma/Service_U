@@ -192,6 +192,23 @@ export function sendAllAudienceOptionsForPolicy(policy) {
   return SEND_ALL_AUDIENCE_OPTIONS;
 }
 
+/** Send all: pastor audiences require all states / all satellites within scope. */
+export function sendAllAudienceGeoLocks(audiences) {
+  const set = new Set((audiences || []).map(String));
+  return {
+    forceAllStates: set.has("state_branch_pastors"),
+    forceAllSatellites: set.has("satellite_pastors"),
+  };
+}
+
+export function sendAllAudienceGeoPatch(audiences) {
+  const { forceAllStates, forceAllSatellites } = sendAllAudienceGeoLocks(audiences);
+  const patch = {};
+  if (forceAllStates) patch.branch_state = "";
+  if (forceAllSatellites) patch.satellite_site = "";
+  return patch;
+}
+
 /** Service Unit Leader — create announcement destination radios. */
 const DESTINATION_TABS_SERVICE_UNIT = [
   { id: "members", label: "Service Unit Members" },

@@ -34,6 +34,8 @@ export function AnnouncementAudienceGeoScope({
   lockedCountryCode = "",
   lockedStateCode = "",
   lockedSatelliteSite = "",
+  forceAllStates = false,
+  forceAllSatellites = false,
   showLeaderType = false,
   leaderMode = "",
   leaderModeOptions = [],
@@ -109,6 +111,12 @@ export function AnnouncementAudienceGeoScope({
               value={branchStateLabel(cc, lockedStateCode) || lockedStateCode}
               hint="State is fixed to your assigned branch."
             />
+          ) : forceAllStates ? (
+            <LockedGeoField
+              label=""
+              value="All states"
+              hint="State branch pastors reach every state in scope."
+            />
           ) : (
             <SearchableDropdown
               value={scope.branch_state}
@@ -131,6 +139,12 @@ export function AnnouncementAudienceGeoScope({
               label=""
               value={lockedSatelliteSite}
               hint="Satellite is fixed to your assigned church site."
+            />
+          ) : forceAllSatellites ? (
+            <LockedGeoField
+              label=""
+              value="All satellites"
+              hint="Satellite pastors reach every branch in scope."
             />
           ) : (
             <SearchableDropdown

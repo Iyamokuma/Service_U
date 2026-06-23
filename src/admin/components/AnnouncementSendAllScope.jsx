@@ -13,6 +13,8 @@ export function AnnouncementSendAllScope({
   allowAllCountries = false,
   allowAllSatellites = false,
   vis,
+  forceAllStates = false,
+  forceAllSatellites = false,
   showLeaderType = false,
   leaderMode = "",
   leaderModeOptions = [],
@@ -48,6 +50,8 @@ export function AnnouncementSendAllScope({
         lockedCountryCode={lockedCountryCode}
         lockedStateCode={lockedStateCode}
         lockedSatelliteSite={lockedSatelliteSite}
+        forceAllStates={forceAllStates}
+        forceAllSatellites={forceAllSatellites}
         showLeaderType={showLeaderType}
         leaderMode={leaderMode}
         leaderModeOptions={leaderModeOptions}
