@@ -4,6 +4,8 @@ import { AdminAuthProvider, useAdminAuth } from "./AdminContext.jsx";
 import { AdminLogin } from "./AdminLogin.jsx";
 import { AdminLayout } from "./AdminLayout.jsx";
 import { AdminAcceptInvite } from "./pages/AdminAcceptInvite.jsx";
+import { AdminForgotPassword } from "./pages/AdminForgotPassword.jsx";
+import { AdminResetPassword } from "./pages/AdminResetPassword.jsx";
 import { AdminLoginOtp } from "./pages/AdminLoginOtp.jsx";
 import { ForceChangePassword } from "./components/ForceChangePassword.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
@@ -21,6 +23,8 @@ export function AdminRouter() {
       <ToastProvider>
         <Routes>
           <Route path="accept-invite" element={<AdminAcceptInvite />} />
+          <Route path="forgot-password" element={<AdminForgotPassword />} />
+          <Route path="reset-password" element={<AdminResetPassword />} />
           <Route path="verify" element={<AdminLoginOtp />} />
           <Route path="*" element={<AdminGate />} />
         </Routes>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAdminAuth } from "./AdminContext.jsx";
 import { AdminAuthCard } from "./components/AdminAuthCard.jsx";
 import { PasswordField } from "./components/PasswordField.jsx";
@@ -220,6 +220,9 @@ export function AdminLogin({ initialStep = "credentials" }) {
                 onChange={set("password")}
                 required
               />
+            </div>
+            <div className="sa-login-forgot">
+              <Link to="/admin/forgot-password">Forgot password?</Link>
             </div>
             <button className="sa-login-btn" type="submit" disabled={loading}>
               {loading ? (

@@ -86,6 +86,25 @@ async function adminInviteFetch(op, params = {}) {
   return body;
 }
 
+async function adminPasswordResetFetch(op, params = {}) {
+  const res = await fetch(`${functionsBaseUrl()}/admin-password-reset`, {
+    method: "POST",
+    headers: {
+      ...supabaseAnonHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ op, ...params }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`);
+  return body;
+}
+
 async function adminLoginFetch(op, params = {}) {
   const res = await fetch(`${functionsBaseUrl()}/admin-login`, {
     method: "POST",
@@ -209,6 +228,25 @@ export const api = {
 
   async completeInvite(token, password) {
     return adminInviteFetch("completeInvite", {
+      token: String(token || "").trim(),
+      password: String(password || "").trim(),
+    });
+  },
+
+  async requestPasswordReset(email) {
+    return adminPasswordResetFetch("requestPasswordReset", {
+      email: String(email || "").trim(),
+    });
+  },
+
+  async validatePasswordReset(token) {
+    return adminPasswordResetFetch("validatePasswordReset", {
+      token: String(token || "").trim(),
+    });
+  },
+
+  async completePasswordReset(token, password) {
+    return adminPasswordResetFetch("completePasswordReset", {
       token: String(token || "").trim(),
       password: String(password || "").trim(),
     });
