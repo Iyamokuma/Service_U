@@ -15,8 +15,15 @@ const CORS_HEADERS = {
 
 const GENERIC_REQUEST_OK = {
   ok: true,
-  message: "If an account exists for that email, we sent a password reset link. Check your inbox and spam folder.",
+  message:
+    "We sent a password reset link to that email when an account is registered. Check your inbox and spam folder.",
 };
+
+const GENERIC_RESET_LINK_ERROR =
+  "This reset link is invalid or has expired. Use Forgot password on the sign-in page.";
+
+const GENERIC_RESET_SAVE_ERROR =
+  "We could not update your password. Use Forgot password on the sign-in page to request a new link.";
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -55,6 +62,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
+  let op = "";
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -65,48 +73,52 @@ Deno.serve(async (req) => {
       token?: string;
       password?: string;
     };
-    const op = norm(body.op);
+    op = norm(body.op);
     const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
     if (op === "requestPasswordReset") {
       const email = norm(body.email).toLowerCase();
       if (!email) return json(400, { error: "Email is required." });
 
-      const { data: row, error } = await supabase
-        .from("admins")
-        .select("id,full_name,email,role,is_active,must_change_password,invite_token")
-        .eq("is_active", 1)
-        .ilike("email", email)
-        .maybeSingle();
-      if (error) return json(500, { error: error.message });
+      try {
+        const { data: row, error } = await supabase
+          .from("admins")
+          .select("id,full_name,email,role,is_active,must_change_password,invite_token")
+          .eq("is_active", 1)
+          .ilike("email", email)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
 
-      if (row && canSelfServicePasswordReset(row as Record<string, unknown>)) {
-        const token = await issuePasswordResetToken(supabase, Number(row.id));
-        const resetUrl = buildPasswordResetUrl(token);
-        const sent = await sendPasswordResetEmail(
-          String(row.email || email),
-          String(row.full_name || ""),
-          resetUrl,
-        );
+        if (row && canSelfServicePasswordReset(row as Record<string, unknown>)) {
+          const token = await issuePasswordResetToken(supabase, Number(row.id));
+          const resetUrl = buildPasswordResetUrl(token);
+          const sent = await sendPasswordResetEmail(
+            String(row.email || email),
+            String(row.full_name || ""),
+            resetUrl,
+          );
 
-        await supabase.from("activity_logs").insert({
-          admin_id: row.id,
-          admin_name: row.full_name,
-          action: sent.ok ? "admin.password_reset_requested" : "admin.password_reset_email_failed",
-          entity_type: "admin",
-          entity_id: String(row.id),
-          description: sent.ok
-            ? "Password reset link emailed"
-            : `Password reset email failed: ${sent.error || "unknown"}`,
-          ip_address: clientIp(req),
-        });
+          await supabase.from("activity_logs").insert({
+            admin_id: row.id,
+            admin_name: row.full_name,
+            action: sent.ok ? "admin.password_reset_requested" : "admin.password_reset_email_failed",
+            entity_type: "admin",
+            entity_id: String(row.id),
+            description: sent.ok
+              ? "Password reset link emailed"
+              : `Password reset email failed: ${sent.error || "unknown"}`,
+            ip_address: clientIp(req),
+          });
 
-        if (!sent.ok) {
-          await supabase
-            .from("admins")
-            .update({ password_reset_token: null, password_reset_expires_at: null })
-            .eq("id", row.id);
+          if (!sent.ok) {
+            await supabase
+              .from("admins")
+              .update({ password_reset_token: null, password_reset_expires_at: null })
+              .eq("id", row.id);
+          }
         }
+      } catch (err) {
+        console.error("requestPasswordReset failed:", err);
       }
 
       return json(200, GENERIC_REQUEST_OK);
@@ -121,7 +133,7 @@ Deno.serve(async (req) => {
         .select("id,full_name,email,role,password_reset_expires_at,is_active")
         .eq("password_reset_token", token)
         .maybeSingle();
-      if (error) return json(500, { error: error.message });
+      if (error) return json(400, { error: GENERIC_RESET_LINK_ERROR });
       if (!row || Number(row.is_active) !== 1) {
         return json(400, { error: "This reset link is invalid or has already been used." });
       }
@@ -148,7 +160,7 @@ Deno.serve(async (req) => {
         .select("*")
         .eq("password_reset_token", token)
         .maybeSingle();
-      if (error) return json(500, { error: error.message });
+      if (error) return json(400, { error: GENERIC_RESET_LINK_ERROR });
       if (!row || Number(row.is_active) !== 1) {
         return json(400, { error: "This reset link is invalid or has already been used." });
       }
@@ -171,15 +183,15 @@ Deno.serve(async (req) => {
           password_reset_expires_at: null,
         })
         .eq("id", row.id);
-      if (updErr) return json(500, { error: updErr.message });
+      if (updErr) return json(400, { error: GENERIC_RESET_SAVE_ERROR });
 
       const { data: fresh, error: freshErr } = await supabase
         .from("admins")
         .select("*")
         .eq("id", row.id)
         .maybeSingle();
-      if (freshErr) return json(500, { error: freshErr.message });
-      if (!fresh) return json(500, { error: "Account could not be loaded after reset." });
+      if (freshErr) return json(400, { error: GENERIC_RESET_SAVE_ERROR });
+      if (!fresh) return json(400, { error: GENERIC_RESET_SAVE_ERROR });
 
       await supabase.from("activity_logs").insert({
         admin_id: fresh.id,
@@ -197,9 +209,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    return json(400, { error: "Unknown op." });
+    return json(400, { error: "Unknown operation." });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unexpected server error";
-    return json(500, { error: message });
+    console.error("admin-password-reset error:", err);
+    if (op === "requestPasswordReset") {
+      return json(200, GENERIC_REQUEST_OK);
+    }
+    return json(400, { error: GENERIC_RESET_LINK_ERROR });
   }
 });

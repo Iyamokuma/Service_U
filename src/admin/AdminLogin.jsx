@@ -9,6 +9,9 @@ import { clearLoginChallenge, readLoginChallenge, saveLoginChallenge } from "./l
 
 const LOGIN_STEPS = ["Sign in", "Verify"];
 
+const RESET_LINK_SENT =
+  "We sent a password reset link to that email when an account is registered. Check your inbox and spam folder.";
+
 export function AdminLogin({ initialStep = "credentials" }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const {
@@ -136,12 +139,9 @@ export function AdminLogin({ initialStep = "credentials" }) {
     setResetSending(true);
     try {
       const res = await api.requestPasswordReset(email);
-      setResetNotice(
-        res?.message ||
-          "We sent a password reset link to that email when an account is registered. Check your inbox and spam folder.",
-      );
-    } catch (err) {
-      setLoginError(err.message);
+      setResetNotice(res?.message || RESET_LINK_SENT);
+    } catch {
+      setResetNotice(RESET_LINK_SENT);
     } finally {
       setResetSending(false);
     }

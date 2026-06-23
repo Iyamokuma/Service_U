@@ -101,8 +101,33 @@ async function adminPasswordResetFetch(op, params = {}) {
   } catch {
     body = null;
   }
-  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const safe = String(body?.error || "").trim();
+    if (op === "validatePasswordReset" || op === "completePasswordReset") {
+      throw new Error(
+        safe && !looksLikeInternalError(safe)
+          ? safe
+          : "This reset link is invalid or has expired. Use Forgot password on the sign-in page.",
+      );
+    }
+    throw new Error(body?.error || `Request failed (${res.status})`);
+  }
   return body;
+}
+
+const PASSWORD_RESET_SENT_MESSAGE =
+  "We sent a password reset link to that email when an account is registered. Check your inbox and spam folder.";
+
+function looksLikeInternalError(message) {
+  const m = String(message || "").toLowerCase();
+  return (
+    m.includes("schema cache") ||
+    m.includes("column") ||
+    m.includes("sqlstate") ||
+    m.includes("pgrst") ||
+    m.includes("postgres") ||
+    m.includes("supabase")
+  );
 }
 
 async function adminLoginFetch(op, params = {}) {
@@ -234,9 +259,17 @@ export const api = {
   },
 
   async requestPasswordReset(email) {
-    return adminPasswordResetFetch("requestPasswordReset", {
-      email: String(email || "").trim(),
-    });
+    try {
+      const res = await adminPasswordResetFetch("requestPasswordReset", {
+        email: String(email || "").trim(),
+      });
+      return {
+        ok: true,
+        message: res?.message || PASSWORD_RESET_SENT_MESSAGE,
+      };
+    } catch {
+      return { ok: true, message: PASSWORD_RESET_SENT_MESSAGE };
+    }
   },
 
   async validatePasswordReset(token) {
@@ -246,10 +279,18 @@ export const api = {
   },
 
   async completePasswordReset(token, password) {
-    return adminPasswordResetFetch("completePasswordReset", {
-      token: String(token || "").trim(),
-      password: String(password || "").trim(),
-    });
+    try {
+      return await adminPasswordResetFetch("completePasswordReset", {
+        token: String(token || "").trim(),
+        password: String(password || "").trim(),
+      });
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (looksLikeInternalError(msg)) {
+        throw new Error("We could not update your password. Use Forgot password on the sign-in page to request a new link.");
+      }
+      throw e;
+    }
   },
 
   async resendAdminInvite(id) {
