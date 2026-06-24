@@ -255,6 +255,7 @@ export function buildSatelliteRows(catalog) {
         members: stats?.membersBySatellite?.[satelliteKey(cc, st, name)] ?? 0,
       };
     })
+    .filter((row) => row.churchId != null)
     .sort((a, b) => {
       const ac = a.countryLabel.localeCompare(b.countryLabel);
       if (ac !== 0) return ac;

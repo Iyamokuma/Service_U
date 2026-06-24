@@ -2431,7 +2431,11 @@ async function handleUpdateRequest(supabase: SupabaseClient, params: Record<stri
     if (!Number.isFinite(churchId) || churchId <= 0) {
       throw new Error("Missing church id in deletion request.");
     }
-    await deleteCatalogChurchById(supabase, churchId);
+    await deleteCatalogChurchById(supabase, churchId, {
+      branchCountry: String(payload.branchCountry || ""),
+      branchState: String(payload.branchState || ""),
+      churchName: String(payload.churchName || ""),
+    });
     await logActivity(
       supabase,
       admin,
@@ -3560,7 +3564,7 @@ function buildCatalogStats(regs: Array<Record<string, unknown>>) {
 
 function buildMergedChurchRows(
   churches: Record<string, unknown>[],
-  satellites: Record<string, unknown>[],
+  _satellites: Record<string, unknown>[],
 ): Record<string, unknown>[] {
   const byKey = new Map<string, Record<string, unknown>>();
   for (const ch of churches) {
@@ -3578,30 +3582,31 @@ function buildMergedChurchRows(
       is_active: ch.is_active ?? 1,
     });
   }
-  for (const s of satellites) {
-    const cc = normUp(s.branch_country);
-    const st = normUp(s.branch_state);
-    const name = norm(s.site_name);
-    if (!cc || !st || !name) continue;
-    const key = `${cc}:${st}:${name.toLowerCase()}`;
-    if (!byKey.has(key)) {
-      byKey.set(key, {
-        id: null,
-        name,
-        address: "",
-        branch_country: cc,
-        branch_state: st,
-        directory_branch_id: null,
-        is_active: s.is_active ?? 1,
-      });
-    }
-  }
   return [...byKey.values()].sort((a, b) => {
     const ac = normUp(a.branch_country).localeCompare(normUp(b.branch_country));
     if (ac !== 0) return ac;
     const st = normUp(a.branch_state).localeCompare(normUp(b.branch_state));
     if (st !== 0) return st;
     return norm(a.name).localeCompare(norm(b.name));
+  });
+}
+
+function filterSatellitesToLiveChurches(
+  satellites: Record<string, unknown>[],
+  churches: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const keys = new Set<string>();
+  for (const ch of churches) {
+    const cc = normUp(ch.branch_country);
+    const st = normUp(ch.branch_state);
+    const name = norm(ch.name);
+    if (cc && st && name) keys.add(`${cc}:${st}:${name.toLowerCase()}`);
+  }
+  return satellites.filter((s) => {
+    const cc = normUp(s.branch_country);
+    const st = normUp(s.branch_state);
+    const name = norm(s.site_name);
+    return keys.has(`${cc}:${st}:${name.toLowerCase()}`);
   });
 }
 
@@ -3713,7 +3718,7 @@ async function loadScopedCatalog(supabase: SupabaseClient, admin: AdminRow) {
     countries: scopedCountries,
     states: scopedStates,
     churches: scopedChurches,
-    satellites: scopedSatellites,
+    satellites: filterSatellitesToLiveChurches(scopedSatellites, scopedChurches),
     admins: scopedAdmins,
     stats: buildCatalogStats(scopedRegs),
   };
@@ -3910,19 +3915,101 @@ async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Re
   return { ok: true };
 }
 
-async function deleteCatalogChurchById(supabase: SupabaseClient, id: number): Promise<void> {
+async function deleteSatelliteSitesForChurch(
+  supabase: SupabaseClient,
+  branchCountry: string,
+  branchState: string,
+  siteName: string,
+): Promise<void> {
+  const cc = normUp(branchCountry);
+  const st = normUp(branchState);
+  const name = norm(siteName);
+  if (!cc || !st || !name) return;
+  const { data: rows, error } = await supabase
+    .from("satellite_church_sites")
+    .select("id,site_name")
+    .eq("branch_country", cc)
+    .eq("branch_state", st);
+  if (error) throw new Error(error.message);
+  const nameKey = name.toLowerCase();
+  for (const row of rows || []) {
+    if (norm((row as { site_name?: string }).site_name).toLowerCase() !== nameKey) continue;
+    const { error: delErr } = await supabase.from("satellite_church_sites").delete().eq("id", (row as { id: number }).id);
+    if (delErr) throw new Error(delErr.message);
+  }
+}
+
+async function deleteDirectoryBranchForSite(
+  supabase: SupabaseClient,
+  branchCountry: string,
+  branchState: string,
+  siteName: string,
+  directoryBranchId?: number,
+): Promise<void> {
+  const bid = Number(directoryBranchId);
+  if (Number.isFinite(bid) && bid > 0) {
+    const { error } = await supabase.from("directory_branches").delete().eq("id", bid);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  const cc = normUp(branchCountry);
+  const st = normUp(branchState);
+  const name = norm(siteName);
+  if (!cc || !st || !name) return;
+  const { data: country } = await supabase
+    .from("directory_countries")
+    .select("id")
+    .eq("branch_country_code", cc)
+    .maybeSingle();
+  if (!country?.id) return;
+  const { data: state } = await supabase
+    .from("directory_states")
+    .select("id")
+    .eq("country_id", country.id)
+    .eq("branch_state_code", st)
+    .maybeSingle();
+  if (!state?.id) return;
+  const { data: branches } = await supabase
+    .from("directory_branches")
+    .select("id,name")
+    .eq("state_id", state.id);
+  const nameKey = name.toLowerCase();
+  for (const branch of branches || []) {
+    if (norm((branch as { name?: string }).name).toLowerCase() !== nameKey) continue;
+    const { error } = await supabase.from("directory_branches").delete().eq("id", (branch as { id: number }).id);
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function deleteCatalogChurchById(
+  supabase: SupabaseClient,
+  id: number,
+  fallback?: { branchCountry?: string; branchState?: string; churchName?: string },
+): Promise<void> {
+  let cc = normUp(fallback?.branchCountry);
+  let st = normUp(fallback?.branchState);
+  let name = norm(fallback?.churchName);
+  let directoryBranchId = 0;
+
   const { data: row } = await supabase
     .from("churches")
-    .select("directory_branch_id")
+    .select("directory_branch_id,name,branch_country,branch_state")
     .eq("id", id)
     .maybeSingle();
-  if (!row) throw new Error("Church not found.");
-  const { error: e1 } = await supabase.from("churches").delete().eq("id", id);
-  if (e1) throw new Error(e1.message);
-  const bid = Number((row as { directory_branch_id?: number }).directory_branch_id);
-  if (Number.isFinite(bid) && bid > 0) {
-    await supabase.from("directory_branches").delete().eq("id", bid);
+
+  if (row) {
+    cc = normUp((row as { branch_country?: string }).branch_country) || cc;
+    st = normUp((row as { branch_state?: string }).branch_state) || st;
+    name = norm((row as { name?: string }).name) || name;
+    directoryBranchId = Number((row as { directory_branch_id?: number }).directory_branch_id);
+    const { error: e1 } = await supabase.from("churches").delete().eq("id", id);
+    if (e1) throw new Error(e1.message);
+  } else if (!cc || !st || !name) {
+    throw new Error("Church not found.");
   }
+
+  await deleteSatelliteSitesForChurch(supabase, cc, st, name);
+  await deleteDirectoryBranchForSite(supabase, cc, st, name, directoryBranchId);
 }
 
 async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
