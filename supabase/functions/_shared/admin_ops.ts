@@ -2246,14 +2246,18 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
     const satelliteChurches = Array.isArray(payload.satelliteChurches)
       ? (payload.satelliteChurches as unknown[]).map((s) => String(s || "").trim()).filter(Boolean)
       : [];
-    if (!countryIso2 || !countryName || !stateName || !lgaName) {
-      throw new Error("Country, state, and LGA are required.");
+    const satelliteAddresses = Array.isArray(payload.satelliteAddresses)
+      ? (payload.satelliteAddresses as unknown[]).map((s) => String(s || "").trim())
+      : [];
+    if (!countryIso2 || !countryName || !stateName) {
+      throw new Error("Country and state are required.");
     }
     if (!satelliteChurches.length) {
       throw new Error("At least one satellite church name is required.");
     }
+    const locLabel = lgaName ? `${lgaName}, ${stateName}` : stateName;
     const message = norm(body.message) ||
-      `Location: ${lgaName}, ${stateName}, ${countryName} (${countryIso2}) — ${satelliteChurches.length} satellite church${
+      `Location: ${locLabel}, ${countryName} (${countryIso2}) — ${satelliteChurches.length} satellite church${
         satelliteChurches.length === 1 ? "" : "es"
       }`;
     const row = {
@@ -2270,6 +2274,7 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
         stateCode,
         lgaName,
         satelliteChurches,
+        satelliteAddresses,
       },
       status: "open",
     };
@@ -2288,7 +2293,7 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
       supabase,
       Number(data.id),
       "New location proposal",
-      `${admin.full_name} proposed churches in ${lgaName}, ${stateName}, ${countryName}.`,
+      `${admin.full_name} proposed churches in ${locLabel}, ${countryName}.`,
       admin,
     );
     return { data };
@@ -2484,6 +2489,7 @@ async function applyLocationCatalogProposal(
   const lga = String(payload.lgaName || "").trim();
   const countryDisplay = String(payload.countryName || "").trim();
   const sats = Array.isArray(payload.satelliteChurches) ? payload.satelliteChurches as string[] : [];
+  const addresses = Array.isArray(payload.satelliteAddresses) ? payload.satelliteAddresses as string[] : [];
 
   const country = await ensureDirectoryCountry(supabase, (t) => nextIntPk(supabase, t), {
     iso2: iso,
@@ -2497,10 +2503,11 @@ async function applyLocationCatalogProposal(
 
   const addressBase = [lga, stateName, countryDisplay || bc].filter(Boolean).join(", ");
 
-  for (const name of sats) {
-    const site = String(name || "").trim();
+  for (let i = 0; i < sats.length; i++) {
+    const site = String(sats[i] || "").trim();
     if (!site) continue;
-    const address = addressBase ? `${site} — ${addressBase}` : site;
+    const satAddress = String(addresses[i] || "").trim();
+    const address = satAddress || (addressBase ? `${site} — ${addressBase}` : site);
     await publishChurchToDirectory(supabase, (t) => nextIntPk(supabase, t), {
       branchCountry: bc,
       branchState: st,
@@ -3778,7 +3785,10 @@ async function handleCatalogCreateLocation(
     : body.satelliteName
     ? [String(body.satelliteName)]
     : [];
-  if (!iso || !stateName || !lga) throw new Error("Continent, country, state, and LGA are required.");
+  const addresses = Array.isArray(body.satelliteAddresses)
+    ? body.satelliteAddresses as string[]
+    : [];
+  if (!iso || !stateName) throw new Error("Country and state are required.");
   assertCatalogCountryScope(admin, iso.toUpperCase());
   const cleaned = sats.map((s) => String(s || "").trim()).filter(Boolean);
   if (!cleaned.length) throw new Error("Enter at least one satellite church name.");
@@ -3789,6 +3799,7 @@ async function handleCatalogCreateLocation(
     stateName,
     lgaName: lga,
     satelliteChurches: cleaned,
+    satelliteAddresses: addresses,
   }, 0);
   await logActivity(supabase, admin, "catalog.location", "directory", "0", `Created ${cleaned.length} location(s)`, ip);
   return { ok: true, count: cleaned.length };

@@ -180,28 +180,22 @@ export function BranchCatalog({ variant = "catalog" }) {
 
   const allRows = useMemo(() => {
     const rows = catalog ? buildAllRows(catalog) : [];
-    if (canRequestDelete && !canManageChurches) {
-      return rows.filter((r) => !pendingDeletionIds.has(r.id));
-    }
     return rows.map((r) => ({
       ...r,
       deletionPending: pendingDeletionIds.has(r.id),
     }));
-  }, [catalog, pendingDeletionIds, canRequestDelete, canManageChurches]);
+  }, [catalog, pendingDeletionIds]);
 
   const countryRows = useMemo(() => (catalog ? buildCountryRows(catalog) : []), [catalog]);
   const stateRows = useMemo(() => (catalog ? buildStateRows(catalog) : []), [catalog]);
 
   const satelliteRows = useMemo(() => {
     const rows = catalog ? buildSatelliteRows(catalog) : [];
-    if (canRequestDelete && !canManageChurches) {
-      return rows.filter((r) => !r.churchId || !pendingDeletionIds.has(r.churchId));
-    }
     return rows.map((r) => ({
       ...r,
       deletionPending: r.churchId ? pendingDeletionIds.has(r.churchId) : false,
     }));
-  }, [catalog, pendingDeletionIds, canRequestDelete, canManageChurches]);
+  }, [catalog, pendingDeletionIds]);
 
   const continentOptions = useMemo(
     () => uniqueContinents(catalog?.satellites, catalog?.churches),
@@ -356,8 +350,8 @@ export function BranchCatalog({ variant = "catalog" }) {
   }
 
   async function publishLocationPayload(payload) {
-    if (!payload.countryIso2 || !payload.stateName || !payload.lgaName) {
-      toast("Country, state, and LGA are required.", "error");
+    if (!payload.countryIso2 || !payload.stateName) {
+      toast("Country and state are required.", "error");
       return;
     }
     if (!payload.satelliteChurches?.length) {
@@ -374,8 +368,9 @@ export function BranchCatalog({ variant = "catalog" }) {
             countryIso2: payload.countryIso2,
             countryName: payload.countryName,
             stateName: payload.stateName,
-            lgaName: payload.lgaName,
+            lgaName: payload.lgaName || "",
             satelliteChurches: payload.satelliteChurches,
+            satelliteAddresses: payload.satelliteAddresses || [],
           },
         });
         toast("Proposal sent for Super / General Admin approval.", "success");
@@ -686,7 +681,9 @@ export function BranchCatalog({ variant = "catalog" }) {
                 <option value="">All statuses</option>
                 <option value="active">Active</option>
                 <option value="hidden">Hidden</option>
-                {canManageChurches ? <option value="awaiting_removal">Awaiting removal</option> : null}
+                {canManageChurches || canRequestDelete ? (
+                  <option value="awaiting_removal">Awaiting removal</option>
+                ) : null}
               </select>
             </div>
             <div className="sa-field" style={{ margin: 0 }}>

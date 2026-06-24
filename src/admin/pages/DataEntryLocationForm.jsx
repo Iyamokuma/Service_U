@@ -28,7 +28,7 @@ export function DataEntryLocationForm() {
   const [countryName, setCountryName] = useState("");
   const [stateName, setStateName] = useState("");
   const [lgaName, setLgaName] = useState("");
-  const [satellites, setSatellites] = useState([""]);
+  const [satellites, setSatellites] = useState([{ name: "", address: "" }]);
 
   const [loadingGeo, setLoadingGeo] = useState({ continents: true, countries: false, states: false, lgas: false });
   const [submitting, setSubmitting] = useState(false);
@@ -154,12 +154,12 @@ export function DataEntryLocationForm() {
     };
   }, [countryName, stateName, toast]);
 
-  function setSatellite(i, v) {
-    setSatellites((prev) => prev.map((x, j) => (j === i ? v : x)));
+  function setSatellite(i, field, v) {
+    setSatellites((prev) => prev.map((x, j) => (j === i ? { ...x, [field]: v } : x)));
   }
 
   function addSatelliteRow() {
-    setSatellites((prev) => [...prev, ""]);
+    setSatellites((prev) => [...prev, { name: "", address: "" }]);
   }
 
   function removeSatelliteRow(i) {
@@ -167,7 +167,9 @@ export function DataEntryLocationForm() {
   }
 
   async function submit() {
-    const cleanedSats = satellites.map((s) => s.trim()).filter(Boolean);
+    const cleanedSats = satellites
+      .map((s) => ({ name: String(s.name || "").trim(), address: String(s.address || "").trim() }))
+      .filter((s) => s.name);
     if (!cleanedSats.length) {
       toast("Enter at least one satellite church name.", "error");
       return;
@@ -175,8 +177,8 @@ export function DataEntryLocationForm() {
 
     let payload;
     if (entryMode === "catalog") {
-      if (!catalogCountryCode || !catalogStateCode || !lgaName.trim()) {
-        toast("Select an existing country and state, then enter LGA and satellite churches.", "error");
+      if (!catalogCountryCode || !catalogStateCode) {
+        toast("Select an existing country and state, then add satellite churches.", "error");
         return;
       }
       const countryRow = catalogCountries.find((c) => c.code === catalogCountryCode);
@@ -188,11 +190,12 @@ export function DataEntryLocationForm() {
         stateName: selectedCatalogState?.name || branchStateLabel(catalogCountryCode, catalogStateCode),
         stateCode: catalogStateCode,
         lgaName: lgaName.trim(),
-        satelliteChurches: cleanedSats,
+        satelliteChurches: cleanedSats.map((s) => s.name),
+        satelliteAddresses: cleanedSats.map((s) => s.address),
       };
     } else {
-      if (!continent || !countryIso2 || !countryName || !stateName || !lgaName) {
-        toast("Select continent through LGA, then add satellite churches.", "error");
+      if (!continent || !countryIso2 || !countryName || !stateName) {
+        toast("Select continent, country, and state, then add satellite churches.", "error");
         return;
       }
       payload = {
@@ -200,8 +203,9 @@ export function DataEntryLocationForm() {
         countryIso2,
         countryName,
         stateName,
-        lgaName,
-        satelliteChurches: cleanedSats,
+        lgaName: lgaName.trim(),
+        satelliteChurches: cleanedSats.map((s) => s.name),
+        satelliteAddresses: cleanedSats.map((s) => s.address),
       };
     }
 
@@ -215,11 +219,11 @@ export function DataEntryLocationForm() {
       emitAdminRequestsChanged();
       if (entryMode === "catalog") {
         setLgaName("");
-        setSatellites([""]);
+        setSatellites([{ name: "", address: "" }]);
       } else {
         setStateName("");
         setLgaName("");
-        setSatellites([""]);
+        setSatellites([{ name: "", address: "" }]);
       }
     } catch (e) {
       toast(e.message, "error");
@@ -299,7 +303,7 @@ export function DataEntryLocationForm() {
               />
             </div>
             <div className="sa-field">
-              <label className="sa-label">LGA / city</label>
+              <label className="sa-label">LGA / city (optional)</label>
               <input
                 className="sa-input"
                 value={lgaName}
@@ -395,7 +399,7 @@ export function DataEntryLocationForm() {
           </div>
 
           <div className="sa-field">
-            <label className="sa-label">LGA / city (directory)</label>
+            <label className="sa-label">LGA / city (optional)</label>
             {lgas.length > 0 || loadingGeo.lgas ? (
               <select
                 className="sa-field-select"
@@ -428,21 +432,29 @@ export function DataEntryLocationForm() {
         )}
 
         <div className="sa-field" style={{ marginTop: 20 }}>
-          <label className="sa-label">Satellite churches (type each name)</label>
+          <label className="sa-label">Satellite churches</label>
           <div className="sa-de-sat-list">
-            {satellites.map((s, i) => (
-              <div key={i} className="sa-de-sat-row">
+            {satellites.map((sat, i) => (
+              <div key={i} className="sa-de-sat-block">
+                <div className="sa-de-sat-row">
+                  <input
+                    className="sa-input"
+                    value={sat.name}
+                    onChange={(e) => setSatellite(i, "name", e.target.value)}
+                    placeholder={`Satellite church ${i + 1}`}
+                  />
+                  {satellites.length > 1 ? (
+                    <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => removeSatelliteRow(i)}>
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
                 <input
                   className="sa-input"
-                  value={s}
-                  onChange={(e) => setSatellite(i, e.target.value)}
-                  placeholder={`Satellite church ${i + 1}`}
+                  value={sat.address}
+                  onChange={(e) => setSatellite(i, "address", e.target.value)}
+                  placeholder="Satellite address"
                 />
-                {satellites.length > 1 ? (
-                  <button type="button" className="sa-btn sa-btn-ghost sa-btn-sm" onClick={() => removeSatelliteRow(i)}>
-                    Remove
-                  </button>
-                ) : null}
               </div>
             ))}
           </div>

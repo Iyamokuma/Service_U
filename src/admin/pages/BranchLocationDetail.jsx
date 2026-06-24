@@ -102,6 +102,11 @@ export function BranchLocationDetail({
                 Deletion pending — approve or reject on the Requests page.
               </p>
             ) : null}
+            {canRequestDelete && !canManageChurches && deletionPending ? (
+              <p className="sa-text-sm sa-text-muted" style={{ margin: 0 }}>
+                Awaiting removal — pending Super / General Admin approval.
+              </p>
+            ) : null}
             {canRequestDelete && !canManageChurches && !deletionPending ? (
               <button
                 type="button"

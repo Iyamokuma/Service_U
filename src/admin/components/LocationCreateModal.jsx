@@ -8,6 +8,8 @@ import {
 } from "../../lib/geoApi.js";
 import { branchCountryCodeFromIso2 } from "../branchRegions.js";
 
+const emptySatellite = () => ({ name: "", address: "" });
+
 export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLabel, introText }) {
   const [continents, setContinents] = useState([]);
   const [countries, setCountries] = useState([]);
@@ -19,18 +21,11 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
   const [countryName, setCountryName] = useState("");
   const [stateName, setStateName] = useState("");
   const [lgaName, setLgaName] = useState("");
-  const [satellites, setSatellites] = useState([""]);
-  const [countrySearch, setCountrySearch] = useState("");
+  const [satellites, setSatellites] = useState([emptySatellite()]);
 
   const [loadingGeo, setLoadingGeo] = useState({ continents: true, countries: false, states: false, lgas: false });
 
   const catalogCountry = branchCountryCodeFromIso2(countryIso2);
-
-  const filteredCountries = countries.filter((c) => {
-    const q = countrySearch.trim().toLowerCase();
-    if (!q) return true;
-    return c.name.toLowerCase().includes(q) || c.iso2.toLowerCase().includes(q);
-  });
 
   useEffect(() => {
     if (!open) return;
@@ -39,8 +34,7 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
     setCountryName("");
     setStateName("");
     setLgaName("");
-    setSatellites([""]);
-    setCountrySearch("");
+    setSatellites([emptySatellite()]);
     let cancelled = false;
     fetchContinents()
       .then((rows) => {
@@ -111,20 +105,23 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
     };
   }, [open, countryName, stateName]);
 
-  function setSatellite(i, v) {
-    setSatellites((prev) => prev.map((x, j) => (j === i ? v : x)));
+  function setSatellite(i, field, v) {
+    setSatellites((prev) => prev.map((x, j) => (j === i ? { ...x, [field]: v } : x)));
   }
 
   function handleSubmit(e) {
     e.preventDefault();
-    const cleanedSats = satellites.map((s) => s.trim()).filter(Boolean);
+    const cleanedSats = satellites
+      .map((s) => ({ name: String(s.name || "").trim(), address: String(s.address || "").trim() }))
+      .filter((s) => s.name);
     onSubmit({
       continent,
       countryIso2,
       countryName,
       stateName,
-      lgaName,
-      satelliteChurches: cleanedSats,
+      lgaName: lgaName.trim(),
+      satelliteChurches: cleanedSats.map((s) => s.name),
+      satelliteAddresses: cleanedSats.map((s) => s.address),
     });
   }
 
@@ -180,7 +177,6 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
                 setContinent(e.target.value);
                 setCountryIso2("");
                 setCountryName("");
-                setCountrySearch("");
                 setStateName("");
                 setLgaName("");
               }}
@@ -198,16 +194,6 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
             <label className="sa-label">
               Country <span className="sa-required">*</span>
             </label>
-            {continent && !loadingGeo.countries && countries.length > 0 ? (
-              <input
-                className="sa-input"
-                style={{ marginBottom: 8 }}
-                value={countrySearch}
-                disabled={!continent}
-                onChange={(e) => setCountrySearch(e.target.value)}
-                placeholder="Search country name or code (e.g. Nigeria, NG)"
-              />
-            ) : null}
             <select
               className="sa-field-select"
               value={countryIso2}
@@ -225,19 +211,14 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
               <option value="">
                 {loadingGeo.countries ? "Loading…" : continent ? "Select country" : "Select continent first"}
               </option>
-              {filteredCountries.map((c) => (
+              {countries.map((c) => (
                 <option key={c.iso2} value={c.iso2}>
                   {c.name} ({c.iso2})
                 </option>
               ))}
             </select>
             {continent && !loadingGeo.countries ? (
-              <p className="sa-field-hint">
-                {countries.length} countries in {continent}
-                {countrySearch && filteredCountries.length !== countries.length
-                  ? ` · ${filteredCountries.length} match search`
-                  : ""}
-              </p>
+              <p className="sa-field-hint">{countries.length} countries in {continent}</p>
             ) : null}
           </div>
 
@@ -265,15 +246,12 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
           </div>
 
           <div className="sa-field">
-            <label className="sa-label">
-              LGA / city <span className="sa-required">*</span>
-            </label>
+            <label className="sa-label">LGA / city (optional)</label>
             {lgas.length > 0 || loadingGeo.lgas ? (
               <select
                 className="sa-field-select"
                 value={lgaName}
                 disabled={!stateName || loadingGeo.lgas}
-                required
                 onChange={(e) => setLgaName(e.target.value)}
               >
                 <option value="">{loadingGeo.lgas ? "Loading…" : "Select LGA or city"}</option>
@@ -288,7 +266,6 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
                 className="sa-input"
                 value={lgaName}
                 disabled={!stateName}
-                required
                 onChange={(e) => setLgaName(e.target.value)}
                 placeholder={stateName ? "Type LGA or city name" : "Select state first"}
               />
@@ -301,27 +278,35 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
 
         <div className="sa-field" style={{ marginTop: 16 }}>
           <label className="sa-label">
-            Satellite church <span className="sa-required">*</span>
+            Satellite churches <span className="sa-required">*</span>
           </label>
           <div className="sa-de-sat-list">
-            {satellites.map((s, i) => (
-              <div key={i} className="sa-de-sat-row">
+            {satellites.map((sat, i) => (
+              <div key={i} className="sa-de-sat-block">
+                <div className="sa-de-sat-row">
+                  <input
+                    className="sa-input"
+                    value={sat.name}
+                    onChange={(e) => setSatellite(i, "name", e.target.value)}
+                    placeholder={`Satellite church ${i + 1}`}
+                    required={i === 0}
+                  />
+                  {satellites.length > 1 ? (
+                    <button
+                      type="button"
+                      className="sa-btn sa-btn-ghost sa-btn-sm"
+                      onClick={() => setSatellites((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)))}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
                 <input
                   className="sa-input"
-                  value={s}
-                  onChange={(e) => setSatellite(i, e.target.value)}
-                  placeholder={`Satellite church ${i + 1}`}
-                  required={i === 0}
+                  value={sat.address}
+                  onChange={(e) => setSatellite(i, "address", e.target.value)}
+                  placeholder="Satellite address"
                 />
-                {satellites.length > 1 ? (
-                  <button
-                    type="button"
-                    className="sa-btn sa-btn-ghost sa-btn-sm"
-                    onClick={() => setSatellites((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)))}
-                  >
-                    Remove
-                  </button>
-                ) : null}
               </div>
             ))}
           </div>
@@ -329,7 +314,7 @@ export function LocationCreateModal({ open, onClose, onSubmit, saving, submitLab
             type="button"
             className="sa-btn sa-btn-outline sa-btn-sm"
             style={{ marginTop: 8 }}
-            onClick={() => setSatellites((prev) => [...prev, ""])}
+            onClick={() => setSatellites((prev) => [...prev, emptySatellite()])}
           >
             Add another satellite
           </button>

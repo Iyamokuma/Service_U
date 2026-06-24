@@ -92,6 +92,7 @@ function LocationProposalSummary({ payload }) {
     ? branchStateLabel(bc, sc)
     : String(payload.stateName || "—");
   const sats = Array.isArray(payload.satelliteChurches) ? payload.satelliteChurches : [];
+  const addresses = Array.isArray(payload.satelliteAddresses) ? payload.satelliteAddresses : [];
   return (
     <div className="sa-text-sm" style={{ lineHeight: 1.45, maxWidth: 420 }}>
       <div>
@@ -108,7 +109,17 @@ function LocationProposalSummary({ payload }) {
       </div>
       {sats.length > 0 && (
         <div style={{ marginTop: 6 }}>
-          <span className="sa-text-muted">Satellites:</span> {sats.join(", ")}
+          <span className="sa-text-muted">Satellites:</span>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {sats.map((name, i) => (
+              <li key={`${name}-${i}`}>
+                {name}
+                {addresses[i] ? (
+                  <span className="sa-text-muted"> · {addresses[i]}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
