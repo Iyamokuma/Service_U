@@ -15,9 +15,11 @@ export function BranchLocationDetail({
   onBack,
   onToggleChurch,
   onDeleteChurch,
+  onProposeDeleteChurch,
   onAddSatellites,
   canAddSatellites = false,
   canManageChurches = false,
+  canRequestDelete = false,
   busy,
 }) {
   const { churches, satellites, admins, stats } = catalog;
@@ -90,6 +92,25 @@ export function BranchLocationDetail({
                   Delete location
                 </button>
               </>
+            ) : null}
+            {canRequestDelete && !canManageChurches ? (
+              <button
+                type="button"
+                className="sa-btn sa-btn-danger sa-btn-sm"
+                disabled={busy}
+                onClick={() =>
+                  onProposeDeleteChurch({
+                    id: ch.id,
+                    name: ch.name,
+                    branch_country: cc,
+                    branch_state: st,
+                    lga: meta?.lga,
+                    continent: meta?.continent,
+                  })
+                }
+              >
+                Request deletion
+              </button>
             ) : null}
           </div>
         </div>

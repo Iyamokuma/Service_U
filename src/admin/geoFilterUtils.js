@@ -66,6 +66,11 @@ export function matchesRequestGeo(req, filters) {
       state = branchStateCodeForLocationPublish(cc, p.stateName) || state;
     }
   }
+  if (req?.request_type === "location_catalog_delete") {
+    country = String(p.branchCountry || country).trim();
+    state = String(p.branchState || state).trim();
+    satellite = String(p.churchName || satellite).trim();
+  }
   return matchesRegistrationGeo(
     { branch_country: country, branch_state: state, satellite_site: satellite },
     filters,

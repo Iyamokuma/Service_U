@@ -2294,6 +2294,81 @@ async function handleCreateRequest(supabase: SupabaseClient, params: Record<stri
     return { data };
   }
 
+  if (requestType === "location_catalog_delete") {
+    if (actorRole !== "data_entry_admin") {
+      throw new Error("Only Data Entry Admins can request location deletions.");
+    }
+    const payload = (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>;
+    const churchId = Number(payload.churchId);
+    if (!Number.isFinite(churchId) || churchId <= 0) {
+      throw new Error("A valid church id is required.");
+    }
+    const { data: church } = await supabase
+      .from("churches")
+      .select("id,name,branch_country,branch_state,address")
+      .eq("id", churchId)
+      .maybeSingle();
+    if (!church) throw new Error("Location not found.");
+    const churchName = String((church as { name?: string }).name || "").trim();
+    const branchCountry = normUp((church as { branch_country?: string }).branch_country);
+    const branchState = normUp((church as { branch_state?: string }).branch_state);
+    const { data: pendingDeletes } = await supabase
+      .from("admin_requests")
+      .select("id,payload,status")
+      .eq("request_type", "location_catalog_delete")
+      .in("status", ["open", "in_review"]);
+    const duplicate = (pendingDeletes || []).find(
+      (row) => Number((row.payload as { churchId?: unknown })?.churchId) === churchId,
+    );
+    if (duplicate) {
+      throw new Error("A deletion request for this location is already pending approval.");
+    }
+    const lgaName = norm(payload.lgaName);
+    const continent = norm(payload.continent);
+    const countryName = norm(payload.countryName);
+    const stateName = norm(payload.stateName);
+    const message = norm(body.message) ||
+      `Delete location: ${churchName} (${branchState}, ${branchCountry})`;
+    const row = {
+      from_admin_id: Number(admin.id),
+      from_name: String(admin.full_name || ""),
+      from_role: String(admin.role || ""),
+      message,
+      request_type: "location_catalog_delete",
+      payload: {
+        churchId,
+        churchName,
+        branchCountry,
+        branchState,
+        countryName,
+        stateName,
+        lgaName,
+        continent,
+        address: String((church as { address?: string }).address || ""),
+      },
+      status: "open",
+    };
+    const { data, error } = await supabase.from("admin_requests").insert(row).select("*").single();
+    if (error) throw new Error(error.message);
+    await logActivity(
+      supabase,
+      admin,
+      "request.create",
+      "request",
+      String(data.id),
+      "Submitted location deletion request",
+      ip,
+    );
+    await notifyGlobalAdminsOfRequest(
+      supabase,
+      Number(data.id),
+      "Location deletion request",
+      `${admin.full_name} requested deletion of ${churchName} (${branchState}, ${branchCountry}).`,
+      admin,
+    );
+    return { data };
+  }
+
   const row = {
     from_admin_id: Number(admin.id),
     from_name: String(admin.full_name || ""),
@@ -2344,6 +2419,23 @@ async function handleUpdateRequest(supabase: SupabaseClient, params: Record<stri
   if (newStatus === "approved" && reqType === "location_catalog") {
     const payload = ((req as { payload?: unknown }).payload || {}) as Record<string, unknown>;
     await applyLocationCatalogProposal(supabase, payload, Number(req.id));
+  }
+  if (newStatus === "approved" && reqType === "location_catalog_delete") {
+    const payload = ((req as { payload?: unknown }).payload || {}) as Record<string, unknown>;
+    const churchId = Number(payload.churchId);
+    if (!Number.isFinite(churchId) || churchId <= 0) {
+      throw new Error("Missing church id in deletion request.");
+    }
+    await deleteCatalogChurchById(supabase, churchId);
+    await logActivity(
+      supabase,
+      admin,
+      "catalog.church_delete",
+      "church",
+      String(churchId),
+      `Approved deletion request #${String(req.id)}`,
+      ip,
+    );
   }
   if (newStatus === "approved" && reqType === "admin_account") {
     if (norm((req as { status?: string }).status) !== "in_review") {
@@ -3807,13 +3899,12 @@ async function handleCatalogSetChurchActive(supabase: SupabaseClient, params: Re
   return { ok: true };
 }
 
-async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
-  requireCatalogEditor(admin);
-  if (norm(admin.role) !== "super_admin" && norm(admin.role) !== "general_admin") {
-    throw new Error("Only Super Admin or General Admin can delete locations.");
-  }
-  const id = params.id;
-  const { data: row } = await supabase.from("churches").select("directory_branch_id,branch_country").eq("id", id).maybeSingle();
+async function deleteCatalogChurchById(supabase: SupabaseClient, id: number): Promise<void> {
+  const { data: row } = await supabase
+    .from("churches")
+    .select("directory_branch_id")
+    .eq("id", id)
+    .maybeSingle();
   if (!row) throw new Error("Church not found.");
   const { error: e1 } = await supabase.from("churches").delete().eq("id", id);
   if (e1) throw new Error(e1.message);
@@ -3821,6 +3912,15 @@ async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Recor
   if (Number.isFinite(bid) && bid > 0) {
     await supabase.from("directory_branches").delete().eq("id", bid);
   }
+}
+
+async function handleCatalogDeleteChurch(supabase: SupabaseClient, params: Record<string, unknown>, admin: AdminRow, ip: string) {
+  requireCatalogEditor(admin);
+  if (norm(admin.role) !== "super_admin" && norm(admin.role) !== "general_admin") {
+    throw new Error("Only Super Admin or General Admin can delete locations.");
+  }
+  const id = Number(params.id);
+  await deleteCatalogChurchById(supabase, id);
   await logActivity(supabase, admin, "catalog.church_delete", "church", String(id), "Deleted church", ip);
   return { ok: true };
 }

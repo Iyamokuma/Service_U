@@ -18,7 +18,7 @@ import {
   uniqueContinents,
 } from "../catalogUtils.js";
 import { exportCsv } from "../exportCsv.js";
-import { ADMIN_CATALOG_CHANGED } from "../adminLiveRefresh.js";
+import { ADMIN_CATALOG_CHANGED, emitAdminRequestsChanged } from "../adminLiveRefresh.js";
 
 const TABS = [
   { id: "satellite", label: "Satellite churches" },
@@ -106,6 +106,7 @@ export function BranchCatalog({ variant = "catalog" }) {
   const { admin } = useAdminAuth();
   const canCreateLocation = canPublishLocations(admin?.role) || canProposeLocations(admin?.role);
   const canManageChurches = canPublishLocations(admin?.role);
+  const canRequestDelete = canProposeLocations(admin?.role);
   const locationSubmitMode = canPublishLocations(admin?.role) ? "publish" : "propose";
   const toast = useToast();
   const [loading, setLoading] = useState(true);
@@ -382,6 +383,39 @@ export function BranchCatalog({ variant = "catalog" }) {
     }
   }
 
+  async function proposeDeleteChurch(row) {
+    if (
+      !window.confirm(
+        `Request deletion of “${row.name}”? A Super / General Admin must approve before it is removed.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.createRequest({
+        request_type: "location_catalog_delete",
+        payload: {
+          churchId: row.id,
+          churchName: row.name,
+          branchCountry: row.branch_country,
+          branchState: row.branch_state,
+          countryName: row.countryName,
+          stateName: row.stateName,
+          lgaName: row.lga,
+          continent: row.continent,
+        },
+      });
+      toast("Deletion request sent for Super / General Admin approval.", "success");
+      emitAdminRequestsChanged();
+      setDetail(null);
+    } catch (e) {
+      toast(e.message || "Could not submit deletion request.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading && !catalog) {
     return (
       <div className="sa-locations-page">
@@ -414,8 +448,10 @@ export function BranchCatalog({ variant = "catalog" }) {
           onBack={() => setDetail(null)}
           onToggleChurch={toggleChurch}
           onDeleteChurch={deleteChurch}
+          onProposeDeleteChurch={proposeDeleteChurch}
           canAddSatellites={canCreateLocation}
           canManageChurches={canManageChurches}
+          canRequestDelete={canRequestDelete}
           onAddSatellites={(preset) => setAddSatellitesPreset(preset)}
           busy={busy}
         />
@@ -682,6 +718,25 @@ export function BranchCatalog({ variant = "catalog" }) {
                               {r.is_active ? "Hide" : "Show"}
                             </button>
                           ) : null}
+                          {canRequestDelete ? (
+                            <button
+                              type="button"
+                              className="sa-btn sa-btn-danger sa-btn-sm"
+                              disabled={busy}
+                              onClick={() =>
+                                proposeDeleteChurch({
+                                  id: r.id,
+                                  name: r.name,
+                                  branch_country: r.branch_country,
+                                  branch_state: r.branch_state,
+                                  lga: r.lga,
+                                  continent: r.continent,
+                                })
+                              }
+                            >
+                              Request delete
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -776,17 +831,38 @@ export function BranchCatalog({ variant = "catalog" }) {
                         </span>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        {r.churchId ? (
-                          <button
-                            type="button"
-                            className="sa-btn sa-btn-outline sa-btn-sm"
-                            onClick={() => setDetail({ kind: "church", id: r.churchId })}
-                          >
-                            Manage
-                          </button>
-                        ) : (
-                          <span className="sa-text-muted sa-text-sm">No church row</span>
-                        )}
+                        <div className="sa-table-actions">
+                          {r.churchId ? (
+                            <button
+                              type="button"
+                              className="sa-btn sa-btn-outline sa-btn-sm"
+                              onClick={() => setDetail({ kind: "church", id: r.churchId })}
+                            >
+                              Manage
+                            </button>
+                          ) : (
+                            <span className="sa-text-muted sa-text-sm">No church row</span>
+                          )}
+                          {canRequestDelete && r.churchId ? (
+                            <button
+                              type="button"
+                              className="sa-btn sa-btn-danger sa-btn-sm"
+                              disabled={busy}
+                              onClick={() =>
+                                proposeDeleteChurch({
+                                  id: r.churchId,
+                                  name: r.name,
+                                  branch_country: r.branch_country,
+                                  branch_state: r.branch_state,
+                                  lga: r.lga,
+                                  continent: r.continent,
+                                })
+                              }
+                            >
+                              Request delete
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

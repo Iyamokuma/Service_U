@@ -115,6 +115,38 @@ function LocationProposalSummary({ payload }) {
   );
 }
 
+function LocationDeleteSummary({ payload }) {
+  if (!payload) return null;
+  const cc = String(payload.branchCountry || "").toUpperCase();
+  const st = String(payload.branchState || "").toUpperCase();
+  const countryLabel = cc ? branchCountryLabel(cc) : String(payload.countryName || "—");
+  const stateLabel = cc && st ? branchStateLabel(cc, st) : String(payload.stateName || st || "—");
+  return (
+    <div className="sa-text-sm" style={{ lineHeight: 1.45, maxWidth: 420 }}>
+      <div>
+        <span className="sa-text-muted">Location:</span> {payload.churchName || "—"}
+      </div>
+      <div>
+        <span className="sa-text-muted">Country:</span> {countryLabel}
+        {cc ? ` (${cc})` : ""}
+      </div>
+      <div>
+        <span className="sa-text-muted">State:</span> {stateLabel}
+      </div>
+      {payload.lgaName ? (
+        <div>
+          <span className="sa-text-muted">LGA / city:</span> {payload.lgaName}
+        </div>
+      ) : null}
+      {payload.address ? (
+        <div style={{ marginTop: 6 }} className="sa-text-muted">
+          {payload.address}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function Requests() {
   const toast = useToast();
   const { admin, viewMode } = useAdminAuth();
@@ -159,6 +191,7 @@ export function Requests() {
 
   const requestTypeLabel = (r) => {
     if (r.request_type === "location_catalog") return "Location proposal";
+    if (r.request_type === "location_catalog_delete") return "Location deletion";
     if (r.request_type === "service_unit_proposal") return "Service unit proposal";
     if (r.request_type === "admin_account") return "Admin account";
     return (r.request_type || "general").replace(/_/g, " ");
@@ -191,6 +224,7 @@ export function Requests() {
           p?.unitName,
           p?.stateName,
           p?.lgaName,
+          p?.churchName,
         ]
           .filter(Boolean)
           .join(" ")
@@ -208,6 +242,8 @@ export function Requests() {
         await api.updateRequest(r.id, { status: "approved" });
         if (r.request_type === "location_catalog") {
           toast("Branches are live on the registration form for that country and region.", "success");
+        } else if (r.request_type === "location_catalog_delete") {
+          toast("Location removed from the directory.", "success");
         } else if (r.request_type === "admin_account") {
           toast("Admin account created and is now active.", "success");
         } else {
@@ -216,7 +252,7 @@ export function Requests() {
       }
       load();
       emitAdminRequestsChanged();
-      if (r.request_type === "location_catalog") {
+      if (r.request_type === "location_catalog" || r.request_type === "location_catalog_delete") {
         emitAdminCatalogChanged();
       }
       setFocusRequestId(null);
@@ -281,6 +317,7 @@ export function Requests() {
           <option value="admin_account">Admin account</option>
           <option value="service_unit_proposal">Service unit proposal</option>
           <option value="location_catalog">Location proposal</option>
+          <option value="location_catalog_delete">Location deletion</option>
           <option value="general">General</option>
         </select>
         <select className="sa-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -318,6 +355,7 @@ export function Requests() {
             {visibleRows.map((r) => {
               const p = parsePayload(r.payload);
               const isLoc = r.request_type === "location_catalog";
+              const isLocDelete = r.request_type === "location_catalog_delete";
               const isUnit = r.request_type === "service_unit_proposal";
               const isAdminAcct = r.request_type === "admin_account";
               return (
@@ -333,6 +371,8 @@ export function Requests() {
                   <td>
                     {isLoc && p ? (
                       <LocationProposalSummary payload={p} />
+                    ) : isLocDelete && p ? (
+                      <LocationDeleteSummary payload={p} />
                     ) : isUnit && p ? (
                       <ServiceUnitProposalSummary payload={p} />
                     ) : isAdminAcct && p ? (
@@ -362,7 +402,9 @@ export function Requests() {
                             ? "Approve & create unit"
                             : isAdminAcct
                               ? "Approve & create admin"
-                              : "Approve"}
+                              : isLocDelete
+                                ? "Approve & delete"
+                                : "Approve"}
                         </button>
                         <button
                           type="button"
