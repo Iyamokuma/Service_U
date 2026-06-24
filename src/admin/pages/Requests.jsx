@@ -19,10 +19,10 @@ import {
   ADMIN_REQUESTS_CHANGED,
 } from "../adminLiveRefresh.js";
 import { matchesRequestGeo } from "../geoFilterUtils.js";
+import { parseRequestPayload } from "../requestPayload.js";
 
 function parsePayload(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  return raw;
+  return parseRequestPayload(raw);
 }
 
 function ServiceUnitProposalSummary({ payload }) {

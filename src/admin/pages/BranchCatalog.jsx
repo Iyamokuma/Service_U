@@ -18,7 +18,9 @@ import {
   uniqueContinents,
 } from "../catalogUtils.js";
 import { exportCsv } from "../exportCsv.js";
-import { ADMIN_CATALOG_CHANGED, emitAdminRequestsChanged } from "../adminLiveRefresh.js";
+import { ADMIN_CATALOG_CHANGED, ADMIN_REQUESTS_CHANGED, emitAdminRequestsChanged } from "../adminLiveRefresh.js";
+import { pendingDeletionChurchIds } from "../requestPayload.js";
+import { LocationStatusBadge } from "../components/LocationStatusBadge.jsx";
 
 const TABS = [
   { id: "satellite", label: "Satellite churches" },
@@ -118,6 +120,7 @@ export function BranchCatalog({ variant = "catalog" }) {
   const [addSatellitesPreset, setAddSatellitesPreset] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [pendingRequests, setPendingRequests] = useState([]);
   const viewTabs = isBranchDirectory ? BRANCH_DIRECTORY_TABS : TABS;
   const { stateRows: branchOptions } = useCountryStateRows(filters.country, {
     enabled: Boolean(filters.country),
@@ -127,12 +130,17 @@ export function BranchCatalog({ variant = "catalog" }) {
     setLoading(true);
     setLoadError("");
     try {
-      const r = await api.catalogList();
-      setCatalog(normalizeCatalog(r));
+      const [catalogRes, requestsRes] = await Promise.all([
+        api.catalogList(),
+        api.requests({ per_page: 500, page: 1 }).catch(() => ({ data: [] })),
+      ]);
+      setCatalog(normalizeCatalog(catalogRes));
+      setPendingRequests(Array.isArray(requestsRes?.data) ? requestsRes.data : []);
     } catch (e) {
       const msg = e.message || "Could not load directory.";
       setLoadError(msg);
       setCatalog(normalizeCatalog(null));
+      setPendingRequests([]);
       toast(msg, "error");
     } finally {
       setLoading(false);
@@ -150,15 +158,50 @@ export function BranchCatalog({ variant = "catalog" }) {
   }, [load]);
 
   useEffect(() => {
+    const onRequestsChanged = () => {
+      api.requests({ per_page: 500, page: 1 })
+        .then((res) => setPendingRequests(Array.isArray(res?.data) ? res.data : []))
+        .catch(() => {});
+    };
+    window.addEventListener(ADMIN_REQUESTS_CHANGED, onRequestsChanged);
+    return () => window.removeEventListener(ADMIN_REQUESTS_CHANGED, onRequestsChanged);
+  }, []);
+
+  useEffect(() => {
     if (!viewTabs.some((t) => t.id === tab)) {
       setTab(viewTabs[0]?.id || "all");
     }
   }, [viewTabs, tab]);
 
-  const allRows = useMemo(() => (catalog ? buildAllRows(catalog) : []), [catalog]);
+  const pendingDeletionIds = useMemo(
+    () => pendingDeletionChurchIds(pendingRequests),
+    [pendingRequests],
+  );
+
+  const allRows = useMemo(() => {
+    const rows = catalog ? buildAllRows(catalog) : [];
+    if (canRequestDelete && !canManageChurches) {
+      return rows.filter((r) => !pendingDeletionIds.has(r.id));
+    }
+    return rows.map((r) => ({
+      ...r,
+      deletionPending: pendingDeletionIds.has(r.id),
+    }));
+  }, [catalog, pendingDeletionIds, canRequestDelete, canManageChurches]);
+
   const countryRows = useMemo(() => (catalog ? buildCountryRows(catalog) : []), [catalog]);
   const stateRows = useMemo(() => (catalog ? buildStateRows(catalog) : []), [catalog]);
-  const satelliteRows = useMemo(() => (catalog ? buildSatelliteRows(catalog) : []), [catalog]);
+
+  const satelliteRows = useMemo(() => {
+    const rows = catalog ? buildSatelliteRows(catalog) : [];
+    if (canRequestDelete && !canManageChurches) {
+      return rows.filter((r) => !r.churchId || !pendingDeletionIds.has(r.churchId));
+    }
+    return rows.map((r) => ({
+      ...r,
+      deletionPending: r.churchId ? pendingDeletionIds.has(r.churchId) : false,
+    }));
+  }, [catalog, pendingDeletionIds, canRequestDelete, canManageChurches]);
 
   const continentOptions = useMemo(
     () => uniqueContinents(catalog?.satellites, catalog?.churches),
@@ -179,8 +222,9 @@ export function BranchCatalog({ variant = "catalog" }) {
       if (filters.country && r.branch_country !== filters.country) return false;
       if (filters.branch && r.branch_state !== filters.branch) return false;
       if (filters.satellite && r.name !== filters.satellite) return false;
-      if (filters.status === "active" && !r.is_active) return false;
-      if (filters.status === "hidden" && r.is_active) return false;
+      if (filters.status === "active" && (!r.is_active || r.deletionPending)) return false;
+      if (filters.status === "hidden" && (r.is_active || r.deletionPending)) return false;
+      if (filters.status === "awaiting_removal" && !r.deletionPending) return false;
       if (q) {
         const hay = [r.name, r.countryLabel, r.stateLabel, r.lga, r.branchAdminName].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -205,8 +249,9 @@ export function BranchCatalog({ variant = "catalog" }) {
       if (filters.country && r.branch_country !== filters.country) return false;
       if (filters.branch && r.branch_state !== filters.branch) return false;
       if (filters.satellite && r.name !== filters.satellite) return false;
-      if (filters.status === "active" && !r.is_active) return false;
-      if (filters.status === "hidden" && !r.is_active) return false;
+      if (filters.status === "active" && (!r.is_active || r.deletionPending)) return false;
+      if (filters.status === "hidden" && (r.is_active || r.deletionPending)) return false;
+      if (filters.status === "awaiting_removal" && !r.deletionPending) return false;
       if (q) {
         const hay = [r.name, r.countryLabel, r.stateLabel, r.lga, r.pastorName].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -393,7 +438,7 @@ export function BranchCatalog({ variant = "catalog" }) {
     }
     setBusy(true);
     try {
-      await api.createRequest({
+      const created = await api.createRequest({
         request_type: "location_catalog_delete",
         payload: {
           churchId: row.id,
@@ -406,6 +451,19 @@ export function BranchCatalog({ variant = "catalog" }) {
           continent: row.continent,
         },
       });
+      const requestRow = created?.data || created;
+      if (requestRow && typeof requestRow === "object") {
+        setPendingRequests((prev) => [...prev, requestRow]);
+      } else {
+        setPendingRequests((prev) => [
+          ...prev,
+          {
+            request_type: "location_catalog_delete",
+            status: "open",
+            payload: { churchId: row.id, churchName: row.name },
+          },
+        ]);
+      }
       toast("Deletion request sent for Super / General Admin approval.", "success");
       emitAdminRequestsChanged();
       setDetail(null);
@@ -452,6 +510,7 @@ export function BranchCatalog({ variant = "catalog" }) {
           canAddSatellites={canCreateLocation}
           canManageChurches={canManageChurches}
           canRequestDelete={canRequestDelete}
+          pendingDeletionIds={pendingDeletionIds}
           onAddSatellites={(preset) => setAddSatellitesPreset(preset)}
           busy={busy}
         />
@@ -627,6 +686,7 @@ export function BranchCatalog({ variant = "catalog" }) {
                 <option value="">All statuses</option>
                 <option value="active">Active</option>
                 <option value="hidden">Hidden</option>
+                {canManageChurches ? <option value="awaiting_removal">Awaiting removal</option> : null}
               </select>
             </div>
             <div className="sa-field" style={{ margin: 0 }}>
@@ -689,9 +749,7 @@ export function BranchCatalog({ variant = "catalog" }) {
                       <td>{r.countryLabel}</td>
                       <td className="sa-text-sm">{r.branchAdminName}</td>
                       <td>
-                        <span className={`sa-badge ${r.is_active ? "active" : "inactive"}`}>
-                          {r.is_active ? "Active" : "Hidden"}
-                        </span>
+                        <LocationStatusBadge isActive={r.is_active} deletionPending={r.deletionPending} />
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="sa-table-actions">
@@ -703,7 +761,7 @@ export function BranchCatalog({ variant = "catalog" }) {
                           >
                             Manage
                           </button>
-                          {canManageChurches ? (
+                          {canManageChurches && !r.deletionPending ? (
                             <button
                               type="button"
                               className="sa-btn sa-btn-ghost sa-btn-sm"
@@ -718,7 +776,7 @@ export function BranchCatalog({ variant = "catalog" }) {
                               {r.is_active ? "Hide" : "Show"}
                             </button>
                           ) : null}
-                          {canRequestDelete ? (
+                          {canRequestDelete && !r.deletionPending ? (
                             <button
                               type="button"
                               className="sa-btn sa-btn-danger sa-btn-sm"
@@ -826,9 +884,7 @@ export function BranchCatalog({ variant = "catalog" }) {
                       <td className="sa-text-sm">{r.pastorName}</td>
                       <td>{r.members}</td>
                       <td>
-                        <span className={`sa-badge ${r.is_active ? "active" : "inactive"}`}>
-                          {r.is_active ? "Active" : "Hidden"}
-                        </span>
+                        <LocationStatusBadge isActive={r.is_active} deletionPending={r.deletionPending} />
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="sa-table-actions">
@@ -843,7 +899,7 @@ export function BranchCatalog({ variant = "catalog" }) {
                           ) : (
                             <span className="sa-text-muted sa-text-sm">No church row</span>
                           )}
-                          {canRequestDelete && r.churchId ? (
+                          {canRequestDelete && r.churchId && !r.deletionPending ? (
                             <button
                               type="button"
                               className="sa-btn sa-btn-danger sa-btn-sm"

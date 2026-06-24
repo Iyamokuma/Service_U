@@ -8,6 +8,7 @@ import {
   stateKey,
 } from "../catalogUtils.js";
 import { listStateBranchesForCountry } from "../stateAdminForm.js";
+import { LocationStatusBadge } from "../components/LocationStatusBadge.jsx";
 
 export function BranchLocationDetail({
   detail,
@@ -20,6 +21,7 @@ export function BranchLocationDetail({
   canAddSatellites = false,
   canManageChurches = false,
   canRequestDelete = false,
+  pendingDeletionIds = new Set(),
   busy,
 }) {
   const { churches, satellites, admins, stats } = catalog;
@@ -53,6 +55,7 @@ export function BranchLocationDetail({
     const branchAdmin = stateAdminFor(admins, cc, st);
     const satAdmin = satelliteAdminFor(admins, cc, st, name);
     const members = stats?.membersBySatellite?.[satelliteKey(cc, st, name)] ?? 0;
+    const deletionPending = pendingDeletionIds.has(Number(ch.id));
 
     return (
       <div className="sa-card">
@@ -61,9 +64,10 @@ export function BranchLocationDetail({
             ← Back to directory
           </button>
           <span className="sa-card-title">{name}</span>
-          <span className={`sa-badge ${Number(ch.is_active) === 1 ? "active" : "inactive"}`}>
-            {Number(ch.is_active) === 1 ? "Active" : "Hidden"}
-          </span>
+          <LocationStatusBadge
+            isActive={Number(ch.is_active) === 1}
+            deletionPending={deletionPending}
+          />
         </div>
         <div className="sa-card-body">
           <div className="sa-detail-grid">
@@ -78,7 +82,7 @@ export function BranchLocationDetail({
             <DetailItem label="Satellite pastor" value={satAdmin?.full_name || "—"} />
           </div>
           <div className="sa-table-actions" style={{ marginTop: 20 }}>
-            {canManageChurches ? (
+            {canManageChurches && !deletionPending ? (
               <>
                 <button
                   type="button"
@@ -93,7 +97,12 @@ export function BranchLocationDetail({
                 </button>
               </>
             ) : null}
-            {canRequestDelete && !canManageChurches ? (
+            {canManageChurches && deletionPending ? (
+              <p className="sa-text-sm sa-text-muted" style={{ margin: 0 }}>
+                Deletion pending — approve or reject on the Requests page.
+              </p>
+            ) : null}
+            {canRequestDelete && !canManageChurches && !deletionPending ? (
               <button
                 type="button"
                 className="sa-btn sa-btn-danger sa-btn-sm"

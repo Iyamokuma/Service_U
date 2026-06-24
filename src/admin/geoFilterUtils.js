@@ -1,5 +1,6 @@
 import { announcementStateOptions, announcementSatelliteOptions } from "./announcementScopePolicy.js";
 import { branchCountryCodeFromIso2, branchStateCodeForLocationPublish } from "./branchRegions.js";
+import { parseRequestPayload } from "./requestPayload.js";
 
 /** API query fields used by queue, members, and stats. */
 export function geoFilterApiParams(filters) {
@@ -52,7 +53,7 @@ export function satelliteOptionsForGeoFilter(churches, countryCode, stateCode) {
 /** Client-side filter for admin requests (super admin Requests table). */
 export function matchesRequestGeo(req, filters) {
   if (!hasGeoFilters(filters)) return true;
-  const p = req?.payload && typeof req.payload === "object" ? req.payload : {};
+  const p = parseRequestPayload(req?.payload) || {};
   if (req?.request_type === "admin_account" && p.admin) {
     return matchesAdminGeo(p.admin, filters);
   }
@@ -69,7 +70,10 @@ export function matchesRequestGeo(req, filters) {
   if (req?.request_type === "location_catalog_delete") {
     country = String(p.branchCountry || country).trim();
     state = String(p.branchState || state).trim();
-    satellite = String(p.churchName || satellite).trim();
+    return matchesRegistrationGeo(
+      { branch_country: country, branch_state: state, satellite_site: "" },
+      { country: filters.country, state: filters.state, satellite: "" },
+    );
   }
   return matchesRegistrationGeo(
     { branch_country: country, branch_state: state, satellite_site: satellite },
