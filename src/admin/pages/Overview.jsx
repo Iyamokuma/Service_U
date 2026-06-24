@@ -27,21 +27,6 @@ function actionDot(action) {
   return "default";
 }
 
-function GenderBreakdown({ sexMap }) {
-  const entries = Object.entries(sexMap);
-  return (
-    <div className="sa-gender-strip">
-      {entries.map(([k, v]) => (
-        <div key={k} className="sa-gender-item">
-          <div className="sa-gender-value">{v}</div>
-          <div className="sa-gender-label">{k}</div>
-        </div>
-      ))}
-      {entries.length === 0 && <div className="sa-text-muted sa-text-sm">No data yet.</div>}
-    </div>
-  );
-}
-
 function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
   const goOverdueQueue = () => (navigateToQueue ? navigateToQueue("overdue") : setPage?.("queue"));
   const [data, setData] = useState(null);
@@ -118,7 +103,7 @@ function SuperAdminOverview({ units, setPage, navigateToQueue, admin }) {
     );
   }
 
-  const { totals, by_unit, by_sex, trend, recent_activity } = data;
+  const { totals = {}, by_unit = [], by_sex = [], trend = [], recent_activity = [] } = data;
   const sexMap = {};
   by_sex.forEach((r) => {
     sexMap[r.sex || "Unknown"] = +r.cnt;
@@ -470,7 +455,7 @@ export function Overview({ units, setPage, navigateToQueue }) {
     );
   }
 
-  const { totals, by_unit, by_sex, trend, recent_activity } = data;
+  const { totals = {}, by_unit = [], by_sex = [], trend = [], recent_activity = [] } = data;
   const sexMap = {};
   by_sex.forEach((r) => {
     sexMap[r.sex || "Unknown"] = +r.cnt;

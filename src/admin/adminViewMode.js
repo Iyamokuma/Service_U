@@ -159,6 +159,22 @@ export function normalizeSubUnitLeaderPage(page) {
   return "overview";
 }
 
+export const DATA_ENTRY_ADMIN_PAGES = [
+  "role-dashboard",
+  "data-locations",
+  "locations",
+  "branch-catalog",
+  "notifications",
+  "activity",
+  "profile",
+];
+
+/** Data Entry Admin nav — invalid stored pages fall back to Home. */
+export function normalizeDataEntryAdminPage(page) {
+  if (DATA_ENTRY_ADMIN_PAGES.includes(page)) return page;
+  return "role-dashboard";
+}
+
 /** Map sidebar page when switching Country ↔ State view (keep the closest equivalent). */
 export function normalizePageForViewMode(page, admin, viewMode) {
   if (!canSwitchAdminView(admin)) return normalizeCountryAdminPage(page);

@@ -18,15 +18,14 @@ export function ProfileSettings() {
   });
   const [saving, setSaving] = useState(false);
   const [allAdmins, setAllAdmins] = useState([]);
+  const isCountryAdmin = isCountrySuperAdmin(admin?.role);
+  const countryCode = String(admin?.branch_country || "").toUpperCase();
   const { churches, catalog, directoryStates } = useCountryStateRows(countryCode, {
     enabled: isCountryAdmin,
   });
   const [homeStateDraft, setHomeStateDraft] = useState(admin?.branch_state || "");
   const [savingHome, setSavingHome] = useState(false);
   const [hqOpenSignal, setHqOpenSignal] = useState(0);
-
-  const isCountryAdmin = isCountrySuperAdmin(admin?.role);
-  const countryCode = String(admin?.branch_country || "").toUpperCase();
   const myHomeState = countryAdminHomeState(admin, { churches }) || String(admin?.branch_state || "").trim();
   const hqChurch = String(admin?.satellite_site || "").trim();
 

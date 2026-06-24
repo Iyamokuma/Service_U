@@ -3,11 +3,9 @@ import { SmhLoader } from "../../components/SmhLoader.jsx";
 import { useAdminAuth } from "../AdminContext.jsx";
 import { useAdminNotifications } from "../useAdminNotifications.js";
 import {
-  formatInboxTime,
   formatRelativeTime,
   notificationActionLabel,
   notificationBadgeClass,
-  notificationInitials,
   notificationSenderInitials,
   notificationSenderLabel,
   notificationTypeLabel,

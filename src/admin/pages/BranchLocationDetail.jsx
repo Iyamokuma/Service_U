@@ -3,6 +3,7 @@ import { stateBranchKindLabel } from "../stateAdminForm.js";
 import {
   countryAdminFor,
   satelliteAdminFor,
+  satelliteKey,
   stateAdminFor,
   stateKey,
 } from "../catalogUtils.js";

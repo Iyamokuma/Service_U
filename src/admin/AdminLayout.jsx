@@ -28,7 +28,7 @@ import { useAdminAuth } from "./AdminContext.jsx";
 import { leaderScopeLabel } from "./leaderScope.js";
 import { branchCountryLabel, branchStateLabel } from "./branchRegions.js";
 import { ADMIN_REQUESTS_CHANGED, setFocusRequestId } from "./adminLiveRefresh.js";
-import { isGlobalAdminRole, canEditBranchCatalog, isServiceUnitLeader, isCountrySuperAdmin } from "./roles.js";
+import { isGlobalAdminRole, canEditBranchCatalog, isCountrySuperAdmin } from "./roles.js";
 import {
   effectiveUiRole,
   isActingAsStateAdmin,
@@ -39,12 +39,14 @@ import {
   normalizeSatelliteAdminPage,
   normalizeServiceUnitLeaderPage,
   normalizeSubUnitLeaderPage,
+  normalizeDataEntryAdminPage,
 } from "./adminViewMode.js";
 import { ServiceUnitUsers } from "./pages/ServiceUnitUsers.jsx";
 import { SubUnitUsers } from "./pages/SubUnitUsers.jsx";
 import { countryAdminHomeState } from "./roles.js";
 import { writeUsersSectionTab } from "./usersSectionTab.js";
 import { useAdminNotifications } from "./useAdminNotifications.js";
+import { AdminErrorBoundary } from "./components/AdminErrorBoundary.jsx";
 import { TotpEnrollmentGate } from "./components/TotpEnrollmentGate.jsx";
 
 const PAGE_TITLES_DEFAULT = {
@@ -137,6 +139,9 @@ export function AdminLayout() {
     }
     if (admin.role === "sub_unit_leader") {
       return normalizeSubUnitLeaderPage(page);
+    }
+    if (admin.role === "data_entry_admin") {
+      return normalizeDataEntryAdminPage(page);
     }
     if (isGlobalAdminRole(admin.role)) {
       return normalizeGlobalAdminPage(page);
@@ -248,19 +253,7 @@ export function AdminLayout() {
     } else if (isGlobalAdminRole(admin.role)) {
       setPage((p) => normalizeGlobalAdminPage(p));
     } else if (admin.role === "data_entry_admin") {
-      setPage((p) =>
-        [
-          "role-dashboard",
-          "data-locations",
-          "locations",
-          "branch-catalog",
-          "notifications",
-          "activity",
-          "profile",
-        ].includes(p)
-          ? p
-          : "role-dashboard",
-      );
+      setPage((p) => normalizeDataEntryAdminPage(p));
     }
   }, [admin?.id, admin?.role, admin?.branch_state, viewMode, setPage]);
 
@@ -374,6 +367,7 @@ export function AdminLayout() {
         ) : null}
 
         <div className="sa-content">
+          <AdminErrorBoundary>
           <TotpEnrollmentGate page={contentPage}>
           {contentPage === "role-dashboard" && <RoleDashboard setPage={setPage} />}
           {contentPage === "data-locations" && admin?.role === "data_entry_admin" && <DataEntryLocationForm />}
@@ -426,6 +420,7 @@ export function AdminLayout() {
           {contentPage === "settings"  && canPlatformSettings && <Settings />}
           {contentPage === "profile"   && <ProfileSettings />}
           </TotpEnrollmentGate>
+          </AdminErrorBoundary>
         </div>
       </div>
     </div>

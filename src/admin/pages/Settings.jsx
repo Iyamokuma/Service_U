@@ -26,6 +26,8 @@ export function Settings() {
 
   if (!settings) return <SmhLoader label="Loading settings" />;
 
+  const templates = settings.templates ?? { approved: "", rejected: "" };
+
   return (
     <div className="sa-card">
       <div className="sa-card-body">
@@ -37,11 +39,11 @@ export function Settings() {
         </p>
         <div className="sa-field">
           <label className="sa-label">Approved template</label>
-          <textarea className="sa-textarea" value={settings.templates.approved} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...s.templates, approved: e.target.value } }))} />
+          <textarea className="sa-textarea" value={templates.approved} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...(s.templates ?? {}), approved: e.target.value } }))} />
         </div>
         <div className="sa-field">
           <label className="sa-label">Rejected template</label>
-          <textarea className="sa-textarea" value={settings.templates.rejected} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...s.templates, rejected: e.target.value } }))} />
+          <textarea className="sa-textarea" value={templates.rejected} onChange={(e) => setSettings((s) => ({ ...s, templates: { ...(s.templates ?? {}), rejected: e.target.value } }))} />
         </div>
 
         <h3 style={{ margin: "20px 0 12px" }}>Overdue &amp; alerts</h3>
