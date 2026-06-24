@@ -32,7 +32,6 @@ const NAV_SUPER = [
     section: "Manage",
     items: [
       { id: "locations", label: "Locations", icon: <LayersIcon /> },
-      { id: "branch-catalog", label: "Branch directory", icon: <MapPinIcon /> },
     ],
   },
   {

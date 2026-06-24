@@ -57,7 +57,6 @@ export const GLOBAL_ADMIN_PAGES = [
   "units",
   "members",
   "locations",
-  "branch-catalog",
   "admins",
   "announcements",
   "notifications",
@@ -69,6 +68,7 @@ export const GLOBAL_ADMIN_PAGES = [
 
 /** Super / General Admin nav — invalid stored pages fall back to Overview. */
 export function normalizeGlobalAdminPage(page) {
+  if (page === "branch-catalog") return "locations";
   if (GLOBAL_ADMIN_PAGES.includes(page)) return page;
   return "overview";
 }

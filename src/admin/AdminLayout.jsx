@@ -371,9 +371,8 @@ export function AdminLayout() {
           <TotpEnrollmentGate page={contentPage}>
           {contentPage === "role-dashboard" && <RoleDashboard setPage={setPage} />}
           {contentPage === "data-locations" && admin?.role === "data_entry_admin" && <DataEntryLocationForm />}
-          {(contentPage === "locations" || contentPage === "branch-catalog") &&
-            canEditBranchCatalog(admin?.role) && (
-            <BranchCatalog variant={contentPage === "locations" ? "locations" : "catalog"} />
+          {contentPage === "locations" && canEditBranchCatalog(admin?.role) && (
+            <BranchCatalog variant="locations" />
           )}
           {contentPage === "overview"  && <Overview units={units} setPage={setPage} navigateToQueue={navigateToQueue} />}
           {contentPage === "queue"     && <Queue     units={units} initialTab={queueTab} />}
